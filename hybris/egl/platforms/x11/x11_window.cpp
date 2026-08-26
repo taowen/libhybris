@@ -15,7 +15,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -35,6 +37,155 @@ extern "C" {
  * the whole plugin (eglplatform_x11.cpp uses it too) so libxcb only
  * caches the extension data once. */
 xcb_extension_t tawc_dri_ext = { TAWC_DRI_NAME, 0 };
+
+#define ARDESK_PRESENT_MAGIC_HANDLE 0x33424841u /* 'AHB3' */
+
+static int ardesk_present_connect(void)
+{
+    const char *path = getenv("PRESENT_SOCKET");
+    char buf[512];
+    int i;
+
+    if (!path || !path[0]) {
+        const char *xdg = getenv("XDG_RUNTIME_DIR");
+        if (!xdg || !xdg[0])
+            return -1;
+        snprintf(buf, sizeof(buf), "%s/present.sock", xdg);
+        path = buf;
+    }
+    for (i = 0; i < 20; i++) {
+        int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        struct sockaddr_un addr;
+        if (fd < 0)
+            return -1;
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+        if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0)
+            return fd;
+        close(fd);
+        usleep(100000);
+    }
+    return -1;
+}
+
+static int ardesk_present_handle(xcb_window_t xwin, const native_handle_t *nh,
+                                 unsigned int w, unsigned int h,
+                                 unsigned int stride, unsigned int format,
+                                 uint64_t usage)
+{
+    static int sock = -1;
+    struct {
+        uint32_t magic, kind, id, width, height, stride, fmt;
+        uint32_t usage_lo, usage_hi;
+        int32_t num_fds, num_ints;
+    } hdr;
+    uint32_t ack = 1;
+    int num_fds, num_ints;
+    const uint8_t *p;
+    size_t n;
+
+    if (!nh)
+        return -1;
+    if (sock < 0)
+        sock = ardesk_present_connect();
+    if (sock < 0)
+        return -1;
+    num_fds = nh->numFds;
+    num_ints = nh->numInts;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.magic = ARDESK_PRESENT_MAGIC_HANDLE;
+    hdr.kind = 1; /* PRESENT_AHB_X11 */
+    hdr.id = (uint32_t)xwin;
+    hdr.width = w;
+    hdr.height = h;
+    hdr.stride = stride;
+    hdr.fmt = format;
+    hdr.usage_lo = (uint32_t)(usage & 0xffffffffULL);
+    hdr.usage_hi = (uint32_t)(usage >> 32);
+    hdr.num_fds = num_fds;
+    hdr.num_ints = num_ints;
+    p = (const uint8_t *)&hdr;
+    n = sizeof(hdr);
+    while (n) {
+        ssize_t wr = write(sock, p, n);
+        if (wr < 0) {
+            if (errno == EINTR)
+                continue;
+            close(sock);
+            sock = -1;
+            return -1;
+        }
+        p += (size_t)wr;
+        n -= (size_t)wr;
+    }
+    if (num_ints > 0) {
+        p = (const uint8_t *)(nh->data + num_fds);
+        n = (size_t)num_ints * sizeof(int32_t);
+        while (n) {
+            ssize_t wr = write(sock, p, n);
+            if (wr < 0) {
+                if (errno == EINTR)
+                    continue;
+                close(sock);
+                sock = -1;
+                return -1;
+            }
+            p += (size_t)wr;
+            n -= (size_t)wr;
+        }
+    }
+    if (num_fds > 0) {
+        struct iovec iov;
+        union {
+            struct cmsghdr hdr;
+            char space[CMSG_SPACE(32 * sizeof(int))];
+        } cmsgbuf;
+        struct msghdr msg;
+        struct cmsghdr *cmsg;
+        int fds[32];
+        uint8_t dummy = 0;
+
+        if (num_fds > 32)
+            return -1;
+        memcpy(fds, nh->data, (size_t)num_fds * sizeof(int));
+        iov.iov_base = &dummy;
+        iov.iov_len = 1;
+        memset(&msg, 0, sizeof(msg));
+        memset(&cmsgbuf, 0, sizeof(cmsgbuf));
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = &cmsgbuf;
+        msg.msg_controllen = CMSG_SPACE((size_t)num_fds * sizeof(int));
+        cmsg = CMSG_FIRSTHDR(&msg);
+        cmsg->cmsg_level = SOL_SOCKET;
+        cmsg->cmsg_type = SCM_RIGHTS;
+        cmsg->cmsg_len = CMSG_LEN((size_t)num_fds * sizeof(int));
+        memcpy(CMSG_DATA(cmsg), fds, (size_t)num_fds * sizeof(int));
+        if (sendmsg(sock, &msg, 0) < 0) {
+            close(sock);
+            sock = -1;
+            return -1;
+        }
+    }
+    {
+        uint8_t *q = (uint8_t *)&ack;
+        n = sizeof(ack);
+        while (n) {
+            ssize_t rd = read(sock, q, n);
+            if (rd <= 0) {
+                if (rd < 0 && errno == EINTR)
+                    continue;
+                close(sock);
+                sock = -1;
+                return -1;
+            }
+            q += (size_t)rd;
+            n -= (size_t)rd;
+        }
+    }
+    return ack == 0 ? 0 : -1;
+}
 
 X11NativeWindowBuffer::X11NativeWindowBuffer(unsigned int w,
                                              unsigned int h,
@@ -67,7 +218,8 @@ X11NativeWindow::X11NativeWindow(xcb_connection_t *conn,
                                  uint8_t tawc_dri_opcode,
                                  unsigned int w,
                                  unsigned int h,
-                                 bool server_v03)
+                                 bool server_v03,
+                                 bool present_sock)
     : m_conn(conn)
     , m_xwin(xwin)
     , m_tawc_dri_opcode(tawc_dri_opcode)
@@ -77,6 +229,7 @@ X11NativeWindow::X11NativeWindow(xcb_connection_t *conn,
     , m_usage(GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE)
     , m_swap_interval(1)
     , m_server_v03(server_v03)
+    , m_present_sock(present_sock)
     , m_events_enabled(false)
     , m_eid(0)
     , m_special_ev(NULL)
@@ -85,7 +238,7 @@ X11NativeWindow::X11NativeWindow(xcb_connection_t *conn,
     const_cast<int &>(ANativeWindow::minSwapInterval) = 0;
     const_cast<int &>(ANativeWindow::maxSwapInterval) = 1;
     pthread_mutex_init(&m_mutex, NULL);
-    if (m_server_v03)
+    if (m_server_v03 && !m_present_sock)
         setupEventChannel();
     setBufferCount(3);
 }
@@ -468,6 +621,14 @@ int X11NativeWindow::presentBuffer(X11NativeWindowBuffer *wnb)
     if (!nh) {
         HYBRIS_ERROR("x11-platform: buffer has no native_handle");
         return -1;
+    }
+    if (m_present_sock) {
+        return ardesk_present_handle(m_xwin, nh,
+                                     (unsigned int)wnb->width,
+                                     (unsigned int)wnb->height,
+                                     (unsigned int)wnb->stride,
+                                     (unsigned int)wnb->format,
+                                     wnb->usage);
     }
     int num_fds  = nh->numFds;
     int num_ints = nh->numInts;

@@ -56,6 +56,7 @@ struct X11Display {
      * SelectInput/XGE events exist. Gates both the wire shape and the
      * event-driven buffer lifecycle in X11NativeWindow. */
     bool tawc_dri_v03;
+    bool present_sock;
     /* Cached at GetDisplay so eglGetConfigAttrib(EGL_NATIVE_VISUAL_ID)
      * can return immediately. The screen's default visual is a 32-bit
      * TrueColor on every modern X server (Xwayland included), which
@@ -79,6 +80,7 @@ extern "C" _EGLDisplay *x11ws_GetDisplay(EGLNativeDisplayType display)
     xdisp->tawc_dri_opcode = 0;
     xdisp->tawc_dri_present = false;
     xdisp->tawc_dri_v03 = false;
+    xdisp->present_sock = false;
 
     if (!xdisp->xdpy) {
         xdisp->xdpy = XOpenDisplay(NULL);
@@ -140,9 +142,15 @@ extern "C" void x11ws_eglInitialized(_EGLDisplay *dpy)
     xcb_query_extension_reply_t *qe =
         xcb_query_extension_reply(xdisp->conn, qe_c, NULL);
     if (!qe || !qe->present) {
+        const char *ps = getenv("PRESENT_SOCKET");
+        if (ps && ps[0]) {
+            HYBRIS_WARN("x11-platform: no TAWC-DRI; presenting via PRESENT_SOCKET");
+            xdisp->present_sock = true;
+            free(qe);
+            return;
+        }
         HYBRIS_ERROR("x11-platform: TAWC-DRI extension not advertised by "
-                     "the X server. The libhybris X11 EGL platform requires "
-                     "a tawc-patched Xwayland (see notes/xwayland.md).");
+                     "the X server, and PRESENT_SOCKET is unset.");
         free(qe);
         return;
     }
@@ -198,9 +206,9 @@ extern "C" EGLNativeWindowType x11ws_CreateWindow(EGLNativeWindowType win,
                                                   _EGLDisplay *display)
 {
     X11Display *xdisp = (X11Display *)display;
-    if (!xdisp->tawc_dri_present) {
-        HYBRIS_ERROR("x11-platform: cannot create window — TAWC-DRI not "
-                     "available on this X server.");
+    if (!xdisp->tawc_dri_present && !xdisp->present_sock) {
+        HYBRIS_ERROR("x11-platform: cannot create window — no TAWC-DRI and "
+                     "no PRESENT_SOCKET.");
         return NULL;
     }
 
@@ -221,7 +229,7 @@ extern "C" EGLNativeWindowType x11ws_CreateWindow(EGLNativeWindowType win,
 
     X11NativeWindow *window =
         new X11NativeWindow(xdisp->conn, xwin, xdisp->tawc_dri_opcode, w, h,
-                            xdisp->tawc_dri_v03);
+                            xdisp->tawc_dri_v03, xdisp->present_sock);
     window->common.incRef(&window->common);
     return (EGLNativeWindowType)static_cast<ANativeWindow *>(window);
 }

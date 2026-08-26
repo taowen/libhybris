@@ -62,7 +62,8 @@ public:
                     uint8_t tawc_dri_opcode,
                     unsigned int width,
                     unsigned int height,
-                    bool server_v03);
+                    bool server_v03,
+                    bool present_sock);
     ~X11NativeWindow();
 
     void prepareSwap(EGLint *damage_rects, EGLint damage_n_rects);
@@ -122,6 +123,7 @@ private:
      * additionally requires the special-event registration to have
      * succeeded and gates the event-driven buffer lifecycle. */
     bool m_server_v03;
+    bool m_present_sock;
     bool m_events_enabled;
     uint32_t m_eid;
     xcb_special_event_t *m_special_ev;

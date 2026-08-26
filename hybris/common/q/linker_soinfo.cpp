@@ -457,6 +457,20 @@ void soinfo::call_constructors() {
     return;
   }
 
+  /* OriginOS / Android 16 libcrypto FIPS HMAC is of the in-process image.
+   * The Q linker maps it under glibc, so the constructor always abort()s.
+   * Skip DT_INIT; still construct dependencies. EGL/Mali only need symbols. */
+  if (soname_ != nullptr &&
+      (strcmp(soname_, "libcrypto.so") == 0 ||
+       strcmp(soname_, "libssl.so") == 0)) {
+    DEBUG("HYBRIS: skipping %s constructors (FIPS self-test)\n", soname_);
+    constructors_called = true;
+    get_children().for_each([] (soinfo* si) {
+      si->call_constructors();
+    });
+    return;
+  }
+
   // We set constructors_called before actually calling the constructors, otherwise it doesn't
   // protect against recursive constructor calls. One simple example of constructor recursion
   // is the libc debug malloc, which is implemented in libc_malloc_debug_leak.so:
