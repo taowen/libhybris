@@ -5,9 +5,11 @@
 #include "shaders/widget-large.vert.inc"
 #include "shaders/widget-large.frag.inc"
 #include "widget_fixture.h"
+#include "render_path.h"
 
 
-static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic, int large, int update_mode) {
+static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic, int large, int update_mode, int render_family, int entry_route) {
+  struct render_path path = {.family = render_family, .route = entry_route};
   const int staged = update_mode == 1;
   const int templated = update_mode == 2;
   const int repeat = staged || templated;
@@ -20,16 +22,18 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   PFN_vkGetInstanceProcAddr gip = sym(h, "vkGetInstanceProcAddr");
   VkInstance instance = VK_NULL_HANDLE;
   V(vkCreateInstance);
-  if (templated) {
+  if (templated || render_family) {
     PFN_vkEnumerateInstanceVersion version = (PFN_vkEnumerateInstanceVersion)gip(VK_NULL_HANDLE, "vkEnumerateInstanceVersion");
     uint32_t supported = VK_API_VERSION_1_0;
     if (!version) return 3;
     CHECK(version(&supported));
-    if (supported < VK_API_VERSION_1_1) return 3;
+    uint32_t required = render_family ? render_path_api(render_family) : VK_API_VERSION_1_1;
+    if (supported < required) { printf("UNSUPPORTED rendering instance API version\n"); return 3; }
   }
   VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                            .pApplicationName = "hybris-ubo",
-                           .apiVersion = templated ? VK_API_VERSION_1_1 : VK_API_VERSION_1_0};
+                           .apiVersion = render_family ? render_path_api(render_family) :
+                                         templated ? VK_API_VERSION_1_1 : VK_API_VERSION_1_0};
   VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
                              .pApplicationInfo = &app};
   const char *layer = "VK_LAYER_KHRONOS_validation";
@@ -165,8 +169,25 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                            .queueCreateInfoCount = 1,
                            .pQueueCreateInfos = &qc};
+  if (render_family) {
+    int result = render_path_enable(&path, gip, instance, pd, &dc);
+    if (result) {
+      if (messenger) destroy_messenger(instance, messenger, NULL);
+      p_vkDestroyInstance(instance, NULL);
+      return result;
+    }
+  }
   VkDevice device;
   CHECK(p_vkCreateDevice(pd, &dc, NULL, &device));
+  if (render_family) {
+    int result = render_path_resolve(&path, h, gip, instance, device);
+    if (result) {
+      p_vkDestroyDevice(device, NULL);
+      if (messenger) destroy_messenger(instance, messenger, NULL);
+      p_vkDestroyInstance(instance, NULL);
+      return result;
+    }
+  }
   VkQueue queue;
   p_vkGetDeviceQueue(device, qi, 0, &queue);
   VkPhysicalDeviceMemoryProperties mp;
@@ -377,8 +398,8 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
                                   .pAttachments = &att,
                                   .subpassCount = 1,
                                   .pSubpasses = &sub};
-  VkRenderPass rp;
-  CHECK(p_vkCreateRenderPass(device, &rp_ci, NULL, &rp));
+  VkRenderPass rp = VK_NULL_HANDLE;
+  if (!render_family) CHECK(p_vkCreateRenderPass(device, &rp_ci, NULL, &rp));
   VkFramebufferCreateInfo fb_ci = {.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
                                    .renderPass = rp,
                                    .attachmentCount = 1,
@@ -386,8 +407,8 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
                                    .width = kWidgetImage,
                                    .height = kWidgetImage,
                                    .layers = 1};
-  VkFramebuffer fb;
-  CHECK(p_vkCreateFramebuffer(device, &fb_ci, NULL, &fb));
+  VkFramebuffer fb = VK_NULL_HANDLE;
+  if (!render_family) CHECK(p_vkCreateFramebuffer(device, &fb_ci, NULL, &fb));
   VkPipelineShaderStageCreateInfo stages[2] = {
       {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
        .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -436,6 +457,11 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
       .pColorBlendState = &blend,
       .layout = pipeline_layout,
       .renderPass = rp};
+  VkFormat color_format = VK_FORMAT_R8G8B8A8_UNORM;
+  VkPipelineRenderingCreateInfo rendering_pipeline = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+      .colorAttachmentCount = 1, .pColorAttachmentFormats = &color_format};
+  if (render_family) gp.pNext = &rendering_pipeline;
   VkPipeline pipeline;
   CHECK(p_vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gp, NULL,
                                     &pipeline));
@@ -551,13 +577,15 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
                                     .renderArea = {{0, 0}, {kWidgetImage, kWidgetImage}},
                                     .clearValueCount = 1,
                                     .pClearValues = &clear};
-      p_vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+      if (render_family) render_path_begin(&path, cb, image, view, kWidgetImage, kWidgetImage);
+      else p_vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
       p_vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
       p_vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout,
                                 0, 1, &set, dynamic ? 1 : 0, dynamic ? &dynamic_offset : NULL);
       p_vkCmdBindIndexBuffer(cb, ibo, 0, VK_INDEX_TYPE_UINT16);
       p_vkCmdDrawIndexed(cb, kWidgetIndexCount, 1, 0, 0, 0);
-      p_vkCmdEndRenderPass(cb);
+      if (render_family) render_path_end(&path, cb, image);
+      else p_vkCmdEndRenderPass(cb);
       VkBufferImageCopy copy = {
           .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
           .imageExtent = {kWidgetImage, kWidgetImage, 1}};
@@ -566,7 +594,8 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
       VkMemoryBarrier to_host = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
           .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
           .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
-      p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+      if (render_family) render_path_to_host(&path, cb);
+      else p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
           VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &to_host, 0, NULL, 0, NULL);
       CHECK(p_vkEndCommandBuffer(cb));
     }
@@ -576,7 +605,8 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
     VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
                        .commandBufferCount = 1,
                        .pCommandBuffers = &cb};
-    CHECK(p_vkQueueSubmit(queue, 1, &si, fence));
+    if (render_family) CHECK(render_path_submit(&path, queue, cb, fence));
+    else CHECK(p_vkQueueSubmit(queue, 1, &si, fence));
     CHECK(p_vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     uint8_t *pixels = NULL;
     CHECK(p_vkMapMemory(device, rmem, 0, kWidgetImage * kWidgetImage * 4, 0,
@@ -610,8 +640,8 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   }
   p_vkDestroyCommandPool(device, cpool, NULL);
   p_vkDestroyPipeline(device, pipeline, NULL);
-  p_vkDestroyFramebuffer(device, fb, NULL);
-  p_vkDestroyRenderPass(device, rp, NULL);
+  if (fb) p_vkDestroyFramebuffer(device, fb, NULL);
+  if (rp) p_vkDestroyRenderPass(device, rp, NULL);
   p_vkDestroyPipelineLayout(device, pipeline_layout, NULL);
   if (templated) destroy_template(device, update_template, NULL);
   p_vkDestroyDescriptorPool(device, pool, NULL);
@@ -679,19 +709,19 @@ int ubo_validation_probe(void) {
 
 
 int ubo_draw(int inject_wrong_binding, int validate) {
-  return ubo_draw_internal(inject_wrong_binding, validate, 0, 0, 0);
+  return ubo_draw_internal(inject_wrong_binding, validate, 0, 0, 0, 0, 0);
 }
 
 int ubo_dynamic_probe(int validate) {
-  int result = ubo_draw_internal(0, validate, 1, 0, 0);
+  int result = ubo_draw_internal(0, validate, 1, 0, 0, 0, 0);
   if (result) return result;
-  return ubo_draw_internal(1, validate, 1, 0, 0);
+  return ubo_draw_internal(1, validate, 1, 0, 0, 0, 0);
 }
 
 int ubo_large_probe(int validate) {
   for (int dynamic = 0; dynamic < 2; ++dynamic)
     for (int alternate = 0; alternate < 2; ++alternate) {
-      int result = ubo_draw_internal(alternate, validate, dynamic, 1, 0);
+      int result = ubo_draw_internal(alternate, validate, dynamic, 1, 0, 0, 0);
       if (result) return result;
     }
   return 0;
@@ -699,7 +729,7 @@ int ubo_large_probe(int validate) {
 
 int ubo_staged_probe(int validate) {
   for (int large = 0; large < 2; ++large) {
-    int result = ubo_draw_internal(0, validate, 0, large, 1);
+    int result = ubo_draw_internal(0, validate, 0, large, 1, 0, 0);
     if (result) return result;
   }
   return 0;
@@ -707,12 +737,22 @@ int ubo_staged_probe(int validate) {
 
 int ubo_template_probe(int validate) {
   for (int large = 0; large < 2; ++large) {
-    int result = ubo_draw_internal(0, validate, 0, large, 2);
+    int result = ubo_draw_internal(0, validate, 0, large, 2, 0, 0);
     if (result) return result;
   }
   return 0;
 }
 
 int ubo_dynamic_draw(int alternate) {
-  return ubo_draw_internal(alternate, 0, 1, 0, 0);
+  return ubo_draw_internal(alternate, 0, 1, 0, 0, 0, 0);
+}
+
+int ubo_render_probe(int family, int route, int validate) {
+  int first = route < 0 ? 0 : route, last = route < 0 ? 1 : route;
+  for (int entry = first; entry <= last; ++entry)
+    for (int alternate = 0; alternate < 2; ++alternate) {
+      int result = ubo_draw_internal(alternate, validate, 0, 0, 0, family, entry);
+      if (result) return result;
+    }
+  return 0;
 }

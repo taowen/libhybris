@@ -1619,3 +1619,35 @@ are 1.3.305 and 1.1.128 respectively. Core11 transfer, template/validation and
 both capture/replay gates now pass on X300. The driver-specific opt-in remains
 required there. Missing-HAL run `20260907T070107-1a7bcb32` correctly reports
 icd-version FAIL without starting dependent cases. No unit-test suite was added.
+
+
+Dynamic rendering and Synchronization2 (2026-09-07): `render-core13` requests
+API 1.3; `render-khr13` exercises the same promoted functionality through KHR
+names on an API 1.1 instance/device. The latter enables dynamic_rendering,
+synchronization2, depth_stencil_resolve and create_renderpass2. Both feature
+bits are queried and enabled before creating the device. The fixed widget
+uses Begin/EndRendering, PipelineBarrier2 for image transitions and host
+visibility, and QueueSubmit2 plus a fence. The existing center-pixel oracle
+checks both known descriptor bindings. GIPA and GDPA each run both bindings;
+`-elf` and `-linked` variants exercise direct exports. The standard-loader
+validation variants include synchronization validation. No unit-test suite
+was added; render-path setup is kept in a separate source module.
+
+Final full X300 `20260907T071924-d081b4de`: **110 PASS / 7 UNSUPPORTED /
+3 CRASH** with the build-scoped Mali option enabled. Core13 and KHR proc-query
+paths pass on native, frontend and ICD; core ELF/link paths also pass.
+Both new validation cases pass. Frontend KHR ELF/link calls abort at
+`vkCmdPipelineBarrier2KHR`, whose Android ELF implementation is absent;
+native/standard-loader missing KHR ELF exports report UNSUPPORTED. The third
+crash is the previously recorded native-groups failure. A candidate fallback
+to core ELF trampolines still crashed (`20260907T071646-9a3a2d5d`) and was
+removed; no alias runtime fix is included in this batch.
+
+Final Redmi `20260907T071925-53a698f8`: **97 PASS / 22 UNSUPPORTED /
+1 CRASH** (native-groups). All 18 new cases are unsupported because this
+loader/device does not provide the required API 1.3 or KHR dynamic-rendering
+capabilities. Existing widget validation and both capture/replay gates pass
+on both devices. Those capture gates concern ordinary/dynamic UBO offsets,
+not capture of the new dynamic-rendering command sequence. Multiview, depth,
+resolves, secondary command buffers, semaphore dependencies, multiple queues,
+non-coherent memory and window presentation are not covered by these cases.

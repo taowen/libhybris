@@ -86,6 +86,14 @@ int main(int argc, char **argv) {
     rc = ubo_large_probe(1);
   else if (!strcmp(mode, "ubo-dynamic-good") || !strcmp(mode, "ubo-dynamic-bad"))
     rc = ubo_dynamic_draw(!strcmp(mode, "ubo-dynamic-bad"));
+  else if (!strcmp(mode, "render-core13") || !strcmp(mode, "render-khr13"))
+    rc = ubo_render_probe(!strcmp(mode, "render-core13") ? 1 : 2, -1, 0);
+  else if (!strcmp(mode, "render-core13-elf") || !strcmp(mode, "render-khr13-elf"))
+    rc = ubo_render_probe(!strcmp(mode, "render-core13-elf") ? 1 : 2, 2, 0);
+  else if (!strcmp(mode, "render-core13-linked") || !strcmp(mode, "render-khr13-linked"))
+    rc = ubo_render_probe(!strcmp(mode, "render-core13-linked") ? 1 : 2, 3, 0);
+  else if (!strcmp(mode, "render-core13-validation") || !strcmp(mode, "render-khr13-validation"))
+    rc = ubo_render_probe(!strcmp(mode, "render-core13-validation") ? 1 : 2, -1, 1);
   else if (!strcmp(mode, "ubo-dynamic"))
     rc = ubo_dynamic_probe(0);
   else if (!strcmp(mode, "ubo-dynamic-validation"))

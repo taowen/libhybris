@@ -236,6 +236,12 @@ cases = [
     ('hybris-linked', 'vk', 'probe-glibc-linked'),
 ]
 
+render_cases = ('render-core13', 'render-khr13', 'render-core13-elf', 'render-khr13-elf')
+for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
+    cases.extend((backend, mode, binary) for mode in render_cases)
+cases.extend(('hybris-linked', mode, 'probe-glibc-linked')
+             for mode in ('render-core13-linked', 'render-khr13-linked'))
+
 if a.icd_hal:
     adapter = stage / 'hybris/libhybris-vulkan-icd.so.0'
     if not adapter.is_file():
@@ -247,6 +253,9 @@ if a.icd_hal:
     cases += [('icd', mode, 'probe-glibc')
               for mode in ('version', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
+    cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases)
+    cases.extend(('icd-linked', mode, 'probe-glibc-linked')
+                 for mode in ('render-core13-linked', 'render-khr13-linked'))
     if a.validation_layer:
         (stage / 'layers').mkdir()
         shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
@@ -257,7 +266,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.extend([('icd', mode, 'probe-glibc') for mode in ('validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)

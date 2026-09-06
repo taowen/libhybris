@@ -573,3 +573,16 @@ responsibility. Reservation and allocation use HYBRIS_TLS_THUNK_SIZE (80).
 The first-touch probe and full Redmi/X300 results are in the baseline README;
 X300 initialization/TLS passes, but ICD graphics pipelines still crash.
 Signal/fork, SVE/SME and arbitrary Android pthread layouts are not covered.
+
+
+The standalone widget probe now shares dynamic-rendering and Synchronization2
+setup in `tests/baseline/render_path.c`. It explicitly queries/enables features,
+uses either API 1.3 core names or API 1.1 with the KHR extensions and their
+promoted dependencies, and exercises begin/end rendering, image/host barriers
+and queue submit2. GIPA, GDPA, ELF dlsym and linked weak symbols are separate
+routes. Missing optional ELF exports report UNSUPPORTED; exported frontend
+stubs that abort remain CRASH. See the baseline README for device results.
+The readback oracle checks the existing widget's center pixel for both known
+UBO bindings; these cases do not establish arbitrary shader/rendering semantics
+or capture/replay of dynamic rendering. The existing capture-dynamic workload
+means dynamic UBO offsets, not dynamic rendering.
