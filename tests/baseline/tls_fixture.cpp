@@ -163,3 +163,8 @@ extern "C" int mutex_fixture_timeout(long long *elapsed) {
     if (!error) error = pthread_mutex_destroy(&mutex);
     return error ? error : result;
 }
+
+extern "C" int pthread_mutex_timedlock_monotonic_np(pthread_mutex_t *, const struct timespec *);
+extern "C" int mutex_fixture_monotonic(void) {
+    return sync_mutex_monotonic(pthread_mutex_timedlock_monotonic_np);
+}

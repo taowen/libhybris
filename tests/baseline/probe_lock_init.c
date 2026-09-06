@@ -134,3 +134,24 @@ int sync_destroy_probe(int check_kind) {
   printf("%s PASS\n", check_kind ? "SYNC_KIND" : "SYNC_DESTROY");
   return 0;
 }
+
+int mutex_monotonic_probe(void) {
+#ifdef __BIONIC__
+  int (*wait)(pthread_mutex_t *, const struct timespec *) = dlsym(RTLD_DEFAULT, "pthread_mutex_timedlock_monotonic_np");
+  if (!wait) return 3;
+  return sync_mutex_monotonic(wait) ? 2 : 0;
+#else
+  void *common = dlopen("libhybris-common.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!common) return 2;
+  void *(*open_android)(const char *, int) = dlsym(common, "android_dlopen");
+  void *(*sym_android)(void *, const char *) = dlsym(common, "android_dlsym");
+  int (*close_android)(void *) = dlsym(common, "android_dlclose");
+  if (!open_android || !sym_android || !close_android) return 2;
+  void *fixture = open_android("./libtls-fixture.so", RTLD_NOW);
+  if (!fixture) return 2;
+  int (*run)(void) = sym_android(fixture, "mutex_fixture_monotonic");
+  int result = run ? run() : EINVAL;
+  if (close_android(fixture)) return 2;
+  return result ? 2 : 0;
+#endif
+}

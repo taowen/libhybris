@@ -52,6 +52,7 @@ int sync_destroy_probe(int check_kind);
 int stdio_probe(void);
 int cond_init_probe(void);
 int cond_clock_probe(void);
+int mutex_monotonic_probe(void);
 int shared_unavailable_probe(void);
 int tls_probe(void);
 int tls_bounds_probe(void);

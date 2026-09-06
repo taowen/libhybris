@@ -1545,6 +1545,7 @@ static struct _hook hooks_common[] = {
     HOOK_INDIRECT(pthread_mutex_trylock),
     HOOK_INDIRECT(pthread_mutex_lock_timeout_np),
     HOOK_INDIRECT(pthread_mutex_timedlock),
+    HOOK_INDIRECT(pthread_mutex_timedlock_monotonic_np),
     HOOK_DIRECT_NO_DEBUG(pthread_mutexattr_init),
     HOOK_DIRECT_NO_DEBUG(pthread_mutexattr_destroy),
     HOOK_DIRECT_NO_DEBUG(pthread_mutexattr_gettype),

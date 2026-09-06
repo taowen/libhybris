@@ -95,3 +95,26 @@ static int sync_kind_lifecycle(void) {
     int cleanup = pthread_rwlockattr_destroy(&attr);
     return error ? error : cleanup;
 }
+
+static inline int sync_mutex_monotonic(int (*wait)(pthread_mutex_t *, const struct timespec *)) {
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    struct timespec start, deadline, end;
+    clock_gettime(CLOCK_MONOTONIC, &deadline);
+    int error = wait(&mutex, &deadline);
+    if (error) return error;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    deadline = start;
+    deadline.tv_nsec += 100000000;
+    if (deadline.tv_nsec >= 1000000000) { ++deadline.tv_sec; deadline.tv_nsec -= 1000000000; }
+    int result = wait(&mutex, &deadline);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    long long elapsed = (end.tv_sec - start.tv_sec) * 1000000000LL + end.tv_nsec - start.tv_nsec;
+    printf("MUTEX_MONOTONIC result=%d expected=%d elapsed_ns=%lld\n", result, ETIMEDOUT, elapsed);
+    error = pthread_mutex_unlock(&mutex);
+    if (!error) error = wait(&mutex, &deadline);
+    if (!error) error = pthread_mutex_unlock(&mutex);
+    if (!error) error = wait(&mutex, NULL);
+    if (!error) error = pthread_mutex_unlock(&mutex);
+    if (!error) error = pthread_mutex_destroy(&mutex);
+    return error ? error : result != ETIMEDOUT || elapsed < 90000000 ? EINVAL : 0;
+}

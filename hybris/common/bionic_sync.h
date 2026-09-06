@@ -44,6 +44,9 @@ __attribute__((visibility("hidden")))
 int _hybris_hook_pthread_mutex_timedlock(pthread_mutex_t *__mutex,
                                       const struct timespec *__abs_timeout);
 __attribute__((visibility("hidden")))
+int _hybris_hook_pthread_mutex_timedlock_monotonic_np(pthread_mutex_t *mutex,
+                                                   const struct timespec *deadline);
+__attribute__((visibility("hidden")))
 int _hybris_hook_pthread_mutexattr_setpshared(pthread_mutexattr_t *__attr,
                                            int pshared);
 __attribute__((visibility("hidden")))

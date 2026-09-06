@@ -428,8 +428,8 @@ int _hybris_hook_pthread_mutex_lock_timeout_np(pthread_mutex_t *__mutex, unsigne
     return error == ETIMEDOUT ? EBUSY : error;
 }
 
-int _hybris_hook_pthread_mutex_timedlock(pthread_mutex_t *__mutex,
-                                      const struct timespec *__abs_timeout)
+static int mutex_timedlock_clock(pthread_mutex_t *__mutex,
+                                 const struct timespec *__abs_timeout, clockid_t clock)
 {
     TRACE_HOOK("mutex %p abs timeout %p", __mutex, __abs_timeout);
 
@@ -455,7 +455,20 @@ int _hybris_hook_pthread_mutex_timedlock(pthread_mutex_t *__mutex,
         realmutex = hybris_get_static_mutex(__mutex);
     }
 
-    return pthread_mutex_timedlock(realmutex, __abs_timeout);
+    if (!__abs_timeout)
+        return pthread_mutex_lock(realmutex);
+    return pthread_mutex_clocklock(realmutex, clock, __abs_timeout);
+}
+
+int _hybris_hook_pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *deadline)
+{
+    return mutex_timedlock_clock(mutex, deadline, CLOCK_REALTIME);
+}
+
+int _hybris_hook_pthread_mutex_timedlock_monotonic_np(pthread_mutex_t *mutex,
+                                                   const struct timespec *deadline)
+{
+    return mutex_timedlock_clock(mutex, deadline, CLOCK_MONOTONIC);
 }
 
 int _hybris_hook_pthread_mutexattr_setpshared(pthread_mutexattr_t *__attr,

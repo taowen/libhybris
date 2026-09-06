@@ -1410,3 +1410,23 @@ Rebuilt runs `20260907T044949-b035cb87` (29854870) and
 The legacy mutex probe now returns EBUSY=16 after 103955677ns / 100934062ns,
 with acquisition/reuse/cleanup passing. Validation/SyncVal and both capture
 evidence gates pass. Common's 130 defined dynamic exports remain unchanged.
+
+
+`mutex-monotonic` covers the API-28 pthread_mutex_timedlock_monotonic_np
+entry, newly registered in the hybris hook table. It shares mutex translation
+with ordinary timedlock but supplies CLOCK_MONOTONIC to the host. Native
+resolves the platform entry; hybris executes an actual bionic fixture import.
+The probe obtains an unused static mutex, waits against a 100ms monotonic
+absolute deadline while held, requires ETIMEDOUT and at least 90ms elapsed,
+then unlocks and acquires again with the expired deadline and with a null
+deadline before cleanup. Null deadlines route to ordinary blocking lock;
+this probe checks the uncontended null case.
+This does not cover PI/shared mutexes, wall-clock jumps or all timedlock
+validation cases. The legacy millisecond API continues to require EBUSY.
+
+Final rebuilt runs `20260907T045649-a2754b94` (29854870) and
+`20260907T045649-f05cab0e` (KB2000) each report 90 PASS, 2 UNSUPPORTED,
+including native/hybris monotonic mutex, legacy timeout, VVL/SyncVal and both
+capture gates. Native/hybris deadlines expire after approximately 100ms and
+return ETIMEDOUT=110; expired and null deadlines acquire the unlocked mutex.
+The new hook is hidden; the common defined export set remains 130 entries.

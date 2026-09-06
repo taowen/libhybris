@@ -497,3 +497,11 @@ Legacy mutex millisecond timeout now uses an explicit monotonic host deadline
 and maps timeout to bionic EBUSY. The fixture imports the hook and exercises
 zero-timeout acquisition, a 100ms failure and reuse. LP64 native comparison,
 clock-step behavior, 32-bit overflow and process-shared operation are unverified.
+
+
+The API-28 mutex monotonic timedlock symbol is now hooked. Realtime and
+monotonic absolute timedlock share backing-mutex translation and use explicit
+clock IDs; the legacy relative-millisecond entry retains its EBUSY mapping.
+The native/imported-fixture probe checks timeout and expired-deadline
+acquisition on an unlocked mutex, including a null deadline. Null deadlines
+use ordinary blocking lock. PI/shared/time-jump coverage remains open.
