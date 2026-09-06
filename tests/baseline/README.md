@@ -529,3 +529,10 @@ from the tool but is not a verified output of this fixture. No new capture
 format or replay engine is introduced. The preliminary checker run caught a
 local begin/draw tuple-order bug; only the final runs above pass the completed
 association checks. Older capture passes alone do not prove this new gate.
+
+Bionic TLS source split regression: fresh library/probe builds preserve 130
+common dynamic exports (name/type/binding/visibility) and PT_TLS file size 0,
+memory size 1032 bytes, alignment 16. Runs `20260907T012238-92e0cbe2`
+(29854870) and `20260907T012239-23559b33` (KB2000) each complete
+**50 PASS / 2 UNSUPPORTED**, with VVL, SyncVal and draw capture evidence enabled.
+No new claim of actual TLS destructor execution follows from this source split.

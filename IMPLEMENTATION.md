@@ -44,7 +44,8 @@ are committed and pushed separately to taowen/ardesk.
 
 - common/linker_bridge.c owns Android linker selection, initialization,
   backend entry pointers and public android_*/hybris_* loader entry points.
-- common/hooks.c retains libc hooks, hook selection and current TLS storage.
+- common/hooks.c retains libc hooks and hook selection. bionic_tls.c owns the
+  initial-exec TLS region, thread allocation and promoted-module replay registry.
   linker_bridge.h is private; new cross-file helpers have hidden visibility.
   Existing exported backend pointers and TLS callbacks retain their ABI.
 - Baseline probes are independent translation units by responsibility; shared
@@ -182,3 +183,17 @@ before/after and attachment-to-copy identity. Both device runs
 at draw 60, submit 66. This is one draw with capture-local IDs, not runtime
 generation tracking or arbitrary application failure localization. G06/G12
 remain partial/open at their wider scope.
+
+
+Bionic TLS ownership split: moved the static TLS layout, per-thread compat
+allocation, pthread cleanup keys and promoted-module registry out of hooks.c
+into bionic_tls.c. hooks.c decreases from 3826 to 3549 lines. The two existing
+linker/patcher callbacks retain their exported names/visibility. Fresh AArch64
+library/probe builds preserve all 130 defined dynamic common exports and the
+TLS segment's 1032-byte memory size, zero file size and 16-byte alignment.
+Allocation, replay and destructor policies are unchanged. This is a structural
+change, not proof of TLS destructor execution or resource reclamation.
+Verified with optional VVL/SyncVal and capture on 29854870
+(`20260907T012238-92e0cbe2`) and KB2000 (`20260907T012239-23559b33`):
+50 PASS / 2 UNSUPPORTED each, including thread lifecycle, EGL migration and
+fixed draw-resource/attachment checks.

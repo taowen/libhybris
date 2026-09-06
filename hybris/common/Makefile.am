@@ -27,6 +27,8 @@ endif
 
 libhybris_common_la_SOURCES = \
 	hooks.c \
+	bionic_tls.c \
+	bionic_tls.h \
 	linker_bridge.c \
 	linker_bridge.h \
 	hooks_shm.c \
