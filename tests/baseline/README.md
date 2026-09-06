@@ -978,3 +978,17 @@ Fresh library/probe builds and runs `20260907T025846-dffa5ff2` (29854870) and
 including VVL, SyncVal and capture/replay. Relative 100 ms waits complete in
 about 100–102 ms; all four invalid-duration cases return EINVAL (22). The 130
 common dynamic exports remain unchanged.
+
+
+Mutex/condition hook split regression: `bionic_sync.c` now owns the 17 API
+hooks and Android condition pulse helpers in addition to static publication.
+`hooks.c` keeps the unchanged registration table. Compared the moved bodies
+and registration against the preceding revision; rebuilt libraries and probes.
+All 130 common and 643 Vulkan defined dynamic symbols remain unchanged, and
+the 17 cross-file hook entry points remain private.
+Runs `20260907T030507-d17a9d9b` (29854870) and
+`20260907T030507-63e6a157` (KB2000) each completed **61 PASS / 2 UNSUPPORTED**,
+including mutex/rwlock/condition first use, condition clock/error handling,
+shared-allocation failure, EGL/Vulkan, validation/SyncVal and capture/replay.
+This structural change does not establish working Android process-shared
+synchronization, destruction with waiters, 32-bit ABI coverage or fairness.

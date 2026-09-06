@@ -26,4 +26,48 @@ pthread_cond_t *hybris_get_static_cond(void *storage);
 __attribute__((visibility("hidden")))
 uintptr_t hybris_get_static_rwlock_value(void *storage);
 
+/* Private ABI hooks used by the central symbol registration table. */
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_mutex_init(pthread_mutex_t *__mutex,
+                          __const pthread_mutexattr_t *__mutexattr);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_mutex_destroy(pthread_mutex_t *__mutex);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_mutex_lock(pthread_mutex_t *__mutex);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_mutex_trylock(pthread_mutex_t *__mutex);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_mutex_unlock(pthread_mutex_t *__mutex);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_mutex_lock_timeout_np(pthread_mutex_t *__mutex, unsigned __msecs);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_mutex_timedlock(pthread_mutex_t *__mutex,
+                                      const struct timespec *__abs_timeout);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_mutexattr_setpshared(pthread_mutexattr_t *__attr,
+                                           int pshared);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_cond_init(pthread_cond_t *cond,
+                                const pthread_condattr_t *attr);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_cond_destroy(pthread_cond_t *cond);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_cond_broadcast(pthread_cond_t *cond);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_cond_signal(pthread_cond_t *cond);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_cond_clockwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
+                 clockid_t clock_id, const struct timespec *abstime);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_cond_timedwait_monotonic(pthread_cond_t *cond,
+                pthread_mutex_t *mutex, const struct timespec *abstime);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_cond_timedwait(pthread_cond_t *cond,
+                pthread_mutex_t *mutex, const struct timespec *abstime);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_cond_timedwait_relative_np(pthread_cond_t *cond,
+                pthread_mutex_t *mutex, const struct timespec *reltime);
+
 #endif

@@ -49,7 +49,7 @@
 | [GLES 包装](hybris/glesv2/glesv2.c) | GLES 导出与 Android 库桥接 | 提供桌面 OpenGL core/compat、GLX 或完整 GL→GLES 转换 |
 | [EGL X11](hybris/egl/platforms/x11/x11_window.cpp) | `TAWC-DRI` 与 `m_present_sock` 分支并存；后者发 AHB3 私有消息 | EGL X11 已只有统一窗口协议，或已经支持 Vulkan X11 |
 | [Vulkan Wayland](hybris/vulkan/platforms/wayland/wayland_window.cpp) | android_wlegl 缓冲区提交和 fence 等待 | 已通过 resize、surface lost、多窗口和 compositor release 压力测试 |
-| [loader bridge](hybris/common/linker_bridge.c)、[libc hooks](hybris/common/hooks.c)、[TLS 说明](TAWC_FORK.md) | 独立 Android linker、libc/线程桥接、ARM64 TLS thunk | 任意 Android 版本、任意 vendor library 都兼容 |
+| [loader bridge](hybris/common/linker_bridge.c)、[libc hooks](hybris/common/hooks.c)、[同步桥接](hybris/common/bionic_sync.c)、[TLS 说明](TAWC_FORK.md) | 独立 Android linker、libc/线程桥接、ARM64 TLS thunk | 任意 Android 版本、任意 vendor library 都兼容 |
 
 摸底中发现本机旧安装目录残留 `vulkanplatform_x11.so`，但当前源码没有相应构建目标。以后必须干净 staging，并记录实际加载文件的 build-id/SHA256，不能拿安装目录文件名证明源码功能。
 
