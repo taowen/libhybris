@@ -1484,3 +1484,40 @@ Rebuilt runs `20260907T051103-85f6e8df` (29854870) and
 `20260907T051103-d3f11c87` (KB2000) each report 92 PASS, 2 UNSUPPORTED,
 including concurrent init/lifecycle, VVL/SyncVal and both capture gates.
 Common's 130 defined dynamic exports remain unchanged.
+
+
+ICD device ownership: `icd/device.c` stores per-device generation, parent
+instance generation, backend GDPA/destructor and allocation callbacks. Physical
+handles from ordinary/core/KHR group enumeration are associated with their
+instance. `icd-life` enables bounded instance/device traces; the runner checks
+19 paired device lifetimes, at least two live devices, valid live parents and
+zero remaining records. Trace retirement precedes backend destruction and is
+not GPU-completion evidence. The evidence parser rejects wrong parents,
+missing destroys and duplicate creates in mutated copies of an actual log
+(`20260907T051844-72e121b6/device-negative-check.log`).
+
+The extended allocator probe rejects device creation, restores allocation,
+obtains a queue and destroys the device/instance. Native, replacement frontend
+and standard-loader paths use ordinary physical enumeration. Direct ICD alone
+uses ordinary, core group and KHR group enumeration in separate instances;
+each rejected adapter allocation makes exactly one callback and leaves the
+live allocation count unchanged. Each recovered round finishes with no live
+allocations. No callback invokes Vulkan while executing.
+
+Full library/probe builds and final runs `20260907T052046-87a800b9` (29854870)
+and `20260907T052046-9a4d3d37` (KB2000) each completed **92 PASS /
+2 UNSUPPORTED**, including validation, SyncVal and ordinary/dynamic
+capture/replay. Both device evidence files report 19 creations/destructions,
+remaining=0 and peak_live=2; respectively two and three distinct raw handles
+were reused across lifetimes with different generations. ICD still exports
+exactly its three loader entrypoints. This is optional ICD metadata evidence,
+not resource-generation coverage or replacement-frontend state management.
+
+Exploratory runs `20260907T051844-72e121b6` / `20260907T051844-288595ec`
+used KHR group enumeration in all allocator paths. Native and replacement
+frontend crashed after that enumeration, whereas direct and standard-loader
+ICD passed. The Android loader/driver cause remains unresolved; these failures
+are retained and the final non-direct probe deliberately does not claim KHR
+group coverage. Physical-inventory allocation failure, multiple physical GPUs,
+trace truncation, arbitrary driver allocation failures and malformed HALs
+remain unverified. No unit-test suite was added.

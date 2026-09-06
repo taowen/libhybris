@@ -529,3 +529,24 @@ atomic decrement, and the unhooked-log option is initialized with pthread_once.
 Replacing a callback does not wait for an in-flight invocation; code/context
 lifetime remains caller-owned. This removes these specific shared-state races
 without claiming global lookup/configuration thread safety.
+
+
+The optional ICD now owns device records in `icd/device.c`, with a unique
+per-device generation, parent instance generation, backend GDPA/destructor
+and allocator. Instance-local physical inventories are populated by ordinary
+and core/KHR group enumeration, including returned VK_INCOMPLETE entries.
+Creation forwards the original create info and callbacks. GIPA/GDPA only
+substitute lifecycle wrappers when the backend exposes the queried command;
+ordinary device commands retain the current backend's lookup result.
+Registry locks never enclose driver or allocation callbacks. Vulkan external
+synchronization remains required; these tables do not make stale handles or
+concurrent destruction valid. Metadata retirement precedes backend destruction.
+
+The life runner validates device trace pairing and live instance parents.
+The direct allocator probe checks a rejected first device-record allocation,
+recovery and final allocation balance through ordinary/core/KHR physical-device
+enumeration. Android-loader KHR group handle use crashed in both native and
+replacement-front-end exploratory runs; the final non-direct allocator probe
+uses ordinary enumeration. This unresolved path is recorded in gaps.md.
+Resource state, multi-GPU ownership, physical-inventory OOM and arbitrary
+allocator failures remain outside this evidence.

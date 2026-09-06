@@ -15,6 +15,7 @@ import uuid
 from capture import stage_tools, run_capture
 from shader_evidence import stage_shader_reference
 from instance_evidence import instance_evidence
+from device_evidence import device_evidence
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -115,6 +116,7 @@ def kill_remote() -> None:
 metadata = {name: prop(name) for name in ['ro.product.model', 'ro.build.fingerprint', 'ro.build.version.sdk']}
 metadata['run_id'] = run_id
 metadata['instance_evidence_sha256'] = sha256_file(here / 'instance_evidence.py')
+metadata['device_evidence_sha256'] = sha256_file(here / 'device_evidence.py')
 metadata['commands'] = {}
 metadata['driver_observations'] = {}
 metadata['mapping_note'] = 'Snapshots observe file-backed paths at named phases. Staged hashes describe deployment files; Android file hashes are collected by path after execution, not from mapped pages.'
@@ -288,6 +290,8 @@ try:
                 + binary + ' ')
         if backend == 'icd' and mode == 'vk-init':
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 ' + command
+        if backend == 'icd' and mode == 'life':
+            command = 'HYBRIS_ICD_INSTANCE_TRACE=1 HYBRIS_ICD_DEVICE_TRACE=1 ' + command
         name = backend + '-' + mode
         metadata['commands'][name] = {'directory': remote, 'command': command + mode}
         try:
@@ -310,6 +314,13 @@ try:
                 (a.out / (name + '-instances.json')).write_text(json.dumps(evidence, indent=2) + '\n')
             except (ValueError, KeyError) as exc:
                 print(name, 'instance evidence failed:', exc, flush=True)
+                code = 2
+        if backend == 'icd' and mode == 'life' and code == 0:
+            try:
+                evidence = device_evidence(decoded)
+                (a.out / (name + '-devices.json')).write_text(json.dumps(evidence, indent=2) + '\n')
+            except (ValueError, KeyError) as exc:
+                print(name, 'device evidence failed:', exc, flush=True)
                 code = 2
         values = {}
         for line in decoded.splitlines():

@@ -1,0 +1,126 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+#define _GNU_SOURCE
+#define VK_NO_PROTOTYPES
+#include "device.h"
+#include <pthread.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/auxv.h>
+
+/* This table owns adapter metadata, never the loader's dispatch header.
+ * Vulkan external synchronization still governs destruction and child use. */
+struct device_state {
+    VkDevice handle;
+    uint64_t generation, instance_generation;
+    PFN_vkGetDeviceProcAddr resolver;
+    PFN_vkDestroyDevice destroy;
+    VkAllocationCallbacks allocator;
+    int custom_allocator;
+    struct device_state *next;
+};
+static pthread_mutex_t device_guard = PTHREAD_MUTEX_INITIALIZER;
+static struct device_state *devices;
+static uint64_t next_generation;
+static pthread_once_t trace_once = PTHREAD_ONCE_INIT;
+static int trace_enabled;
+static unsigned trace_count;
+
+static void initialize_trace(void)
+{
+    const char *value = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_ICD_DEVICE_TRACE");
+    trace_enabled = value && !strcmp(value, "1");
+}
+
+/* Called under the registry lock; bounded and absent from draw dispatch. */
+static void trace_device(const char *action, const struct device_state *state)
+{
+    if (!trace_enabled) return;
+    if (trace_count < 256)
+        fprintf(stderr, "HYBRIS_ICD_DEVICE %s generation=%" PRIu64
+                " instance=%" PRIu64 " handle=%p\n", action, state->generation,
+                state->instance_generation, (void *)state->handle);
+    else if (trace_count == 256)
+        fprintf(stderr, "HYBRIS_ICD_DEVICE truncated\n");
+    if (trace_count <= 256) ++trace_count;
+}
+
+static void free_state(struct device_state *state)
+{
+    if (state->custom_allocator)
+        state->allocator.pfnFree(state->allocator.pUserData, state);
+    else
+        free(state);
+}
+
+void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCallbacks *allocator)
+{
+    if (!device) return;
+    pthread_mutex_lock(&device_guard);
+    struct device_state **link = &devices;
+    while (*link && (*link)->handle != device) link = &(*link)->next;
+    struct device_state *state = *link;
+    if (state) {
+        *link = state->next;
+        trace_device("destroy", state);
+    }
+    pthread_mutex_unlock(&device_guard);
+    if (!state) return;
+    state->destroy(device, allocator);
+    free_state(state);
+}
+
+VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProcAddr resolver,
+    uint64_t instance_generation, VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
+    const VkAllocationCallbacks *allocator, VkDevice *device)
+{
+    pthread_once(&trace_once, initialize_trace);
+    struct device_state *state = allocator
+        ? allocator->pfnAllocation(allocator->pUserData, sizeof(*state),
+                                  _Alignof(struct device_state), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE)
+        : malloc(sizeof(*state));
+    if (!state) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    memset(state, 0, sizeof(*state));
+    state->custom_allocator = allocator != NULL;
+    if (allocator) state->allocator = *allocator;
+    pthread_mutex_lock(&device_guard);
+    if (next_generation == UINT64_MAX) {
+        pthread_mutex_unlock(&device_guard);
+        free_state(state);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+    state->generation = ++next_generation;
+    pthread_mutex_unlock(&device_guard);
+    VkResult result = create(physical, info, allocator, device);
+    if (result != VK_SUCCESS) {
+        free_state(state);
+        return result;
+    }
+    state->handle = *device;
+    state->instance_generation = instance_generation;
+    state->resolver = resolver;
+    state->destroy = (PFN_vkDestroyDevice)resolver(*device, "vkDestroyDevice");
+    pthread_mutex_lock(&device_guard);
+    state->next = devices;
+    devices = state;
+    trace_device("create", state);
+    pthread_mutex_unlock(&device_guard);
+    return result;
+}
+
+PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char *name)
+{
+    if (!device || !name) return NULL;
+    pthread_mutex_lock(&device_guard);
+    const struct device_state *state = devices;
+    while (state && state->handle != device) state = state->next;
+    PFN_vkGetDeviceProcAddr resolver = state ? state->resolver : NULL;
+    pthread_mutex_unlock(&device_guard);
+    PFN_vkVoidFunction backend = resolver ? resolver(device, name) : NULL;
+    if (backend && !strcmp(name, "vkDestroyDevice"))
+        return (PFN_vkVoidFunction)hybris_icd_destroy_device;
+    if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
+        return (PFN_vkVoidFunction)hybris_icd_device_proc;
+    return backend;
+}

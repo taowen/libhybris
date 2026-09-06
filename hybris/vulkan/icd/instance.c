@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
 #include "instance.h"
+#include "device.h"
 #include <pthread.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -10,6 +11,11 @@
 #include <sys/auxv.h>
 
 /* Driver handles keep their loader-owned dispatch header untouched. */
+struct physical_state {
+    VkPhysicalDevice handle;
+    struct physical_state *next;
+};
+
 struct instance_state {
     VkInstance handle;
     uint64_t generation;
@@ -17,6 +23,7 @@ struct instance_state {
     PFN_vkDestroyInstance destroy;
     VkAllocationCallbacks allocator;
     int custom_allocator;
+    struct physical_state *physical;
     struct instance_state *next;
 };
 static pthread_mutex_t instance_guard = PTHREAD_MUTEX_INITIALIZER;
@@ -47,6 +54,15 @@ static void trace_instance(const char *action, const struct instance_state *stat
 
 static void free_state(struct instance_state *state)
 {
+    struct physical_state *physical = state->physical;
+    while (physical) {
+        struct physical_state *next = physical->next;
+        if (state->custom_allocator)
+            state->allocator.pfnFree(state->allocator.pUserData, physical);
+        else
+            free(physical);
+        physical = next;
+    }
     if (state->custom_allocator)
         state->allocator.pfnFree(state->allocator.pUserData, state);
     else
@@ -111,6 +127,113 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
     return result;
 }
 
+/* Instance destruction is externally synchronized against its child queries.
+ * Never hold the registry lock while invoking driver or application callbacks. */
+static struct instance_state *find_instance(VkInstance instance)
+{
+    pthread_mutex_lock(&instance_guard);
+    struct instance_state *state = instances;
+    while (state && state->handle != instance) state = state->next;
+    pthread_mutex_unlock(&instance_guard);
+    return state;
+}
+
+static VkResult remember_physical(struct instance_state *state, VkPhysicalDevice handle)
+{
+    pthread_mutex_lock(&instance_guard);
+    struct physical_state *found = state->physical;
+    while (found && found->handle != handle) found = found->next;
+    pthread_mutex_unlock(&instance_guard);
+    if (found) return VK_SUCCESS;
+    struct physical_state *entry = state->custom_allocator
+        ? state->allocator.pfnAllocation(state->allocator.pUserData, sizeof(*entry),
+              _Alignof(struct physical_state), VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE)
+        : malloc(sizeof(*entry));
+    if (!entry) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    entry->handle = handle;
+    pthread_mutex_lock(&instance_guard);
+    found = state->physical;
+    while (found && found->handle != handle) found = found->next;
+    if (!found) {
+        entry->next = state->physical;
+        state->physical = entry;
+    }
+    pthread_mutex_unlock(&instance_guard);
+    if (found) {
+        if (state->custom_allocator)
+            state->allocator.pfnFree(state->allocator.pUserData, entry);
+        else
+            free(entry);
+    }
+    return VK_SUCCESS;
+}
+
+static VkResult VKAPI_CALL enumerate_physical(VkInstance instance, uint32_t *count,
+                                               VkPhysicalDevice *physical)
+{
+    struct instance_state *state = find_instance(instance);
+    PFN_vkEnumeratePhysicalDevices enumerate = state ?
+        (PFN_vkEnumeratePhysicalDevices)state->resolver(instance, "vkEnumeratePhysicalDevices") : NULL;
+    if (!enumerate) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result = enumerate(instance, count, physical);
+    if (physical && (result == VK_SUCCESS || result == VK_INCOMPLETE))
+        for (uint32_t i = 0; i < *count; ++i)
+            if (remember_physical(state, physical[i]) != VK_SUCCESS) {
+                *count = 0;
+                return VK_ERROR_OUT_OF_HOST_MEMORY;
+            }
+    return result;
+}
+
+static VkResult enumerate_groups(VkInstance instance, uint32_t *count,
+                                 VkPhysicalDeviceGroupProperties *groups, const char *name)
+{
+    struct instance_state *state = find_instance(instance);
+    PFN_vkEnumeratePhysicalDeviceGroups enumerate = state ?
+        (PFN_vkEnumeratePhysicalDeviceGroups)state->resolver(instance, name) : NULL;
+    if (!enumerate) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result = enumerate(instance, count, groups);
+    if (groups && (result == VK_SUCCESS || result == VK_INCOMPLETE))
+        for (uint32_t i = 0; i < *count; ++i)
+            for (uint32_t j = 0; j < groups[i].physicalDeviceCount; ++j)
+                if (remember_physical(state, groups[i].physicalDevices[j]) != VK_SUCCESS) {
+                    *count = 0;
+                    return VK_ERROR_OUT_OF_HOST_MEMORY;
+                }
+    return result;
+}
+
+static VkResult VKAPI_CALL enumerate_groups_core(VkInstance instance, uint32_t *count,
+                                                 VkPhysicalDeviceGroupProperties *groups)
+{
+    return enumerate_groups(instance, count, groups, "vkEnumeratePhysicalDeviceGroups");
+}
+
+static VkResult VKAPI_CALL enumerate_groups_khr(VkInstance instance, uint32_t *count,
+                                                VkPhysicalDeviceGroupProperties *groups)
+{
+    return enumerate_groups(instance, count, groups, "vkEnumeratePhysicalDeviceGroupsKHR");
+}
+
+static VkResult VKAPI_CALL create_device(VkPhysicalDevice physical,
+    const VkDeviceCreateInfo *info, const VkAllocationCallbacks *allocator, VkDevice *device)
+{
+    pthread_mutex_lock(&instance_guard);
+    struct instance_state *state = instances;
+    for (; state; state = state->next) {
+        struct physical_state *entry = state->physical;
+        while (entry && entry->handle != physical) entry = entry->next;
+        if (entry) break;
+    }
+    pthread_mutex_unlock(&instance_guard);
+    if (!state) return VK_ERROR_INITIALIZATION_FAILED;
+    PFN_vkCreateDevice create = (PFN_vkCreateDevice)state->resolver(state->handle, "vkCreateDevice");
+    PFN_vkGetDeviceProcAddr resolver = (PFN_vkGetDeviceProcAddr)
+        state->resolver(state->handle, "vkGetDeviceProcAddr");
+    if (!create || !resolver) return VK_ERROR_INITIALIZATION_FAILED;
+    return hybris_icd_create_device(create, resolver, state->generation, physical, info, allocator, device);
+}
+
 PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *name)
 {
     pthread_mutex_lock(&instance_guard);
@@ -122,5 +245,17 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     /* Preserve the HAL's command scope and extension gating. */
     if (backend && !strcmp(name, "vkDestroyInstance"))
         return (PFN_vkVoidFunction)destroy_instance;
+    if (backend && !strcmp(name, "vkEnumeratePhysicalDevices"))
+        return (PFN_vkVoidFunction)enumerate_physical;
+    if (backend && !strcmp(name, "vkEnumeratePhysicalDeviceGroups"))
+        return (PFN_vkVoidFunction)enumerate_groups_core;
+    if (backend && !strcmp(name, "vkEnumeratePhysicalDeviceGroupsKHR"))
+        return (PFN_vkVoidFunction)enumerate_groups_khr;
+    if (backend && !strcmp(name, "vkCreateDevice"))
+        return (PFN_vkVoidFunction)create_device;
+    if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
+        return (PFN_vkVoidFunction)hybris_icd_device_proc;
+    if (backend && !strcmp(name, "vkDestroyDevice"))
+        return (PFN_vkVoidFunction)hybris_icd_destroy_device;
     return backend;
 }
