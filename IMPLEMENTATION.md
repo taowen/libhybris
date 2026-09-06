@@ -586,3 +586,24 @@ The readback oracle checks the existing widget's center pixel for both known
 UBO bindings; these cases do not establish arbitrary shader/rendering semantics
 or capture/replay of dynamic rendering. The existing capture-dynamic workload
 means dynamic UBO offsets, not dynamic rendering.
+
+
+The replacement frontend now owns device/queue/pool/command-buffer metadata in
+`hybris/vulkan/render_dispatch.c`. Device creation reserves queue slots from
+the supplied queue create infos and caches eight GDPA results for core/KHR
+BeginRendering, EndRendering, PipelineBarrier2 and QueueSubmit2. Queue getters
+and command-buffer allocation register the returned handles. The direct ELF
+functions and backend-available GIPA/GDPA wrappers use those object-specific
+results; there is no core-name fallback and no dispatch-header inspection.
+Pool destruction retires implicit command-buffer records; explicit buffer free
+and device destruction retire their records. Pool reset retains valid records.
+
+Metadata uses the corresponding device/pool allocation callbacks. Allocation
+failure unwinds a pending command-buffer batch and clears every output handle.
+Driver calls and allocation callbacks execute outside the registry mutex.
+Vulkan external synchronization remains required. Handles created by bypassing
+the frontend are outside this registry's contract. The table uses linear lookup
+under one mutex; draw-path contention/performance is not established. This is
+not a complete frontend resource registry, generation-based diagnostic system,
+or an implementation of all promoted-command aliases. Building this module
+requires Vulkan 1.3 headers, as supplied by the current AArch64 build toolchain.

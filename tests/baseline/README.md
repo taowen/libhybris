@@ -1651,3 +1651,34 @@ on both devices. Those capture gates concern ordinary/dynamic UBO offsets,
 not capture of the new dynamic-rendering command sequence. Multiview, depth,
 resolves, secondary command buffers, semaphore dependencies, multiple queues,
 non-coherent memory and window presentation are not covered by these cases.
+
+
+Frontend rendering dispatch fix (2026-09-07): KHR direct ELF/link calls now
+resolve through the command buffer or queue's registered device, using the
+exact backend GDPA name captured at device creation. The previous missing
+`vkCmdPipelineBarrier2KHR` abort is fixed on X300; the earlier core-trampoline
+fallback remains absent. Core/KHR GIPA/GDPA availability gates remain downstream
+controlled. Vulkan's 643 exported names are unchanged.
+
+`render-owners` holds two devices and queues obtained through GetDeviceQueue2
+alive for six cycles. Each cycle mixes GIPA/GDPA/ELF dispatch, explicitly frees
+and reallocates a command buffer, resets its pool, submits through KHR Submit2,
+waits on a fence and implicitly frees remaining buffers through pool destruction.
+`command-alloc` rejects pool metadata allocation and the second allocation in a
+three-command-buffer batch, requires OUT_OF_HOST_MEMORY with no live-allocation
+delta, recovers, and checks final callback allocation balance after teardown.
+The follow-up sentinel-output runs `20260907T073033-e5e3003d` (X300) and
+`20260907T073034-948a7fc7` (Redmi) also verify all three nonzero output slots
+become NULL on batch failure, with final-live=0.
+
+Full X300 `20260907T072903-d60ecde5`: **114 PASS / 7 UNSUPPORTED / 1 CRASH**.
+Full Redmi `20260907T072904-613cf66c`: **98 PASS / 23 UNSUPPORTED / 1 CRASH**.
+The remaining crash on each is native-groups. X300 uses the explicit scoped Mali
+option for ICD cases. The four rendering commands pass via all frontend routes;
+render-owners passes on X300 and is unsupported on Redmi's missing extensions.
+Command allocation, existing lifecycle/concurrent device creation, widget
+validation and both capture/replay gates pass. No unit-test suite was added.
+Multi-GPU ownership, simultaneous command recording, protected queues,
+secondary command buffers, arbitrary driver allocation failures and lookup
+contention remain unverified; the metadata does not legalize stale-handle use
+or concurrent destruction without Vulkan external synchronization.

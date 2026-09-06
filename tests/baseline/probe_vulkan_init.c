@@ -290,3 +290,64 @@ int vulkan_allocator_probe(int direct_icd) {
   printf("VK_ALLOC %s\n", failed ? "FAIL" : "PASS");
   return failed ? 2 : 0;
 }
+
+/* Frontend-owned pool/command metadata must honor callbacks and unwind a
+ * partially allocated batch before invoking the driver. Independent probe. */
+int command_allocator_probe(void) {
+  void *h = dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!h) return 2;
+  PFN_vkGetInstanceProcAddr gip = sym(h, "vkGetInstanceProcAddr");
+  VkInstance instance = VK_NULL_HANDLE;
+  V(vkCreateInstance);
+  struct allocation_probe state = {0};
+  VkAllocationCallbacks callbacks = {.pUserData = &state, .pfnAllocation = instance_allocate,
+      .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
+  VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+  CHECK(p_vkCreateInstance(&ci, &callbacks, &instance));
+  V(vkDestroyInstance); V(vkEnumeratePhysicalDevices);
+  V(vkGetPhysicalDeviceQueueFamilyProperties); V(vkCreateDevice); V(vkDestroyDevice);
+  V(vkCreateCommandPool); V(vkDestroyCommandPool);
+  V(vkAllocateCommandBuffers); V(vkFreeCommandBuffers);
+  uint32_t count = 1, family;
+  VkPhysicalDevice physical;
+  VkResult result = p_vkEnumeratePhysicalDevices(instance, &count, &physical);
+  if ((result != VK_SUCCESS && result != VK_INCOMPLETE) || !count ||
+      !pick_queue(p_vkGetPhysicalDeviceQueueFamilyProperties, physical, &family)) return 2;
+  float priority = 1;
+  VkDeviceQueueCreateInfo qc = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+      .queueFamilyIndex = family, .queueCount = 1, .pQueuePriorities = &priority};
+  VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+      .queueCreateInfoCount = 1, .pQueueCreateInfos = &qc};
+  VkDevice device;
+  CHECK(p_vkCreateDevice(physical, &dc, &callbacks, &device));
+  VkCommandPoolCreateInfo pc = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .queueFamilyIndex = family};
+  unsigned live = state.live;
+  state.reject = 1;
+  VkCommandPool pool = VK_NULL_HANDLE;
+  result = p_vkCreateCommandPool(device, &pc, &callbacks, &pool);
+  state.reject = 0;
+  printf("COMMAND_ALLOC pool-reject=%d live-delta=%d\n", result, (int)state.live - (int)live);
+  if (result != VK_ERROR_OUT_OF_HOST_MEMORY || state.live != live) return 2;
+  CHECK(p_vkCreateCommandPool(device, &pc, &callbacks, &pool));
+  VkCommandBufferAllocateInfo ac = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 3};
+  VkCommandBuffer commands[3] = {
+      (VkCommandBuffer)(uintptr_t)1, (VkCommandBuffer)(uintptr_t)1, (VkCommandBuffer)(uintptr_t)1};
+  live = state.live;
+  state.fail_after = state.calls + 1;
+  result = p_vkAllocateCommandBuffers(device, &ac, commands);
+  state.fail_after = 0;
+  int empty = !commands[0] && !commands[1] && !commands[2];
+  printf("COMMAND_ALLOC batch-reject=%d live-delta=%d all-null=%d\n",
+      result, (int)state.live - (int)live, empty);
+  if (result != VK_ERROR_OUT_OF_HOST_MEMORY || state.live != live || !empty) return 2;
+  CHECK(p_vkAllocateCommandBuffers(device, &ac, commands));
+  p_vkFreeCommandBuffers(device, pool, 1, commands);
+  p_vkDestroyCommandPool(device, pool, &callbacks);
+  p_vkDestroyDevice(device, &callbacks);
+  p_vkDestroyInstance(instance, &callbacks);
+  printf("COMMAND_ALLOC recovered=1 final-live=%u\n", state.live);
+  dlclose(h);
+  return state.live ? 2 : 0;
+}

@@ -236,6 +236,8 @@ cases = [
     ('hybris-linked', 'vk', 'probe-glibc-linked'),
 ]
 
+cases.extend(('hybris', mode, 'probe-glibc') for mode in ('render-owners', 'command-alloc'))
+
 render_cases = ('render-core13', 'render-khr13', 'render-core13-elf', 'render-khr13-elf')
 for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.extend((backend, mode, binary) for mode in render_cases)

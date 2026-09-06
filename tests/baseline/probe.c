@@ -86,6 +86,10 @@ int main(int argc, char **argv) {
     rc = ubo_large_probe(1);
   else if (!strcmp(mode, "ubo-dynamic-good") || !strcmp(mode, "ubo-dynamic-bad"))
     rc = ubo_dynamic_draw(!strcmp(mode, "ubo-dynamic-bad"));
+  else if (!strcmp(mode, "command-alloc"))
+    rc = command_allocator_probe();
+  else if (!strcmp(mode, "render-owners"))
+    rc = render_owners_probe();
   else if (!strcmp(mode, "render-core13") || !strcmp(mode, "render-khr13"))
     rc = ubo_render_probe(!strcmp(mode, "render-core13") ? 1 : 2, -1, 0);
   else if (!strcmp(mode, "render-core13-elf") || !strcmp(mode, "render-khr13-elf"))

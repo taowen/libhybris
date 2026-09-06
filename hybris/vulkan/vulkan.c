@@ -34,6 +34,7 @@
 #include "logging.h"
 #include "ws.h"
 #include "vulkan_exports.h"
+#include "render_dispatch.h"
 
 static void *vulkan_handle = NULL;
 
@@ -192,7 +193,8 @@ PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
     LOCAL(vkCreateSwapchainKHR);
 #endif
 #undef LOCAL
-    return backend;
+    PFN_vkVoidFunction local = hybris_render_dispatch_proc(pName);
+    return local ? local : backend;
 }
 
 PFN_vkVoidFunction vkGetDeviceProcAddr(VkDevice device, const char* pName)
@@ -208,7 +210,8 @@ PFN_vkVoidFunction vkGetDeviceProcAddr(VkDevice device, const char* pName)
     if (!strcmp(pName, "vkCreateSwapchainKHR"))
         return (PFN_vkVoidFunction)vkCreateSwapchainKHR;
 #endif
-    return backend;
+    PFN_vkVoidFunction local = hybris_render_dispatch_proc(pName);
+    return local ? local : backend;
 }
 
 #ifdef WANT_WAYLAND
@@ -271,6 +274,9 @@ static void _resolve_vulkan_syms(void)
     _real_vkGetPhysicalDeviceSurfaceCapabilities2KHR = vulkan_handle
         ? (PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR)android_dlsym(vulkan_handle, "vkGetPhysicalDeviceSurfaceCapabilities2KHR") : NULL;
 #endif
+    hybris_render_dispatch_init(vulkan_handle
+        ? (PFN_vkCreateDevice)android_dlsym(vulkan_handle, "vkCreateDevice") : NULL,
+        _real_vkGetDeviceProcAddr);
     hybris_vulkan_resolve_exports(vulkan_handle);
 }
 
