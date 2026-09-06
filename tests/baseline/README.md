@@ -58,7 +58,10 @@ the runner returns nonzero for FAIL/TIMEOUT/CRASH.
 - Life: two devices from one instance, destroy/recreate, second `dlopen`,
   and two threads creating/destroying devices and fences. This is not a
   generation-tagged object table. A separate `unload` case closes the final
-  library reference; process exit must also succeed.
+  frontend library reference; process exit must also succeed. hybris keeps
+  `libhybris-common` mapped (`RTLD_NODELETE`) because vendor GOT /
+  `pthread_key` / `__cxa_atexit` still call into it after `libvulkan.so.1`
+  is gone. That is not Android driver unload.
 - Caps: print limits and advertised features; reject enabling an
   unadvertised feature or unknown extension with the exact Vulkan error.
   A disabled device extension must not be exposed through GDPA. This does
@@ -100,7 +103,7 @@ from `1599593`; exact binaries and dirty-source status are recorded per run.
 | Life (2 devices, recreate, 2 threads) | PASS | PASS | — |
 | Caps (refuse unadvertised, passthrough) | PASS | PASS | — |
 | UBO 272B + injected wrong binding | PASS | PASS | — |
-| Final library unload + process exit | PASS | CRASH | — |
+| Final library unload + process exit | PASS | PASS | — |
 | GLES context request 2, clear + shader draw + readback | PASS | PASS | — |
 | GLES context request 3, clear + shader draw + readback | PASS | PASS | — |
 | Native desktop GL context | unsupported | unsupported | — |
@@ -126,11 +129,10 @@ is recorded as `source_dirty` in the manifest.
 ## Review checks
 
 The manifest verification was checked against modified, missing, extra and
-redirected SONAME ELF files. Run `20260906T224739-95b7e3db` completed with 17 PASS,
-2 UNSUPPORTED (desktop GL), and 1 CRASH (hybris unload).
-Both embedded widget shaders passed `spirv-val --target-env vulkan1.0`
-and matched a fresh `glslangValidator -V --target-env vulkan1.0` compilation.
-The unload crash is an open G03 gap: Vulkan operations finish successfully,
-then the hybris process exits with SIGSEGV after the final `dlclose`.
-The runner reports this as CRASH and returns nonzero; it is not an expected pass.
+redirected SONAME ELF files. Run `20260906T230023-237d2d5e` completed with 18 PASS
+and 2 UNSUPPORTED (desktop GL). The earlier hybris unload SIGSEGV
+(`20260906T224739-95b7e3db`) is closed for this probe by pinning
+`libhybris-common`; vendor objects remain live. Both embedded widget
+shaders passed `spirv-val --target-env vulkan1.0` and matched a fresh
+`glslangValidator -V --target-env vulkan1.0` compilation.
 No new GPU feature or window-system compatibility is implied.

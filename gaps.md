@@ -151,7 +151,7 @@ P0 = 兼容增强前的基础；P1 = 直接影响目标应用；P2 = 基础可�
 |---|---|---|
 | G01 / P0 | 自主构建与产物来源：现有 probe 自主运行，但库构建仍借父项目；旧 staging 残留 | 独立 checkout 构建脚本，固定 headers/compiler/deps；运行 manifest 含实际 ELF hash/build-id、driver、设备、env、quirk 配置；干净安装无旧平台库。**已落地** `tools/build-aarch64.sh` + `tools/manifest.py` + runner 唯一 run-id；仍依赖父项目 builder 镜像或 `BUILDER_IMAGE`，android-headers 仍在仓库外 |
 | G02 / P0 | 全入口 dispatch、core/KHR alias、每 instance/device 的真实函数表；避免包装绕过/递归/NULL branch | 从 vk.xml 固定版本生成覆盖表；同一测试经 link/dlsym/GIPA/GDPA；BeginRendering/KHR、Submit2/KHR 等按启用能力测试；未支持符号符合规范，不假成功。**部分落地**：普通 GIPA/GDPA 查询保留 backend 对 instance/device 的解析结果，只替换必要前端/WSI 包装；新增作用域/未启用扩展的负例测试，未解析的直接导出调用有错误信息。尚无 vk.xml 生成覆盖表，也无完整 per-instance/device 兼容状态表 |
-| G03 / P0 | 多线程/多 context/多 device 与对象生命周期 | 并行 create/destroy、二次 init/dlopen、回调、线程 TLS、handle 重用有回归；对象 state 按 generation 识别，不能用进程全局单一 current device。**部分落地**：baseline `life` 覆盖双 device、destroy/recreate、二次 dlopen、两线程 create/destroy；独立 unload 检查发现 hybris 最后一次 dlclose 后进程退出 SIGSEGV（原生通过），仍未修复。尚无 generation 对象表，也无 GLES 多 context |
+| G03 / P0 | 多线程/多 context/多 device 与对象生命周期 | 并行 create/destroy、二次 init/dlopen、回调、线程 TLS、handle 重用有回归；对象 state 按 generation 识别，不能用进程全局单一 current device。**部分落地**：baseline `life` 覆盖双 device、destroy/recreate、二次 dlopen、两线程 create/destroy。`unload` 在 `20260906T230023-237d2d5e` 上 native/hybris 都能完成最后一次 frontend `dlclose` 并正常退出；做法是 linker 初始化后用 `RTLD_NODELETE` 钉住 `libhybris-common`，因为 vendor GOT / `pthread_key` / `__cxa_atexit` 在 frontend 卸载后仍会调用 hooks。这不是 Android driver 卸载，也没有 generation 对象表或 GLES 多 context |
 | G04 / P0 | 标准 loader/layer/tool 接入 | 一个已知非法小测试被 validation 捕获；一个合法小测试零新增错误；完成一帧 capture/replay 且像素匹配，再扩大到应用。**未完成**：已撤回手写 validation chain；它篡改 dispatchable handle 并删减创建链/扩展，不能作为真实路径验证证据。尚无 glibc VVL、ICD adapter、标准 loader/layer、capture/replay |
 | G05 / P0 | 能力宣告与模拟实现脱节 | features/features2、properties/limits、extensions、format/image-format query 与 CreateDevice enable 路径一致；保留原始/有效能力差异及原因；不通过删整个 pNext 重试。**部分落地**：baseline `caps` 核对未广告 feature / 未知扩展的精确拒绝错误，并检查未启用扩展的 GDPA 返回 NULL；未独立测量 native/effective 差集。尚无 features2 全链和兼容层差集记录 |
 | G06 / P0 | 缺少 draw→资源→image 诊断链 | 用 Mali-shaped UBO 测试导出绑定/布局/内容/attachment 证据；人工注入错误 binding 后能定位首个错误 draw。**部分落地**：272B std140、12 vertices / 18 indices 的固定 fixture，正确 binding 像素为 `255,255,0,255`，注入 binding 为 `0,255,255,0`；已补 color→transfer→host 同步。这只证明固定负对照可读回，不能定位应用的首个错误 draw；尚无 descriptor generation / attachment lineage |
@@ -240,7 +240,7 @@ descriptor 需在实际使用时重建有效状态：普通 set、copy/update te
 - 已区分 EGL_CLIENT_APIS 不支持桌面 GL 与 EGL 调用失败；仍需要更完整的 context/profile 特性测试。
 - ES3 专用功能、Vulkan texture/compute、GLES 多 context 尚未测；widget shader 和 device/fence 双线程不足以代表 API feature level。
 - 标准 validation/capture 接入（G04）尚未完成；已移除绕开标准 loader 的手写 layer chain，原 native 成功记录不再作为完成证据。
-- G03/G05/G06 只有 headless probe，没有 generation 对象表或完整证据包。
+- G03/G05/G06 只有 headless probe，没有 generation 对象表或完整证据包。`unload` 现在能正常退出，是因为 hooks DSO 被钉住，不是因为 Android Vulkan 对象可回收。
 
 ## 8. 建议实施顺序与完成门槛
 

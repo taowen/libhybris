@@ -80,6 +80,10 @@ extern int my_property_list(void (*propfn)(const char *key, const char *value, v
 
 #include <hybris/common/hooks.h>
 
+#ifndef RTLD_NODELETE
+#define RTLD_NODELETE 0x1000
+#endif
+
 #include <android-config.h>
 
 // this is also used in bionic:
@@ -4051,6 +4055,16 @@ static void __hybris_linker_init()
     }
 
     linker_initialized = 1;
+
+    /* Vendor .so GOT entries and pthread_key destructors keep calling
+     * into this DSO after a frontend (libvulkan.so.1) is dlclosed.
+     * Those callbacks still run at process exit. Dropping the last
+     * glibc refcount here unmaps the hooks and SIGSEGVs. */
+    {
+        Dl_info self;
+        if (dladdr((void *)__hybris_linker_init, &self) && self.dli_fname)
+            (void)dlopen(self.dli_fname, RTLD_NOW | RTLD_NODELETE);
+    }
 }
 
 #define ENSURE_LINKER_IS_LOADED() \
