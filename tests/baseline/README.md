@@ -906,3 +906,24 @@ Fresh library/probe builds and runs `20260907T024657-4bc8a0d1` (29854870) and
 `20260907T024657-607726a4` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
 including VVL, SyncVal and capture/replay. These results preserve the existing
 headless baseline and do not close the live surface-query coverage gap.
+
+## Shader draws during context migration and concurrent use
+
+The isolated contexts in `egl-life` now each retain a linked program and vertex
+buffer for a full-screen triangle. Context 0 writes blue and context 1 yellow,
+distinct from their red/green clear colors. Every existing iteration checks
+GL_CURRENT_PROGRAM, draws without rebinding the program or vertex attributes,
+and requires an exact center pixel and no GL error. This runs on main, through
+single-worker migration, on two independently current worker contexts, then
+again on main. Programs and buffers are deleted before context teardown.
+
+This adds concurrent host-thread shader submission and program/vertex state
+isolation to the previous clear/readback evidence. Programs are compiled on
+main before migration; it does not test concurrent compilation, shared shader
+objects, synchronization between shared resources, general GLSL compatibility
+or overlapping GPU execution.
+
+Fresh probe builds and runs `20260907T024950-483553de` (29854870) and
+`20260907T024950-5322ce95` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. Native and hybris both pass the
+expanded EGL lifecycle workload on each device. Production code is unchanged.

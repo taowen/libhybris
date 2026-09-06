@@ -6,9 +6,58 @@ struct context_pair {
   EGLDisplay display;
   EGLContext contexts[2];
   EGLSurface surfaces[2];
-  GLuint buffers[2];
+  GLuint buffers[2], programs[2], vertices[2];
   int result;
 };
+
+static GLuint make_program(void *g, int index) {
+  G(glCreateShader);
+  G(glShaderSource);
+  G(glCompileShader);
+  G(glGetShaderiv);
+  G(glGetShaderInfoLog);
+  G(glCreateProgram);
+  G(glAttachShader);
+  G(glBindAttribLocation);
+  G(glLinkProgram);
+  G(glGetProgramiv);
+  G(glGetProgramInfoLog);
+  G(glDeleteShader);
+  const char *sources[] = {
+      "attribute vec2 pos; void main(){gl_Position=vec4(pos,0.0,1.0);}",
+      index ? "precision mediump float; void main(){gl_FragColor=vec4(1,1,0,1);}"
+            : "precision mediump float; void main(){gl_FragColor=vec4(0,0,1,1);}"};
+  GLuint shaders[2];
+  for (int i = 0; i < 2; i++) {
+    shaders[i] = p_glCreateShader(i ? GL_FRAGMENT_SHADER : GL_VERTEX_SHADER);
+    p_glShaderSource(shaders[i], 1, &sources[i], NULL);
+    p_glCompileShader(shaders[i]);
+    GLint compiled = 0;
+    p_glGetShaderiv(shaders[i], GL_COMPILE_STATUS, &compiled);
+    if (!compiled) {
+      char log[2048];
+      p_glGetShaderInfoLog(shaders[i], sizeof(log), NULL, log);
+      printf("SHADER FAIL %s\n", log);
+      return 0;
+    }
+  }
+  GLuint program = p_glCreateProgram();
+  p_glAttachShader(program, shaders[0]);
+  p_glAttachShader(program, shaders[1]);
+  p_glBindAttribLocation(program, 0, "pos");
+  p_glLinkProgram(program);
+  GLint linked = 0;
+  p_glGetProgramiv(program, GL_LINK_STATUS, &linked);
+  if (!linked) {
+    char log[2048];
+    p_glGetProgramInfoLog(program, sizeof(log), NULL, log);
+    printf("LINK FAIL %s\n", log);
+    return 0;
+  }
+  p_glDeleteShader(shaders[0]);
+  p_glDeleteShader(shaders[1]);
+  return program;
+}
 
 static int check_contexts(struct context_pair *pair, int initialize, int only_context) {
   void *e = pair->e, *g = pair->g;
@@ -26,6 +75,8 @@ static int check_contexts(struct context_pair *pair, int initialize, int only_co
   G(glClear);
   G(glReadPixels);
   G(glGetError);
+  G(glUseProgram); G(glVertexAttribPointer); G(glEnableVertexAttribArray);
+  G(glViewport); G(glDrawArrays);
   for (int pass = 0; pass < (initialize ? 1 : 8); ++pass) {
     for (int i = 0; i < 2; ++i) {
       if (only_context >= 0 && i != only_context) continue;
@@ -42,6 +93,17 @@ static int check_contexts(struct context_pair *pair, int initialize, int only_co
         p_glBindBuffer(GL_ARRAY_BUFFER, pair->buffers[i]);
         p_glBufferData(GL_ARRAY_BUFFER, 16 + i * 16, NULL, GL_STATIC_DRAW);
         p_glClearColor(i ? 0 : 1, i ? 1 : 0, 0, 1);
+        pair->programs[i] = make_program(g, i);
+        if (!pair->programs[i]) return 2;
+        p_glUseProgram(pair->programs[i]);
+        const float vertices[] = {-1,-1,3,-1,-1,3};
+        p_glGenBuffers(1, &pair->vertices[i]);
+        p_glBindBuffer(GL_ARRAY_BUFFER, pair->vertices[i]);
+        p_glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+        p_glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+        p_glEnableVertexAttribArray(0);
+        p_glViewport(0, 0, 4, 4);
+        p_glBindBuffer(GL_ARRAY_BUFFER, pair->buffers[i]);
       }
       GLint binding = 0, size = 0;
       p_glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &binding);
@@ -56,6 +118,16 @@ static int check_contexts(struct context_pair *pair, int initialize, int only_co
       if (pixel[0] != (i ? 0 : 255) || pixel[1] != (i ? 255 : 0) ||
           pixel[2] != 0 || pixel[3] != 255 || p_glGetError() != GL_NO_ERROR) {
         printf("PIXEL context=%d rgba=%u,%u,%u,%u\n", i, pixel[0],pixel[1],pixel[2],pixel[3]); return 2;
+      }
+      GLint program = 0;
+      p_glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+      if ((GLuint)program != pair->programs[i]) return 2;
+      /* Program and vertex-array state must survive without rebinding. */
+      p_glDrawArrays(GL_TRIANGLES, 0, 3);
+      p_glReadPixels(2, 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+      if (pixel[0] != (i ? 255 : 0) || pixel[1] != (i ? 255 : 0) ||
+          pixel[2] != (i ? 0 : 255) || pixel[3] != 255 || p_glGetError() != GL_NO_ERROR) {
+        printf("DRAW context=%d rgba=%u,%u,%u,%u\n",i,pixel[0],pixel[1],pixel[2],pixel[3]); return 2;
       }
     }
   }
@@ -202,7 +274,7 @@ int egl_lifecycle_probe(void) {
   E(eglDestroySurface);
   E(eglTerminate);
   E(eglReleaseThread);
-  G(glDeleteBuffers);
+  G(glDeleteBuffers); G(glDeleteProgram); G(glUseProgram);
   pair.display = p_eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if (!p_eglInitialize(pair.display, NULL, NULL) || !p_eglBindAPI(EGL_OPENGL_ES_API)) return 2;
   EGLint attrs[] = {EGL_SURFACE_TYPE,EGL_PBUFFER_BIT,EGL_RENDERABLE_TYPE,EGL_OPENGL_ES2_BIT,
@@ -227,6 +299,9 @@ int egl_lifecycle_probe(void) {
     for (int i = 0; i < 2; ++i) {
       if (!p_eglMakeCurrent(pair.display, pair.surfaces[i], pair.surfaces[i], pair.contexts[i])) return 2;
       p_glDeleteBuffers(1, &pair.buffers[i]);
+      p_glDeleteBuffers(1, &pair.vertices[i]);
+      p_glUseProgram(0);
+      p_glDeleteProgram(pair.programs[i]);
       if (!p_eglMakeCurrent(pair.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT) ||
           !p_eglDestroyContext(pair.display, pair.contexts[i]) ||
           !p_eglDestroySurface(pair.display, pair.surfaces[i])) return 2;

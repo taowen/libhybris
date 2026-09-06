@@ -24,6 +24,13 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+The EGL lifecycle workload now draws with distinct blue/yellow fragment
+programs in the isolated contexts after each clear. Current program and
+vertex-attribute state persist across switches, thread migration and concurrent
+worker loops without rebinding. Exact center pixels distinguish draw output
+from the red/green clear checks. This adds independent threaded shader draws,
+not shared-resource synchronization or proof of overlapping GPU execution.
+
 Surface capability wrappers resolve their Android-loader ELF trampolines during
 frontend construction rather than racing on lazy cache writes. Missing entries
 return EXTENSION_NOT_PRESENT. The capabilities2 wrapper no longer falls back
