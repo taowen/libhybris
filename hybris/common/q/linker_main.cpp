@@ -784,6 +784,9 @@ static const char* get_executable_path() {
 }
 
 void* (*_get_hooked_symbol)(const char *sym, const char *requester);
+extern "C" {
+__attribute__((visibility("hidden"))) void *(*hybris_tlsdesc_get_tls)(void) = nullptr;
+}
 hybris_tls_patcher_funcs_t _tls_patcher_funcs = {0};
 #ifdef WANT_ARM_TRACING
 void *(*_create_wrapper)(const char *symbol, void *function, int wrapper_type);
@@ -817,6 +820,8 @@ extern "C" void android_linker_init(int sdk_version, void* (*get_hooked_symbol)(
     set_application_target_sdk_version(sdk_version);
 
   _get_hooked_symbol = get_hooked_symbol;
+  hybris_tlsdesc_get_tls = reinterpret_cast<void *(*)(void)>(
+      get_hooked_symbol("__get_tls_hooks", "hybris TLSDESC"));
   _linker_enable_gdb_support = enable_linker_gdb_support;
   if (tls_patcher_funcs) {
     _tls_patcher_funcs = *tls_patcher_funcs;

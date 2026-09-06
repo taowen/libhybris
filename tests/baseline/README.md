@@ -560,3 +560,41 @@ each complete **51 PASS / 2 UNSUPPORTED**, including VVL, SyncVal and draw
 capture evidence. All four invalid-range children and the legal empty-end
 case pass. This does not prove general ELF parsing safety, TLS destructor
 execution or static TLS slot reclamation.
+
+## Compiler-generated TLS destructors and first touch
+
+The hybris-only `tls-dtor` case loads a bionic C++ DSO with a `thread_local`
+object. Two builds use NDK's default emulated TLS and `-fno-emulated-tls` ELF
+TLS respectively. The second ELF has PT_TLS (24 bytes initialized, 25 bytes
+reserved) and AArch64 TLSDESC relocations. Both fixture binaries, source and
+build command identity are included in the probe manifest and verified while
+staging. The fixture intentionally imports __cxa_thread_atexit to exercise the
+hybris hook and is not run as a native Android-loader case.
+
+A glibc-created worker first touches the object, reads initial value 73 and
+sets 1234. Main drops its Android DSO handle while the worker is paused; after
+release and join, the callback must have run exactly once on the worker with
+1234, and must not have run before thread exit. Three load/thread/close/join
+cycles cover each variant. This observes actual C++ destructor execution,
+not just a successful thread join or dlclose return.
+
+Before the fix, both devices failed the ELF TLS variant with initial value 0:
+`20260907T013303-3f85d4f7` and `20260907T013304-05719b7c`. The old static
+TLSDESC resolver returned an offset without initializing a glibc thread that
+had not called any bionic libc hook. Q linker's static resolver now calls the
+TLS initializer before returning its offset, preserving GPR and vector
+registers across that call. The callback is resolved during linker setup;
+new helper symbols are hidden. This does not change the linker plugin callback
+struct ABI.
+
+Final fresh library/probe builds and runs `20260907T013843-a5cf04e4` (29854870)
+and `20260907T013844-4eb30921` (KB2000) each complete **52 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and draw capture evidence. Both TLS models pass all
+three cycles on both devices.
+
+Limits: the static resolver now saves registers and invokes the existing
+initializer (including its registry mutex) on each access. Performance and
+signal-handler/reentrant access are not validated. IE TLS accesses that do
+not call this resolver still require an initialized thread. This is not proof
+of every vendor TLS destructor, compat heap cleanup, DSO unmapping or static
+slot reclamation. Those remaining cases must be tested separately.

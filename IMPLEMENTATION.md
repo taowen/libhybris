@@ -207,3 +207,14 @@ Fresh builds and both device runs (`20260907T012712-1e831443`,
 `20260907T012714-d19f1840`) pass 51 cases with 2 UNSUPPORTED, including all
 optional Vulkan tooling. Resource-failure injection and destructor observation
 remain unverified; this does not close G03 as a whole.
+
+TLS destructor/first-touch batch: real bionic C++ DSO fixtures cover emulated
+TLS and ELF TLSDESC. The latter exposed nonzero initializers reading as zero
+on glibc workers before any libc hook. Q static TLSDESC now initializes/replays
+thread TLS while preserving resolver registers; its helper stays hidden and
+plugin callback layout is unchanged. Both variants show the correct initial
+value and one destructor on the owning thread after closing the main DSO
+reference, across three cycles. Runs `20260907T013843-a5cf04e4` and
+`20260907T013844-4eb30921` pass 52 / UNSUPPORTED 2, including optional Vulkan
+tools. Per-access initialization overhead, signals/reentrancy, IE first-touch
+and static slot reclamation remain unverified. G03 is still partial.

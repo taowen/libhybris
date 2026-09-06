@@ -34,11 +34,6 @@
 // These resolver functions must preserve every register except x0. They set x0
 // to the offset of the TLS symbol relative to the thread pointer.
 
-ENTRY_PRIVATE(tlsdesc_resolver_static)
-  ldr x0, [x0, #8]
-  ret
-END(tlsdesc_resolver_static)
-
 ENTRY_PRIVATE(tlsdesc_resolver_dynamic)
   stp x19, x20, [sp, #-32]!
   .cfi_def_cfa_offset 32
@@ -192,3 +187,79 @@ END(tlsdesc_resolver_dynamic_slow_path)
 // instead of the ELF-mandated NULL. Unresolved-weak TLSDESC relocations
 // are now refused at hybris_dlopen time in linker.cpp's R_GENERIC_TLSDESC
 // handler.
+
+// A glibc-created thread can enter a TLS-only bionic function before any libc
+// hook. Replay promoted .tdata before returning the static offset. Preserve
+// the full TLSDESC register contract across the glibc initializer call.
+ENTRY_PRIVATE(tlsdesc_resolver_static)
+  sub sp, sp, #(8 * 86)
+  .cfi_def_cfa_offset (8 * 86)
+  SAVE_GPR_PAIR(x29, x30, 0)
+  mov x29, sp
+
+  // x19 through x29 are callee-save registers. Unlike the bionic dynamic
+  // resolver, this path calls glibc, so x18 is saved separately below.
+  SAVE_GPR_PAIR(x1,  x2,  2)
+  SAVE_GPR_PAIR(x3,  x4,  4)
+  SAVE_GPR_PAIR(x5,  x6,  6)
+  SAVE_GPR_PAIR(x7,  x8,  8)
+  SAVE_GPR_PAIR(x9,  x10, 10)
+  SAVE_GPR_PAIR(x11, x12, 12)
+  SAVE_GPR_PAIR(x13, x14, 14)
+  SAVE_GPR_PAIR(x15, x16, 16)
+  SAVE_REG(x17, 18)
+
+  SAVE_VEC_PAIR(q0,  q1,  20)
+  SAVE_VEC_PAIR(q2,  q3,  24)
+  SAVE_VEC_PAIR(q4,  q5,  28)
+  SAVE_VEC_PAIR(q6,  q7,  32)
+  SAVE_VEC_PAIR(q8,  q9,  36)
+  SAVE_VEC_PAIR(q10, q11, 40)
+  SAVE_VEC_PAIR(q12, q13, 44)
+  SAVE_VEC_PAIR(q14, q15, 48)
+  SAVE_VEC_PAIR(q16, q17, 52)
+  SAVE_VEC_PAIR(q18, q19, 56)
+  SAVE_VEC_PAIR(q20, q21, 60)
+  SAVE_VEC_PAIR(q22, q23, 64)
+  SAVE_VEC_PAIR(q24, q25, 68)
+  SAVE_VEC_PAIR(q26, q27, 72)
+  SAVE_VEC_PAIR(q28, q29, 76)
+  SAVE_VEC_PAIR(q30, q31, 80)
+
+  // glibc calls may clobber x18; preserve it as required by TLSDESC.
+  SAVE_REG(x18, 84)
+  bl hybris_tlsdesc_static_offset
+  RESTORE_REG(x18, 84)
+
+  RESTORE_REG_PAIR(q30, q31, 80)
+  RESTORE_REG_PAIR(q28, q29, 76)
+  RESTORE_REG_PAIR(q26, q27, 72)
+  RESTORE_REG_PAIR(q24, q25, 68)
+  RESTORE_REG_PAIR(q22, q23, 64)
+  RESTORE_REG_PAIR(q20, q21, 60)
+  RESTORE_REG_PAIR(q18, q19, 56)
+  RESTORE_REG_PAIR(q16, q17, 52)
+  RESTORE_REG_PAIR(q14, q15, 48)
+  RESTORE_REG_PAIR(q12, q13, 44)
+  RESTORE_REG_PAIR(q10, q11, 40)
+  RESTORE_REG_PAIR(q8,  q9,  36)
+  RESTORE_REG_PAIR(q6,  q7,  32)
+  RESTORE_REG_PAIR(q4,  q5,  28)
+  RESTORE_REG_PAIR(q2,  q3,  24)
+  RESTORE_REG_PAIR(q0,  q1,  20)
+
+  RESTORE_REG(x17, 18)
+  RESTORE_REG_PAIR(x15, x16, 16)
+  RESTORE_REG_PAIR(x13, x14, 14)
+  RESTORE_REG_PAIR(x11, x12, 12)
+  RESTORE_REG_PAIR(x9,  x10, 10)
+  RESTORE_REG_PAIR(x7,  x8,  8)
+  RESTORE_REG_PAIR(x5,  x6,  6)
+  RESTORE_REG_PAIR(x3,  x4,  4)
+  RESTORE_REG_PAIR(x1,  x2,  2)
+
+  RESTORE_REG_PAIR(x29, x30, 0)
+  add sp, sp, #(8 * 86)
+  .cfi_def_cfa_offset 0
+  ret
+END(tlsdesc_resolver_static)

@@ -58,7 +58,7 @@ stale = unexpected_platforms(a.hybris_lib)
 if stale:
     raise SystemExit('refusing stale/unknown platform plugins:\n  ' + '\n  '.join(stale))
 
-for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked']:
+for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked', 'libtls-fixture.so', 'libtls-native-fixture.so']:
     if not (a.bundle / binary).is_file():
         raise SystemExit(f'missing {a.bundle / binary}; run tests/baseline/build.sh')
 
@@ -68,7 +68,7 @@ if probe_manifest.is_file():
     probe_provenance = json.loads(probe_manifest.read_text())
     expected = {entry['name']: entry['sha256'] for entry in probe_provenance['binaries']}
     actual = {name: sha256_file(a.bundle / name)
-              for name in ('probe-bionic', 'probe-glibc', 'probe-glibc-linked')}
+              for name in ('probe-bionic', 'probe-glibc', 'probe-glibc-linked', 'libtls-fixture.so', 'libtls-native-fixture.so')}
     if actual != expected:
         raise SystemExit('probe manifest does not match the supplied executables')
 
@@ -144,7 +144,7 @@ if stage.exists():
 stage.mkdir()
 shutil.copytree(a.hybris_lib, stage / 'hybris', symlinks=False)
 shutil.copytree(a.runtime, stage / 'glibc', symlinks=False)
-for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked']:
+for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked', 'libtls-fixture.so', 'libtls-native-fixture.so']:
     shutil.copy2(a.bundle / binary, stage / binary)
     if probe_provenance and sha256_file(stage / binary) != expected[binary]:
         raise SystemExit('probe changed while staging: ' + binary)
@@ -182,6 +182,7 @@ cases = [
     ('hybris', 'init', 'probe-glibc'),
     ('hybris', 'tls', 'probe-glibc'),
     ('hybris', 'tls-bounds', 'probe-glibc'),
+    ('hybris', 'tls-dtor', 'probe-glibc'),
     ('hybris', 'caps', 'probe-glibc'),
     ('hybris', 'caps2', 'probe-glibc'),
     ('hybris', 'ubo', 'probe-glibc'),

@@ -264,3 +264,12 @@ void unregister_soinfo_tls(soinfo* si) {
   }
   return unregister_tls_module(si);
 }
+
+extern "C" {
+extern __attribute__((visibility("hidden"))) void *(*hybris_tlsdesc_get_tls)(void);
+__attribute__((visibility("hidden"))) size_t hybris_tlsdesc_static_offset(const size_t *descriptor) {
+  CHECK(hybris_tlsdesc_get_tls != nullptr);
+  hybris_tlsdesc_get_tls();
+  return descriptor[1];
+}
+}

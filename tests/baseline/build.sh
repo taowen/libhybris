@@ -6,7 +6,7 @@ ROOT="$(cd ../.. && pwd)"
 OUT="${OUT:-$PWD/build}"
 BUNDLE="$OUT/bundle"
 SOURCES=(probe.c probe_common.c probe_egl.c probe_egl_lifecycle.c probe_vulkan.c probe_dispatch.c
-         probe_lifecycle.c probe_tls_bounds.c probe_caps.c probe_caps2.c probe_widget.c probe_validation.c)
+         probe_lifecycle.c probe_tls_bounds.c probe_tls_destructor.c probe_caps.c probe_caps2.c probe_widget.c probe_validation.c)
 HYBRIS_LIB="${HYBRIS_LIB:-$OUT/install/usr/lib/hybris}"
 RUNTIME="${RUNTIME:-$OUT/runtime}"
 if [[ -z "${BIONIC_CC:-}" ]]; then
@@ -28,6 +28,7 @@ BUNDLE="$(cd "$BUNDLE" && pwd)"
 PROBE_SRC="$BUNDLE/src"
 rm -rf "$PROBE_SRC"
 mkdir -p "$PROBE_SRC/shaders"
+cp tls_fixture.cpp "$PROBE_SRC/"
 cp "${SOURCES[@]}" probe.h dispatch_commands.inc capability_fields.inc feature_compare.inc "$PROBE_SRC/"
 cp shaders/widget.vert shaders/widget.frag shaders/widget.vert.inc shaders/widget.frag.inc "$PROBE_SRC/shaders/"
 
@@ -63,6 +64,10 @@ compile_glibc "-DHYBRIS_PROBE_LINKED" \
     "-L$HYBRIS_LIB -Wl,-rpath-link,$HYBRIS_LIB -lvulkan" \
     "$BUNDLE/probe-glibc-linked"
 (cd "$PROBE_SRC" && "$BIONIC_CC" -O2 -Wall -Wextra -pthread "${SOURCES[@]}" -ldl -o "$BUNDLE/probe-bionic")
+(cd "$PROBE_SRC" && "$BIONIC_CC" -x c++ -std=c++11 -fPIC -shared -fno-exceptions -fno-rtti \
+    tls_fixture.cpp -o "$BUNDLE/libtls-fixture.so")
+(cd "$PROBE_SRC" && "$BIONIC_CC" -x c++ -std=c++11 -fPIC -shared -fno-exceptions -fno-rtti \
+    -fno-emulated-tls tls_fixture.cpp -o "$BUNDLE/libtls-native-fixture.so")
 python3 - "$BUNDLE" "$BIONIC_CC" "${GLIBC_CC:-}" "${BUILDER_ID:-}" "$ROOT/tools" <<'PYTHON'
 import json
 from pathlib import Path
@@ -82,7 +87,7 @@ payload = {
     'build_script_sha256': sha256_file(Path(sys.argv[5]).parent / 'tests/baseline/build.sh'),
     'binaries': [
         {'name': name, 'sha256': sha256_file(bundle / name), 'build_id': build_id(bundle / name)}
-        for name in ('probe-glibc', 'probe-glibc-linked', 'probe-bionic')],
+        for name in ('probe-glibc', 'probe-glibc-linked', 'probe-bionic', 'libtls-fixture.so', 'libtls-native-fixture.so')],
 }
 (bundle / 'probe-manifest.json').write_text(json.dumps(payload, indent=2) + '\n')
 PYTHON
