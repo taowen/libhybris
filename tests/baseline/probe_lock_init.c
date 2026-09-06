@@ -117,7 +117,7 @@ int sync_destroy_probe(int check_kind) {
   int (*destroy)(unsigned) = find_fixture(fixture, check_kind ? "sync_fixture_kind" : "sync_fixture_destroy");
   if (!destroy) return 2;
 #endif
-  for (unsigned kind = 0; kind < (check_kind ? 1u : 5u); ++kind) {
+  for (unsigned kind = 0; kind < (check_kind ? 1u : 8u); ++kind) {
     printf("SYNC_DESTROY begin kind=%u\n", kind);
     int error;
 #ifdef __BIONIC__

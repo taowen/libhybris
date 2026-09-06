@@ -484,3 +484,10 @@ creation, render-pass attachment selection and copy-source identity, including
 view/copy subresource and dimensions. Recorded bind/draw/copy commands must
 belong to the submitted command buffer. This remains a fixed one-image
 fixture, not runtime resource generations or WSI lineage.
+
+
+Mutex destroy now preserves backing allocation and bionic storage on host
+failure (including EBUSY), and clears/frees only on success. A failed shared
+translation returns EINVAL. The independent bionic fixture checks three mutex
+types for EBUSY preservation and subsequent unlock/relock/destroy. Successful
+shared backing and concurrent destruction remain unverified.

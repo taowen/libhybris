@@ -1370,3 +1370,24 @@ Rebuilt runs `20260907T043953-23de5729` (29854870) and
 Both ordinary/dynamic good/alternate captures pass the stronger attachment
 lineage gate, with framebuffer=21, view=13, image=11 and command buffer=26
 (capture-local IDs). Validation/SyncVal, shader and pixel checks also pass.
+
+
+`sync-destroy` additionally checks busy normal/recursive/errorcheck mutexes.
+The native/bionic fixture requires EBUSY with unchanged mutex storage, then
+unlocks, locks/unlocks again and destroys successfully. This follows bionic's
+explicit busy-destroy behavior, not a general POSIX portability guarantee.
+Before the fix, `20260907T044320-8811de0f` reports native PASS and hybris FAIL:
+the ordinary mutex returned EBUSY but its backing pointer was cleared. The
+probe stops before touching discarded storage on that failure.
+The hook now frees/clears only after successful host destruction and rejects
+a failed shared-handle translation. Working process-shared mutex destruction
+and concurrent destruction are not covered by this probe.
+Source: https://android.googlesource.com/platform/bionic/+/master/libc/bionic/pthread_mutex.cpp
+
+Rebuilt runs `20260907T044459-7e3295ea` (29854870) and
+`20260907T044459-327bc0c1` (KB2000) each report 88 PASS, 2 UNSUPPORTED,
+including validation/SyncVal and both capture gates. All three native/hybris
+mutex types return EBUSY=16 with preserved=1, followed by successful
+unlock/relock/final destroy. Common's 130 defined dynamic exports are unchanged.
+The old comparison stops at the first failed normal mutex; it does not
+separately reproduce old recursive/errorcheck behavior.

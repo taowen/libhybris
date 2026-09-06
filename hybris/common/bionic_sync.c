@@ -293,14 +293,21 @@ int _hybris_hook_pthread_mutex_destroy(pthread_mutex_t *__mutex)
 
     if (!hybris_is_pointer_in_shm((void*)realmutex)) {
         ret = pthread_mutex_destroy(realmutex);
-        free(realmutex);
+        if (!ret)
+            free(realmutex);
     }
     else {
         realmutex = (pthread_mutex_t *)hybris_get_shmpointer((hybris_shm_pointer_t)realmutex);
+        if (!realmutex)
+            return EINVAL;
         ret = pthread_mutex_destroy(realmutex);
     }
 
-    *((uintptr_t *)__mutex) = 0;
+    /* Failed destruction (notably EBUSY) leaves a usable owned mutex. */
+    if (!ret) {
+        value = 0;
+        memcpy(__mutex, &value, sizeof(value));
+    }
 
     return ret;
 }

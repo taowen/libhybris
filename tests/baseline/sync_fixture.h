@@ -1,10 +1,37 @@
 #include <pthread.h>
 #include <errno.h>
 #include <stdio.h>
+#include <string.h>
 
 // Destroy valid static initializers before any lock/wait operation, then
 // explicitly reinitialize the same storage and exercise its normal lifecycle.
 static int sync_destroy_lifecycle(unsigned kind) {
+    if (kind >= 5 && kind <= 7) {
+        const int types[] = {PTHREAD_MUTEX_NORMAL, PTHREAD_MUTEX_RECURSIVE, PTHREAD_MUTEX_ERRORCHECK};
+        pthread_mutexattr_t attr;
+        pthread_mutex_t lock;
+        int error = pthread_mutexattr_init(&attr);
+        if (error) return error;
+        error = pthread_mutexattr_settype(&attr, types[kind - 5]);
+        if (!error) error = pthread_mutex_init(&lock, &attr);
+        pthread_mutexattr_destroy(&attr);
+        if (error) return error;
+        error = pthread_mutex_lock(&lock);
+        if (error) return error;
+        unsigned char before[sizeof(lock)];
+        memcpy(before, &lock, sizeof(lock));
+        int result = pthread_mutex_destroy(&lock);
+        int preserved = !memcmp(before, &lock, sizeof(lock));
+        printf("SYNC_DESTROY_BUSY type=%d result=%d expected=%d preserved=%d\n",
+               types[kind - 5], result, EBUSY, preserved);
+        // Do not touch a discarded backing pointer after a failed check.
+        if (result != EBUSY || !preserved) return EINVAL;
+        error = pthread_mutex_unlock(&lock);
+        if (!error) error = pthread_mutex_lock(&lock);
+        if (!error) error = pthread_mutex_unlock(&lock);
+        if (!error) error = pthread_mutex_destroy(&lock);
+        return error;
+    }
     if (kind < 3) {
         pthread_mutex_t normal = PTHREAD_MUTEX_INITIALIZER;
         pthread_mutex_t recursive = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
