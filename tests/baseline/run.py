@@ -351,28 +351,32 @@ try:
         results.append(dict(case=name, status=status, exit_code=code, binary=binary))
         print(name, status, 'exit=' + str(code), flush=True)
     if a.capture_tools:
-        try:
-            run_capture(shell, adb, remote, a.out, metadata['commands']['icd-ubo']['command'],
-                        metadata, kill_remote)
-            code = 0
-        except subprocess.TimeoutExpired as exc:
-            code = 124
-            (a.out / 'capture-error.log').write_text(str(exc) + '\n')
-        except subprocess.CalledProcessError as exc:
-            code = exc.returncode
-            (a.out / 'capture-error.log').write_text(str(exc) + '\n')
-        except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            code = 2
-            (a.out / 'capture-error.log').write_text(str(exc) + '\n')
-        finally:
+        for dynamic in (False, True):
+            folder = 'capture-dynamic' if dynamic else 'capture'
+            case_name = 'icd-' + folder + '-replay'
             try:
-                subprocess.run(adb + ['pull', remote + '/capture/.', str(a.out / 'capture')],
-                               check=True, capture_output=True, timeout=35)
-            except (OSError, subprocess.SubprocessError) as exc:
-                (a.out / 'capture-pull-error.log').write_text(str(exc) + '\n')
-        status = classify(code)
-        results.append(dict(case='icd-capture-replay', status=status, exit_code=code))
-        print('icd-capture-replay', status, 'exit=' + str(code), flush=True)
+                run_capture(shell, adb, remote, a.out, metadata['commands']['icd-ubo']['command'],
+                            metadata, kill_remote, dynamic=dynamic)
+                code = 0
+            except subprocess.TimeoutExpired as exc:
+                code = 124
+                (a.out / (folder + '-error.log')).write_text(str(exc) + '\n')
+            except subprocess.CalledProcessError as exc:
+                code = exc.returncode
+                (a.out / (folder + '-error.log')).write_text(str(exc) + '\n')
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                code = 2
+                (a.out / (folder + '-error.log')).write_text(str(exc) + '\n')
+            finally:
+                try:
+                    subprocess.run(adb + ['pull', remote + '/' + folder + '/.', str(a.out / folder)],
+                                   check=True, capture_output=True, timeout=35)
+                except (OSError, subprocess.SubprocessError) as exc:
+                    (a.out / (folder + '-pull-error.log')).write_text(str(exc) + '\n')
+            status = classify(code)
+            results.append(dict(case=case_name, status=status, exit_code=code))
+            print(case_name, status, 'exit=' + str(code), flush=True)
+
 finally:
     try:
         for mode, observations in capabilities.items():

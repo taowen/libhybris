@@ -1285,3 +1285,29 @@ Each native/frontend/ICD template case logs twelve submissions and six
 updates with payload offset=24 across both sizes, producing eight exact good
 pixels and four exact alternate pixels. Both ICD validation size variants
 report zero errors. Staged/dynamic cases and static capture/replay pass.
+
+
+With capture tools enabled, `icd-capture-dynamic-replay` now records separate
+good/alternate dynamic-UBO draws in `capture-dynamic/`. Each binding has an
+uncaptured reference, a captured full-image readback and a replay resource
+dump. The evidence checker reconstructs this fixture's effective descriptor
+offset from its UpdateDescriptorSets base plus CmdBindDescriptorSets dynamic
+offset; both vertex/fragment descriptor dumps must match the buffer, effective
+offset, range, type and all 272 UBO bytes. Attachment before/after and final
+copy must name the same image and agree with the full reference pixels.
+`comparison.json` records descriptor base, dynamic/effective offsets and the
+first attachment divergence for this fixed pair. The ordinary capture case
+remains separately reported. This does not reconstruct multiple sets/bindings,
+descriptor templates, command re-record histories or runtime generations, and
+it does not identify the first erroneous draw of an arbitrary application.
+
+Rebuilt runs `20260907T042356-82e88e05` (29854870) and
+`20260907T042356-051c616f` (KB2000) each report 88 PASS, 2 UNSUPPORTED,
+including validation/SyncVal and both capture variants. Dynamic evidence on
+both devices has base=320, dynamic=640 / 320, effective=960 / 640 and range=272;
+vertex/fragment dumps contain the exact good/alternate UBO and both attachment
+comparisons first diverge at draw 61. Ordinary capture remains at draw 60.
+Offline checks against the first run's evidence changed a bind offset by 64
+and separately replaced the dump offset with the descriptor base alone;
+both manipulations were rejected for both bindings. The originals were not
+modified (`dynamic-offset-negative-check.log` records the checks).

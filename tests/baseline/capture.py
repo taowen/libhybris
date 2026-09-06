@@ -33,15 +33,16 @@ def stage_tools(install, stage, metadata, sha256):
         for path in dest.rglob('*') if path.is_file()}
 
 
-def run_capture(shell, adb, remote, out, command, metadata, kill_remote):
+def run_capture(shell, adb, remote, out, command, metadata, kill_remote, dynamic=False):
     """Capture both bindings, replay the copy commands, and compare raw pixels."""
-    evidence = out / 'capture'
+    folder_name = 'capture-dynamic' if dynamic else 'capture'
+    evidence = out / folder_name
     evidence.mkdir()
     command = command.replace('--library-path ./standard:./hybris:./glibc',
                               '--library-path ./standard:./hybris:./glibc:./capture-tools:./capture-tools/runtime')
 
     def run(name, cmd):
-        metadata['commands'][name] = {'directory': remote, 'command': cmd}
+        metadata['commands'][('dynamic-' if dynamic else '') + name] = {'directory': remote, 'command': cmd}
         try:
             result = shell('cd ' + remote + ' && sh -c ' + shlex.quote(
                 'echo $$ > probe.pid; exec env ' + cmd),
@@ -62,12 +63,12 @@ def run_capture(shell, adb, remote, out, command, metadata, kill_remote):
                    './standard:./hybris:./glibc:./capture-tools:./capture-tools/runtime ')
     comparisons = []
     for binding in ('good', 'bad'):
-        folder = 'capture/' + binding
+        folder = folder_name + '/' + binding
         local = evidence / binding
         local.mkdir()
         shell('mkdir -p ' + remote + '/' + folder + '/reference ' + remote + '/' +
               folder + '/captured ' + remote + '/' + folder + '/replay', check=True, timeout=10)
-        probe = command.removesuffix('ubo') + 'ubo-' + binding
+        probe = command.removesuffix('ubo') + ('ubo-dynamic-' if dynamic else 'ubo-') + binding
         run('reference-' + binding, 'PROBE_WIDGET_DUMP_DIR=$PWD/' + folder + '/reference ' + probe)
         captured = probe.replace('VK_LAYER_PATH=$PWD/layers', 'VK_LAYER_PATH=$PWD/capture-tools')
         run('capture-' + binding, 'PROBE_WIDGET_DUMP_DIR=$PWD/' + folder + '/captured '
@@ -131,7 +132,7 @@ def run_capture(shell, adb, remote, out, command, metadata, kill_remote):
         if len(expected) != 1024 or recorded != expected or dumped.read_bytes() != expected:
             raise ValueError('full-image capture/replay mismatch for ' + binding)
         draw_evidence = check_draw(calls, json.loads(reports[0].read_text()), local, evidence,
-                                   binding, (begins[0], draws[0], submits[0]), expected)
+                                   binding, (begins[0], draws[0], submits[0]), expected, dynamic=dynamic)
         comparisons.append({'binding': binding, 'copy_index': copies[0],
                             'draw_evidence': draw_evidence,
                             'submit_index': submits[0], 'replay_file': regions[0]['file'],
@@ -143,4 +144,5 @@ def run_capture(shell, adb, remote, out, command, metadata, kill_remote):
         'first_divergent_draw': bad['draw_index'],
         'status': 'PASS', 'images': comparisons, 'bytes_per_image': 1024,
         'comparison': 'reference == captured == replay; exact RGBA8 bytes',
+        'descriptor_mode': 'dynamic' if dynamic else 'ordinary',
         'scope': 'two fixed headless widget submissions; no WSI/present'}, indent=2) + '\n')

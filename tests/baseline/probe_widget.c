@@ -787,3 +787,7 @@ int ubo_template_probe(int validate) {
   }
   return 0;
 }
+
+int ubo_dynamic_draw(int alternate) {
+  return ubo_draw_internal(alternate, 0, 1, 0, 0);
+}

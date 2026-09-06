@@ -431,7 +431,7 @@ Widget rendering now has a dynamic-UBO probe with nonzero aligned descriptor
 base and dynamic offset, deliberately different data in the other slots,
 exact expected good/alternate pixels and an ICD validation/SyncVal variant.
 That variant keeps an effective range of 272 bytes. Multiple dynamic
-bindings and draw-time reconstruction of dynamic capture remain open.
+bindings and general dynamic descriptor history reconstruction remain open.
 
 
 A second widget variant now uses a real 1232-byte shader block, with explicit
@@ -455,3 +455,10 @@ prefix descriptor as a negative control. Both UBO sizes retain resources
 across good/alternate/good updates and command re-record/resubmit cycles.
 Multiple entries, descriptor arrays and dynamic capture reconstruction remain
 open.
+
+
+GFXReconstruct capture integration now has an independent dynamic-widget
+case. Its evidence checker matches the dump's effective offset to descriptor
+base plus bound dynamic offset and verifies complete UBO bytes, attachments
+and final copy pixels. This extends fixed-fixture diagnostics; general draw
+state reconstruction, template histories and runtime generations remain open.
