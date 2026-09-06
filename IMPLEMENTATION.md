@@ -505,3 +505,10 @@ clock IDs; the legacy relative-millisecond entry retains its EBUSY mapping.
 The native/imported-fixture probe checks timeout and expired-deadline
 acquisition on an unlocked mutex, including a null deadline. Null deadlines
 use ordinary blocking lock. PI/shared/time-jump coverage remains open.
+
+
+Android monotonic timed read/write rwlock imports now have explicit hooks,
+using existing backing-object translation and host monotonic clock waits.
+Null deadlines use blocking operations. Independent bionic/native probes
+check cross-thread read/write timeouts and unlocked expired/null acquisition;
+shared semantics, fairness and runtime generation remain open.

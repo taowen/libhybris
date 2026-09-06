@@ -168,3 +168,10 @@ extern "C" int pthread_mutex_timedlock_monotonic_np(pthread_mutex_t *, const str
 extern "C" int mutex_fixture_monotonic(void) {
     return sync_mutex_monotonic(pthread_mutex_timedlock_monotonic_np);
 }
+
+extern "C" int pthread_rwlock_timedrdlock_monotonic_np(pthread_rwlock_t *, const struct timespec *);
+extern "C" int pthread_rwlock_timedwrlock_monotonic_np(pthread_rwlock_t *, const struct timespec *);
+extern "C" int rwlock_fixture_monotonic(void) {
+    return sync_rw_monotonic(pthread_rwlock_timedrdlock_monotonic_np,
+                             pthread_rwlock_timedwrlock_monotonic_np);
+}

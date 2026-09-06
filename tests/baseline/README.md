@@ -1430,3 +1430,22 @@ including native/hybris monotonic mutex, legacy timeout, VVL/SyncVal and both
 capture gates. Native/hybris deadlines expire after approximately 100ms and
 return ETIMEDOUT=110; expired and null deadlines acquire the unlocked mutex.
 The new hook is hidden; the common defined export set remains 130 entries.
+
+
+`rwlock-monotonic` exercises the newly hooked API-28 monotonic read/write
+lock functions. Native resolves the platform entries; hybris calls actual
+bionic fixture imports. The owner holds a writer while a worker attempts
+read, then holds a reader while a worker attempts write. Each worker uses a
+100ms CLOCK_MONOTONIC absolute deadline and must return ETIMEDOUT after at
+least 90ms. After joining and releasing the owner lock, expired and null
+deadlines must acquire the now-free lock and allow clean destruction. The
+hooks reuse existing rwlock translation, use host clockrdlock/clockwrlock,
+and route null deadlines to blocking rdlock/wrlock. This does not prove
+fairness, shared-lock behavior, clock-step handling or contended null waits.
+
+Rebuilt runs `20260907T050101-b55ee16e` (29854870) and
+`20260907T050101-253dd56b` (KB2000) each report 92 PASS, 2 UNSUPPORTED.
+Native/hybris read/write worker waits return ETIMEDOUT=110 after about
+100–102ms, and expired/null unlocked acquisition succeeds. VVL/SyncVal
+and both capture gates pass. Common's 130 defined dynamic exports match
+the prior build; the new hook functions have hidden visibility.

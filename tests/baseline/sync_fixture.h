@@ -118,3 +118,53 @@ static inline int sync_mutex_monotonic(int (*wait)(pthread_mutex_t *, const stru
     if (!error) error = pthread_mutex_destroy(&mutex);
     return error ? error : result != ETIMEDOUT || elapsed < 90000000 ? EINVAL : 0;
 }
+
+struct sync_rw_timeout {
+    pthread_rwlock_t *lock;
+    int (*wait)(pthread_rwlock_t *, const struct timespec *);
+    int result;
+    long long elapsed;
+};
+
+static void *sync_rw_timeout_worker(void *opaque) {
+    struct sync_rw_timeout *state = (struct sync_rw_timeout *)opaque;
+    struct timespec start, end, deadline;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    deadline = start;
+    deadline.tv_nsec += 100000000;
+    if (deadline.tv_nsec >= 1000000000) { ++deadline.tv_sec; deadline.tv_nsec -= 1000000000; }
+    state->result = state->wait(state->lock, &deadline);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    state->elapsed = (end.tv_sec - start.tv_sec) * 1000000000LL + end.tv_nsec - start.tv_nsec;
+    if (!state->result) pthread_rwlock_unlock(state->lock);
+    return NULL;
+}
+
+static inline int sync_rw_monotonic(int (*read_wait)(pthread_rwlock_t *, const struct timespec *),
+                                    int (*write_wait)(pthread_rwlock_t *, const struct timespec *)) {
+    for (unsigned write = 0; write < 2; ++write) {
+        pthread_rwlock_t lock = PTHREAD_RWLOCK_INITIALIZER;
+        int (*wait)(pthread_rwlock_t *, const struct timespec *) = write ? write_wait : read_wait;
+        int error = write ? pthread_rwlock_rdlock(&lock) : pthread_rwlock_wrlock(&lock);
+        if (error) return error;
+        struct sync_rw_timeout state = {&lock, wait, 0, 0};
+        pthread_t thread;
+        error = pthread_create(&thread, NULL, sync_rw_timeout_worker, &state);
+        if (error) { pthread_rwlock_unlock(&lock); pthread_rwlock_destroy(&lock); return error; }
+        error = pthread_join(thread, NULL);
+        if (error) return error;
+        printf("RW_MONOTONIC write=%u result=%d elapsed_ns=%lld\n", write, state.result, state.elapsed);
+        error = pthread_rwlock_unlock(&lock);
+        if (!error) {
+            const struct timespec expired = {0, 0};
+            error = wait(&lock, &expired);
+        }
+        if (!error) error = pthread_rwlock_unlock(&lock);
+        if (!error) error = wait(&lock, NULL);
+        if (!error) error = pthread_rwlock_unlock(&lock);
+        if (!error) error = pthread_rwlock_destroy(&lock);
+        if (error) return error;
+        if (state.result != ETIMEDOUT || state.elapsed < 90000000) return EINVAL;
+    }
+    return 0;
+}

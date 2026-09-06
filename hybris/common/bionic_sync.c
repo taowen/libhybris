@@ -965,6 +965,24 @@ int _hybris_hook_pthread_rwlock_timedwrlock(pthread_rwlock_t *__rwlock,
     return pthread_rwlock_timedwrlock(realrwlock, abs_timeout);
 }
 
+int _hybris_hook_pthread_rwlock_timedrdlock_monotonic_np(pthread_rwlock_t *rwlock,
+                                                       const struct timespec *deadline)
+{
+    pthread_rwlock_t *real = hybris_set_realrwlock(rwlock);
+    if (!real) return EINVAL;
+    return deadline ? pthread_rwlock_clockrdlock(real, CLOCK_MONOTONIC, deadline)
+                    : pthread_rwlock_rdlock(real);
+}
+
+int _hybris_hook_pthread_rwlock_timedwrlock_monotonic_np(pthread_rwlock_t *rwlock,
+                                                       const struct timespec *deadline)
+{
+    pthread_rwlock_t *real = hybris_set_realrwlock(rwlock);
+    if (!real) return EINVAL;
+    return deadline ? pthread_rwlock_clockwrlock(real, CLOCK_MONOTONIC, deadline)
+                    : pthread_rwlock_wrlock(real);
+}
+
 int _hybris_hook_pthread_rwlock_unlock(pthread_rwlock_t *__rwlock)
 {
     uintptr_t value = hybris_read_sync_value(__rwlock);

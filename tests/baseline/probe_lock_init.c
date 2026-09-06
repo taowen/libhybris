@@ -155,3 +155,25 @@ int mutex_monotonic_probe(void) {
   return result ? 2 : 0;
 #endif
 }
+
+int rwlock_monotonic_probe(void) {
+#ifdef __BIONIC__
+  int (*read_wait)(pthread_rwlock_t *, const struct timespec *) = dlsym(RTLD_DEFAULT, "pthread_rwlock_timedrdlock_monotonic_np");
+  int (*write_wait)(pthread_rwlock_t *, const struct timespec *) = dlsym(RTLD_DEFAULT, "pthread_rwlock_timedwrlock_monotonic_np");
+  if (!read_wait || !write_wait) return 3;
+  return sync_rw_monotonic(read_wait, write_wait) ? 2 : 0;
+#else
+  void *common = dlopen("libhybris-common.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!common) return 2;
+  void *(*open_android)(const char *, int) = dlsym(common, "android_dlopen");
+  void *(*sym_android)(void *, const char *) = dlsym(common, "android_dlsym");
+  int (*close_android)(void *) = dlsym(common, "android_dlclose");
+  if (!open_android || !sym_android || !close_android) return 2;
+  void *fixture = open_android("./libtls-fixture.so", RTLD_NOW);
+  if (!fixture) return 2;
+  int (*run)(void) = sym_android(fixture, "rwlock_fixture_monotonic");
+  int result = run ? run() : EINVAL;
+  if (close_android(fixture)) return 2;
+  return result ? 2 : 0;
+#endif
+}

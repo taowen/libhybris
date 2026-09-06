@@ -38,6 +38,8 @@ int main(int argc, char **argv) {
     rc = lock_init_probe(0);
   else if (!strcmp(mode, "rwlock-init"))
     rc = lock_init_probe(1);
+  else if (!strcmp(mode, "rwlock-monotonic"))
+    rc = rwlock_monotonic_probe();
   else if (!strcmp(mode, "mutex-monotonic"))
     rc = mutex_monotonic_probe();
   else if (!strcmp(mode, "sync-destroy"))

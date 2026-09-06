@@ -106,6 +106,12 @@ __attribute__((visibility("hidden")))
 int _hybris_hook_pthread_rwlock_timedwrlock(pthread_rwlock_t *__rwlock,
                                          __const struct timespec *abs_timeout);
 __attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_timedrdlock_monotonic_np(pthread_rwlock_t *rwlock,
+                                                       const struct timespec *deadline);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_timedwrlock_monotonic_np(pthread_rwlock_t *rwlock,
+                                                       const struct timespec *deadline);
+__attribute__((visibility("hidden")))
 int _hybris_hook_pthread_rwlock_unlock(pthread_rwlock_t *__rwlock);
 
 #endif

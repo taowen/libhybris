@@ -1609,6 +1609,8 @@ static struct _hook hooks_common[] = {
     HOOK_INDIRECT(pthread_rwlock_trywrlock),
     HOOK_INDIRECT(pthread_rwlock_timedrdlock),
     HOOK_INDIRECT(pthread_rwlock_timedwrlock),
+    HOOK_INDIRECT(pthread_rwlock_timedrdlock_monotonic_np),
+    HOOK_INDIRECT(pthread_rwlock_timedwrlock_monotonic_np),
     HOOK_INDIRECT(__pthread_cleanup_push),
     HOOK_INDIRECT(__pthread_cleanup_pop),
     /* bionic-only pthread */
