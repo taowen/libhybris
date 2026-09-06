@@ -30,11 +30,14 @@ p.add_argument('--manifest', type=Path, help='Provenance JSON from tools/manifes
 p.add_argument('--out', type=Path, default=Path(__file__).resolve().parent / 'build/results')
 p.add_argument('--bundle', type=Path, default=Path(__file__).resolve().parent / 'build/bundle')
 p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
+p.add_argument('--icd-mali-loader-quirk', action='store_true', help='Opt in to the build-id-scoped Mali MMUD loader-check workaround for ICD cases')
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
 p.add_argument('--validation-manifest', type=Path, help='Original layer JSON matching --validation-layer')
 p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
 p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
 a = p.parse_args()
+if a.icd_mali_loader_quirk and not a.icd_hal:
+    p.error('--icd-mali-loader-quirk requires --icd-hal')
 if a.selected_cases and a.capture_tools:
     p.error('--case cannot be combined with --capture-tools; capture requires the full reference workload')
 if bool(a.validation_layer) != bool(a.validation_manifest):
@@ -122,6 +125,7 @@ metadata['instance_evidence_sha256'] = sha256_file(here / 'instance_evidence.py'
 metadata['device_evidence_sha256'] = sha256_file(here / 'device_evidence.py')
 metadata['commands'] = {}
 metadata['driver_observations'] = {}
+metadata['icd_mali_loader_quirk_requested'] = a.icd_mali_loader_quirk
 metadata['mapping_note'] = 'Snapshots observe file-backed paths at named phases. Staged hashes describe deployment files; Android file hashes are collected by path after execution, not from mapped pages.'
 metadata['hybris_source_commit'] = subprocess.check_output(
     ['git', '-C', str(here), 'rev-parse', 'HEAD'], text=True
@@ -303,6 +307,8 @@ try:
                 'PROBE_VK=$PWD/standard/libvulkan.so.1 '
                 './glibc/ld-linux-aarch64.so.1 --library-path ./standard:./hybris:./glibc ./'
                 + binary + ' ')
+        if backend in {'icd', 'icd-linked'} and a.icd_mali_loader_quirk:
+            command = 'HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK=1 ' + command
         if backend == 'icd' and mode == 'vk-init':
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 ' + command
         if backend == 'icd' and mode == 'life':
@@ -357,7 +363,7 @@ try:
                 json.dumps(registry_entries, indent=2) + '\n')
         metadata['driver_observations'][name] = [
             line for line in decoded.splitlines()
-            if line.startswith(('GPU ', 'EGL ', 'GL vendor='))]
+            if line.startswith(('GPU ', 'EGL ', 'GL vendor=', 'HYBRIS_MALI_MMUD '))]
         mappings = []
         for line in decoded.splitlines():
             if not line.startswith('MAPPING\t'):

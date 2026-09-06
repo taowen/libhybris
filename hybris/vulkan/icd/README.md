@@ -55,3 +55,43 @@ commit and run:
 The generator verifies the registry SHA256 before producing the table.
 Loader contract:
 https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderDriverInterface.md
+
+## Inspected Mali MMUD workaround (opt-in)
+
+For the X300 Mali driver with GNU build-id
+`5ac4efe8d6175298b273dbaeb8f9d28e5e508e72`, set
+`HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK=1` before loading the HAL. The baseline
+runner offers `--icd-mali-loader-quirk`, applied only to ICD commands and their
+capture/replay commands. It is off by default, ignored during secure execution,
+and requires an AArch64 build with Mali quirks. The common hook matches the
+requesting `libGLES_mali.so` file's build-id; application hook callbacks still
+have precedence. Other drivers and property names use the existing path.
+
+This driver reads Android loader-private data from the instance header during
+MMUD setup (observed crash at file offset 0xa237bc, header=0x1cdc0de).
+Inspection of its decoder at 0x1db11d0 shows a process property encoding
+`N*1000000+322126`; bit 3 of N bypasses that inspection. The hook reads the
+original libcutils result and adds only that control bit for recognized
+encodings (or default/nonpositive values); unknown positive encodings are
+left unchanged with a diagnostic. Default 0 becomes 8322126. No Android system
+property is written. The `HYBRIS_MALI_MMUD` log records the exact build-id and
+before/after value; run metadata retains these observations.
+
+The driver path also inspects layer presence and dispatch function addresses.
+This is not a general implementation of Android loader-private data. Effects
+on other MMUD behavior, performance, arbitrary layers and applications remain
+unverified. The explicit opt-in is retained for that reason. Do not extrapolate
+to another firmware or use this option to claim full Mali compatibility.
+No dispatch header, Vulkan creation chain or validation rule is changed.
+
+Build and full runs on 2026-09-07: Redmi `20260907T065438-27c734a0` has
+96 PASS / 4 UNSUPPORTED / 1 CRASH (native-groups); the option produces no MMUD
+activation on Adreno. X300 `20260907T065437-096b67ab` has
+93 PASS / 4 UNSUPPORTED / 2 CRASH / 2 FAIL. Ordinary/dynamic/large/staged widgets,
+their validation/SyncVal paths and both capture/replay gates pass. Native groups,
+ICD core11 and template/template-validation remain failures. Captures remain
+headless, with no WSI/present coverage. All saved ICD caps/caps2 query values
+match the pre-workaround run. Same-built-library opt-out run
+`20260907T065418-7b030d21` reproduces the original pipeline crash.
+Other build-id rejection, nonzero encoded properties, malformed ELF notes and
+secure execution have code checks but no independent runtime fault injection.

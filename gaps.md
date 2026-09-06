@@ -332,3 +332,16 @@ X300 `debug-icd-ubo-d6afd0a4` 位于 `20260907T062706-9fb06554` 结果目录，
 重新实际构建后，红米 `20260907T064509-e1042b03` 的 tls-mrs/core11/ubo
 三项通过；X300 `20260907T064510-08fcee5d` 仍为 tls-mrs PASS、core11 FAIL、
 ubo CRASH。没有把成功取证计为兼容性通过，也未改变 G02/G04/G06 门槛。
+
+2026-09-07 X300 MMUD 兼容选项：新增独立 `mali_quirks.c`，仅显式开启
+`HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK=1` 且匹配已检查 Mali build-id 时，
+通过驱动原有进程内控制位跳过 Android loader 私有数据检查。
+不写系统属性、不改 Vulkan 对象头/pNext；默认关闭，具体限制见
+[ICD 说明](hybris/vulkan/icd/README.md#inspected-mali-mmud-workaround-opt-in)。
+runner 的 `--icd-mali-loader-quirk` 只用于 ICD 及其捕获命令，并记录实际调整。
+构建后红米 `20260907T065438-27c734a0` 为 96 PASS / 4 UNSUPPORTED / 1 CRASH；
+X300 `20260907T065437-096b67ab` 为 93 PASS / 4 UNSUPPORTED / 2 CRASH / 2 FAIL。
+普通/动态/large/staged widget、相应 validation 和两种 capture/replay 均通过，
+caps/caps2 记录值不变。关闭选项的同库负对照 `20260907T065418-7b030d21`
+仍复现原崩溃。native-groups、ICD core11、template 和 template-validation 尚未解决；
+其余固件、驱动内部优化行为、任意 layer/应用、WSI 均未据此验收。

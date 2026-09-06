@@ -1591,3 +1591,15 @@ five ICD widget variants, five widget validation variants and two capture
 crashes, plus ICD core11 transfer failure. These remain open; this batch
 only resolves the observed foreign-thread first-touch failure. No unit-test
 suite was added.
+
+Mali MMUD opt-in (2026-09-07): `--icd-mali-loader-quirk` requests the
+[build-id-scoped loader-inspection workaround](../../hybris/vulkan/icd/README.md#inspected-mali-mmud-workaround-opt-in).
+It records the requested option, actual property adjustment and build-id,
+without changing the Android system property. X300 full run
+`20260907T065437-096b67ab` is 93 PASS / 4 UNSUPPORTED / 2 CRASH / 2 FAIL;
+Redmi `20260907T065438-27c734a0` is 96 PASS / 4 UNSUPPORTED / 1 CRASH.
+Both capture/replay gates and the non-template widget validation workloads
+now pass on X300; core11, template/template-validation and native-groups remain
+open. Same-build opt-out `20260907T065418-7b030d21` still crashes at pipeline
+creation. This option is disabled by default and not a claim of general Mali
+compatibility. No unit-test suite was added; common's 130 export names are unchanged.

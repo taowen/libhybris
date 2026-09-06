@@ -22,6 +22,7 @@
 #include <hybris/common/binding.h>
 
 #include "hooks_shm.h"
+#include "mali_quirks.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -1962,6 +1963,9 @@ void* hybris_get_hooked_symbol(const char *sym, const char *requester)
         if (found)
             return (void*) found;
     }
+
+    found = hybris_mali_hook(sym, requester);
+    if (found) return found;
 
 #ifdef WANT_ADRENO_QUIRKS
     if (strendswith(requester, "libllvm-glnext.so", 17) && strcmp(sym, "malloc") == 0) {

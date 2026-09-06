@@ -27,6 +27,8 @@ endif
 
 libhybris_common_la_SOURCES = \
 	hooks.c \
+	mali_quirks.c \
+	mali_quirks.h \
 	bionic_stdio.c \
 	bionic_stdio.h \
 	bionic_sync.c \
