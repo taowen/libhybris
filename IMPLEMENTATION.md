@@ -27,7 +27,7 @@ are committed and pushed separately to taowen/ardesk.
 | Gap | State | Next concrete evidence |
 |---|---|---|
 | G01 | AArch64 baseline verified | Standalone default build, fixed inputs/toolchain, library/probe hashes and sampled runtime mappings verified on two devices; see baseline README. |
-| G02 | Partial | Pinned vk.xml coverage for direct/link/GIPA/GDPA entries, alias/enablement rules and per-device dispatch. |
+| G02 | Partial | 726-command pinned registry query table and four-route transfer workload verified; core/KHR memory2 calls verified. Still need per-object dispatch/compat state and broader enabled-feature semantics. |
 | G03 | Partial | Observe TLS allocation/destruction and generation handling; exercise GLES multiple contexts and cross-thread teardown. |
 | G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Fixed headless widget capture/replay now matches all RGBA bytes; still need a presented frame and application/WSI coverage. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
@@ -113,3 +113,19 @@ Verified on 29854870 (`20260907T004458-8576f807`) and KB2000
 (`20260907T004459-930906e9`): 32 PASS / 2 UNSUPPORTED each, including VVL
 and SyncVal. The first capture attempt exposed a missing indirect xxhash
 runtime dependency, now included by the builder.
+
+
+Registry/entrypoint batch: generated scope, alias and provider metadata for 726
+Vulkan commands from the same fixed registry as the ICD resolver. Runtime
+queries record per-name dlsym/GIPA(NULL)/GIPA(instance)/GDPA availability and
+check 137 core 1.0 entries plus forbidden non-global/non-device scopes. All
+core 1.0 addresses are also referenced by the linked binary. The existing
+fill/fence/readback workload now actually executes through link, dlsym, GIPA
+and GDPA; earlier linked-vk results only proved dependency loading because
+its calls still used GIPA. Linked dispatch already exercised create/destroy.
+Memory2 core 1.1 and enabled KHR variants match ordinary buffer requirements
+and complete the same readback. On 29854870 (`20260907T005630-74134b03`) and
+KB2000 (`20260907T005631-3e16a681`), each run is 45 PASS / 2 UNSUPPORTED,
+including unchanged VVL/SyncVal and full-image capture/replay. Pointer presence
+is not command-execution coverage; per-object compatibility state and the
+unsupported modern aliases remain open.

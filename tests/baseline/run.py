@@ -152,6 +152,10 @@ for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked']:
 
 cases = [
     ('native', 'vk', 'probe-bionic'),
+    ('native', 'vk-dlsym', 'probe-bionic'),
+    ('native', 'vk-gdpa', 'probe-bionic'),
+    ('native', 'vk-core11', 'probe-bionic'),
+    ('native', 'vk-khr11', 'probe-bionic'),
     ('native', '2', 'probe-bionic'),
     ('native', '3', 'probe-bionic'),
     ('native', '0', 'probe-bionic'),
@@ -162,6 +166,10 @@ cases = [
     ('native', 'caps', 'probe-bionic'),
     ('native', 'ubo', 'probe-bionic'),
     ('hybris', 'vk', 'probe-glibc'),
+    ('hybris', 'vk-dlsym', 'probe-glibc'),
+    ('hybris', 'vk-gdpa', 'probe-glibc'),
+    ('hybris', 'vk-core11', 'probe-glibc'),
+    ('hybris', 'vk-khr11', 'probe-glibc'),
     ('hybris', '2', 'probe-glibc'),
     ('hybris', '3', 'probe-glibc'),
     ('hybris', '0', 'probe-glibc'),
@@ -190,8 +198,8 @@ if a.icd_hal:
     # The manifest starts at 1.0; interface 5 queries the HAL's supported
     # instance version via vkEnumerateInstanceVersion.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('vk', 'dispatch', 'life', 'unload', 'tls', 'caps', 'ubo')]
-    cases += [('icd-linked', 'vk', 'probe-glibc-linked')]
+              for mode in ('vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'unload', 'tls', 'caps', 'ubo')]
+    cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     if a.validation_layer:
         (stage / 'layers').mkdir()
         shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
@@ -255,6 +263,15 @@ try:
             kill_remote()
         (a.out / (name + '.log')).write_bytes(output or b'')
         decoded = (output or b'').decode('utf-8', errors='replace')
+        registry_entries = []
+        for line in decoded.splitlines():
+            if line.startswith('REGISTRY_ENTRY '):
+                _, command_name, *fields = line.split()
+                registry_entries.append(dict(name=command_name, **{
+                    key: bool(int(value)) for key, value in (field.split('=') for field in fields)}))
+        if registry_entries:
+            (a.out / (name + '-registry.json')).write_text(
+                json.dumps(registry_entries, indent=2) + '\n')
         metadata['driver_observations'][name] = [
             line for line in decoded.splitlines()
             if line.startswith(('GPU ', 'EGL ', 'GL vendor='))]

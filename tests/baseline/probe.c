@@ -37,7 +37,19 @@ int main(int argc, char **argv) {
   else if (!strcmp(mode, "ubo-good") || !strcmp(mode, "ubo-bad"))
     rc = ubo_draw(!strcmp(mode, "ubo-bad"), 0);
   else if (!strcmp(mode, "vk"))
-    rc = vkprobe();
+#ifdef HYBRIS_PROBE_LINKED
+    rc = vkprobe("linked");
+#else
+    rc = vkprobe("gipa");
+#endif
+  else if (!strcmp(mode, "vk-dlsym"))
+    rc = vkprobe("dlsym");
+  else if (!strcmp(mode, "vk-gdpa"))
+    rc = vkprobe("gdpa");
+  else if (!strcmp(mode, "vk-core11"))
+    rc = vkprobe("core11");
+  else if (!strcmp(mode, "vk-khr11"))
+    rc = vkprobe("khr11");
   else if (!strcmp(mode, "0") || !strcmp(mode, "2") || !strcmp(mode, "3"))
     rc = eglprobe(atoi(mode));
   else {

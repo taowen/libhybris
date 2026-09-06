@@ -40,7 +40,7 @@ int pick_queue(PFN_vkGetPhysicalDeviceQueueFamilyProperties query,
                VkPhysicalDevice device, uint32_t *family);
 
 int eglprobe(int version);
-int vkprobe(void);
+int vkprobe(const char *route);
 int dispatch_probe(void);
 int life_probe(int unload);
 int init_probe(void);

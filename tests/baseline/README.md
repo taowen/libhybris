@@ -367,3 +367,51 @@ The first attempted run failed because the tools lacked the indirect
 `libxxhash.so.0` dependency; the fixed builder includes it. That failure is
 not counted as a successful capture. The ordinary probe baseline remained
 31 PASS / 2 UNSUPPORTED during that failed tool run.
+
+
+## Registry and execution routes
+
+`tools/registry/generate-dispatch-coverage.py` checks the SHA256 of Vulkan-Headers
+v1.4.309 registry (`952f776f6573aafbb62ea717d871cd1d6816c387`) and generates
+[command metadata](../../tools/registry/dispatch-coverage.json) plus the probe's
+`dispatch_commands.inc`. Regenerate with:
+
+    python3 tools/registry/generate-dispatch-coverage.py /path/to/vk.xml
+
+Only commands provided by the Vulkan API are included (726); Vulkan SC-only
+commands and disabled extensions are excluded. The metadata preserves aliases,
+first parameter, scope, first core version and core/extension providers. It is
+a query-coverage catalog, not a capability declaration or a feature evaluator.
+The snapshot built into each probe includes the generated table's hash.
+
+Each dispatch case writes `*-registry.json` with dlsym, GIPA(NULL),
+GIPA(instance), GDPA(device) and linked-address availability for every name.
+The probe verifies the 137 required core 1.0 entries and rejects non-global
+commands returned by GIPA(NULL) (with GIPA's version-dependent self-lookup
+exception), and non-device commands returned by GDPA. Existing specific
+unenabled-extension checks remain. This is not every resolver rule or all
+extension-enable combinations; later pointers are recorded but not executed.
+See the [GIPA contract](https://docs.vulkan.org/refpages/latest/refpages/source/vkGetInstanceProcAddr.html)
+and [GDPA contract](https://docs.vulkan.org/refpages/latest/refpages/source/vkGetDeviceProcAddr.html).
+
+`vk`, `vk-dlsym` and `vk-gdpa` run the same 4096-byte fill/fence/host-readback
+workload. The linked binary's `vk` case now uses linked function addresses for
+all workload calls; GDPA uses GIPA for instance/physical-device operations.
+Earlier linked-vk results only established library dependency loading, since
+the workload still called GIPA-derived pointers. Linked dispatch had separately
+called create/destroy through linked symbols and retains that coverage.
+
+`vk-core11` requests Vulkan 1.1; `vk-khr11` requests Vulkan 1.0 and explicitly
+enables VK_KHR_bind_memory2 and VK_KHR_get_memory_requirements2. Both use their
+corresponding GDPA aliases to query requirements and bind memory, compare
+requirements against the 1.0 query, and complete the same GPU readback. Missing
+versions/extensions report UNSUPPORTED. These cases do not claim complete
+1.1 support. Neither connected device advertises dynamic rendering or
+synchronization2, so their core/KHR execution remains unverified.
+
+Verified runs: 29854870 `20260907T005630-74134b03` and KB2000
+`20260907T005631-3e16a681`, each **45 PASS / 2 UNSUPPORTED**, including validation
+and capture/replay. All five dispatch variants check 726 names with zero scope
+errors. Native/hybris/standard-ICD dlsym availability was 232/632/269 commands;
+GDPA returned 138 commands in each configuration. These are pointer-resolution
+counts, not supported feature counts or a compatibility percentage.

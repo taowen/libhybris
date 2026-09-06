@@ -1,5 +1,57 @@
 #include "probe.h"
 
+enum command_scope { SCOPE_GLOBAL, SCOPE_GIPA, SCOPE_INSTANCE, SCOPE_PHYSICAL, SCOPE_DEVICE };
+struct dispatch_command {
+  const char *name;
+  enum command_scope scope;
+  int core10;
+  PFN_vkVoidFunction linked;
+};
+#ifdef HYBRIS_PROBE_LINKED
+#define LINK(name) ((PFN_vkVoidFunction)name)
+#else
+#define LINK(name) NULL
+#endif
+#define ENTRY(name, scope, core, linked) { name, scope, core, linked }
+static const struct dispatch_command dispatch_commands[] = {
+#include "dispatch_commands.inc"
+};
+#undef ENTRY
+#undef LINK
+
+static int registry_queries(void *handle, PFN_vkGetInstanceProcAddr gip,
+                            VkInstance instance, PFN_vkGetDeviceProcAddr gdp,
+                            VkDevice device) {
+  unsigned errors = 0;
+  for (unsigned i = 0; i < sizeof(dispatch_commands)/sizeof(dispatch_commands[0]); ++i) {
+    const struct dispatch_command *cmd = &dispatch_commands[i];
+    PFN_vkVoidFunction direct = (PFN_vkVoidFunction)dlsym(handle, cmd->name);
+    PFN_vkVoidFunction global = gip(VK_NULL_HANDLE, cmd->name);
+    PFN_vkVoidFunction inst = gip(instance, cmd->name);
+    PFN_vkVoidFunction dev = gdp(device, cmd->name);
+    printf("REGISTRY_ENTRY %s dlsym=%d global=%d instance=%d device=%d linked=%d\n",
+           cmd->name, !!direct, !!global, !!inst, !!dev, !!cmd->linked);
+    /* The 1.0 instance requests no extensions. Later core/extension pointers
+     * are observations only: presence does not permit executing the command. */
+    int bad = (cmd->scope != SCOPE_GLOBAL && cmd->scope != SCOPE_GIPA && global) ||
+              (cmd->scope != SCOPE_DEVICE && dev);
+    if (cmd->core10) {
+      bad |= !direct || (cmd->scope == SCOPE_GLOBAL ? !global : !inst) ||
+             (cmd->scope == SCOPE_DEVICE && !dev);
+#ifdef HYBRIS_PROBE_LINKED
+      bad |= !cmd->linked;
+#endif
+    }
+    if (bad) {
+      fprintf(stderr, "REGISTRY_SCOPE FAIL %s\n", cmd->name);
+      errors++;
+    }
+  }
+  printf("REGISTRY_QUERIES commands=%zu errors=%u (resolution only)\n",
+         sizeof(dispatch_commands)/sizeof(dispatch_commands[0]), errors);
+  return errors ? 2 : 0;
+}
+
 static int same_or_both(void *a, void *b, const char *label) {
   printf("ENTRY %s dlsym=%p gipa=%p\n", label, a, b);
   if (!a || !b) {
@@ -155,9 +207,10 @@ int dispatch_probe(void) {
   printf("GDPA vkCmdBeginRenderingKHR %s\n", begin_khr ? "present" : "null");
   printf("GDPA vkCmdBeginRendering %s\n", begin_core ? "present" : "null");
   printf("GDPA vkQueueSubmit2KHR %s\n", submit2 ? "present" : "null");
+  int registry_result = registry_queries(h, gip, instance, gdp, device);
   destroy_dev(device, NULL);
   destroy_inst(instance, NULL);
+  if (registry_result) return registry_result;
   printf("DISPATCH PASS\n");
   return 0;
 }
-

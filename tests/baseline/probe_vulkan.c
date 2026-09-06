@@ -1,6 +1,32 @@
 #include "probe.h"
 
-int vkprobe(void) {
+/* Execute the same transfer/readback workload through each legal entry route. */
+#ifdef HYBRIS_PROBE_LINKED
+#define DIRECT(name) ((PFN_vkVoidFunction)name)
+#else
+#define DIRECT(name) NULL
+#endif
+#undef V
+#define RESOLVE(name, is_device) \
+  PFN_##name p_##name = (PFN_##name)(linked ? DIRECT(name) : \
+      dynamic ? (PFN_vkVoidFunction)dlsym(h, #name) : \
+      device_route && is_device ? gdp(device, #name) : gip(instance, #name)); \
+  if (!p_##name) { printf("MISSING %s via %s\n", #name, route); return 2; }
+#define V(name) RESOLVE(name, 0)
+#define D(name) RESOLVE(name, 1)
+
+int vkprobe(const char *route) {
+  int linked = !strcmp(route, "linked");
+  int dynamic = !strcmp(route, "dlsym");
+  int alias_core = !strcmp(route, "core11");
+  int alias_khr = !strcmp(route, "khr11");
+  int device_route = !strcmp(route, "gdpa") || alias_core || alias_khr;
+#ifndef HYBRIS_PROBE_LINKED
+  if (linked) return 3;
+#endif
+  printf("TRANSFER entry-route=%s\n", route);
+  VkDevice device = VK_NULL_HANDLE;
+  PFN_vkGetDeviceProcAddr gdp = NULL;
   void *h =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
@@ -8,6 +34,16 @@ int vkprobe(void) {
     return 2;
   }
   PFN_vkGetInstanceProcAddr gip = sym(h, "vkGetInstanceProcAddr");
+  if (alias_core) {
+    PFN_vkEnumerateInstanceVersion version =
+        (PFN_vkEnumerateInstanceVersion)gip(NULL, "vkEnumerateInstanceVersion");
+    uint32_t supported = VK_API_VERSION_1_0;
+    if (version) CHECK(version(&supported));
+    if (supported < VK_API_VERSION_1_1) {
+      printf("UNSUPPORTED core 1.1 instance version\n");
+      return 3;
+    }
+  }
   VkInstance instance = VK_NULL_HANDLE;
   V(vkEnumerateInstanceExtensionProperties);
   uint32_t count = 0;
@@ -20,7 +56,7 @@ int vkprobe(void) {
   V(vkCreateInstance);
   VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                            .pApplicationName = "hybris-baseline",
-                           .apiVersion = VK_API_VERSION_1_0};
+                           .apiVersion = alias_core ? VK_API_VERSION_1_1 : VK_API_VERSION_1_0};
   VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
                              .pApplicationInfo = &app};
   CHECK(p_vkCreateInstance(&ci, NULL, &instance));
@@ -44,6 +80,11 @@ int vkprobe(void) {
   VkPhysicalDeviceFeatures f;
   p_vkGetPhysicalDeviceProperties(pd, &props);
   p_vkGetPhysicalDeviceFeatures(pd, &f);
+  if (alias_core && props.apiVersion < VK_API_VERSION_1_1) {
+    p_vkDestroyInstance(instance, NULL);
+    printf("UNSUPPORTED core 1.1 physical device\n");
+    return 3;
+  }
   printf("GPU %s Vulkan=%u.%u.%u driver=0x%x BC=%u ETC2=%u ASTC=%u geometry=%u "
          "tessellation=%u float64=%u int64=%u\n",
          props.deviceName, VK_VERSION_MAJOR(props.apiVersion),
@@ -54,9 +95,18 @@ int vkprobe(void) {
   CHECK(p_vkEnumerateDeviceExtensionProperties(pd, NULL, &count, NULL));
   ext = calloc(count, sizeof(*ext));
   CHECK(p_vkEnumerateDeviceExtensionProperties(pd, NULL, &count, ext));
-  for (uint32_t i = 0; i < count; i++)
+  int bind2 = 0, requirements2 = 0;
+  for (uint32_t i = 0; i < count; i++) {
     printf("DEVICE_EXT %s\n", ext[i].extensionName);
+    bind2 |= !strcmp(ext[i].extensionName, VK_KHR_BIND_MEMORY_2_EXTENSION_NAME);
+    requirements2 |= !strcmp(ext[i].extensionName, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+  }
   free(ext);
+  if (alias_khr && (!bind2 || !requirements2)) {
+    p_vkDestroyInstance(instance, NULL);
+    printf("UNSUPPORTED KHR memory2 extension pair\n");
+    return 3;
+  }
   p_vkGetPhysicalDeviceQueueFamilyProperties(pd, &count, NULL);
   VkQueueFamilyProperties *q = calloc(count, sizeof(*q));
   p_vkGetPhysicalDeviceQueueFamilyProperties(pd, &count, q);
@@ -77,30 +127,50 @@ int vkprobe(void) {
   VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                            .queueCreateInfoCount = 1,
                            .pQueueCreateInfos = &qc};
-  VkDevice device;
+  const char *memory_extensions[] = {VK_KHR_BIND_MEMORY_2_EXTENSION_NAME,
+                                     VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME};
+  if (alias_khr) {
+    dc.enabledExtensionCount = 2;
+    dc.ppEnabledExtensionNames = memory_extensions;
+  }
   CHECK(p_vkCreateDevice(pd, &dc, NULL, &device));
-  V(vkGetDeviceQueue);
-  V(vkCreateBuffer);
-  V(vkGetBufferMemoryRequirements);
+  gdp = (PFN_vkGetDeviceProcAddr)gip(instance, "vkGetDeviceProcAddr");
+  if (!gdp) return 2;
+  PFN_vkGetBufferMemoryRequirements2 requirements_alias = NULL;
+  PFN_vkBindBufferMemory2 bind_alias = NULL;
+  if (alias_core || alias_khr) {
+    const char *requirements_name = alias_core ? "vkGetBufferMemoryRequirements2" : "vkGetBufferMemoryRequirements2KHR";
+    const char *bind_name = alias_core ? "vkBindBufferMemory2" : "vkBindBufferMemory2KHR";
+    requirements_alias = (PFN_vkGetBufferMemoryRequirements2)gdp(device, requirements_name);
+    bind_alias = (PFN_vkBindBufferMemory2)gdp(device, bind_name);
+    if (!requirements_alias || !bind_alias) {
+      printf("MISSING enabled aliases %s %s\n", requirements_name, bind_name);
+      return 2;
+    }
+    printf("ALIAS enabled %s %s\n", requirements_name, bind_name);
+  }
+  D(vkGetDeviceQueue);
+  D(vkCreateBuffer);
+  D(vkGetBufferMemoryRequirements);
   V(vkGetPhysicalDeviceMemoryProperties);
-  V(vkAllocateMemory);
-  V(vkBindBufferMemory);
-  V(vkMapMemory);
-  V(vkUnmapMemory);
-  V(vkCreateCommandPool);
-  V(vkAllocateCommandBuffers);
-  V(vkBeginCommandBuffer);
-  V(vkCmdFillBuffer);
-  V(vkCmdPipelineBarrier);
-  V(vkEndCommandBuffer);
-  V(vkQueueSubmit);
-  V(vkCreateFence);
-  V(vkWaitForFences);
-  V(vkDestroyFence);
-  V(vkDestroyCommandPool);
-  V(vkDestroyBuffer);
-  V(vkFreeMemory);
-  V(vkDestroyDevice);
+  D(vkAllocateMemory);
+  D(vkBindBufferMemory);
+  D(vkMapMemory);
+  D(vkUnmapMemory);
+  D(vkCreateCommandPool);
+  D(vkAllocateCommandBuffers);
+  D(vkBeginCommandBuffer);
+  D(vkCmdFillBuffer);
+  D(vkCmdPipelineBarrier);
+  D(vkEndCommandBuffer);
+  D(vkQueueSubmit);
+  D(vkCreateFence);
+  D(vkWaitForFences);
+  D(vkDestroyFence);
+  D(vkDestroyCommandPool);
+  D(vkDestroyBuffer);
+  D(vkFreeMemory);
+  D(vkDestroyDevice);
   VkQueue queue;
   p_vkGetDeviceQueue(device, qi, 0, &queue);
   VkBuffer buffer;
@@ -110,6 +180,18 @@ int vkprobe(void) {
   CHECK(p_vkCreateBuffer(device, &bc, NULL, &buffer));
   VkMemoryRequirements mr;
   p_vkGetBufferMemoryRequirements(device, buffer, &mr);
+  if (requirements_alias) {
+    VkBufferMemoryRequirementsInfo2 info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2, .buffer = buffer};
+    VkMemoryRequirements2 result = {.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
+    requirements_alias(device, &info, &result);
+    if (mr.size != result.memoryRequirements.size ||
+        mr.alignment != result.memoryRequirements.alignment ||
+        mr.memoryTypeBits != result.memoryRequirements.memoryTypeBits) {
+      printf("ALIAS memory requirements mismatch\n");
+      return 2;
+    }
+  }
   VkPhysicalDeviceMemoryProperties mp;
   p_vkGetPhysicalDeviceMemoryProperties(pd, &mp);
   uint32_t mi = 0;
@@ -128,7 +210,13 @@ int vkprobe(void) {
                              .allocationSize = mr.size,
                              .memoryTypeIndex = mi};
   CHECK(p_vkAllocateMemory(device, &ma, NULL, &memory));
-  CHECK(p_vkBindBufferMemory(device, buffer, memory, 0));
+  if (bind_alias) {
+    VkBindBufferMemoryInfo info = {.sType = VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_INFO,
+                                   .buffer = buffer, .memory = memory, .memoryOffset = 0};
+    CHECK(bind_alias(device, 1, &info));
+  } else {
+    CHECK(p_vkBindBufferMemory(device, buffer, memory, 0));
+  }
   VkCommandPool pool;
   VkCommandPoolCreateInfo pc = {.sType =
                                     VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -176,4 +264,3 @@ int vkprobe(void) {
   p_vkDestroyInstance(instance, NULL);
   return ok ? 0 : 2;
 }
-
