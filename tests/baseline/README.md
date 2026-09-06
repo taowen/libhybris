@@ -738,3 +738,24 @@ Fresh builds and runs `20260907T021359-9aa5efda` (29854870) and
 `20260907T021359-51c1edc4` (KB2000) each complete **58 PASS / 2 UNSUPPORTED**,
 including VVL, SyncVal and capture/replay. All three condition workers report
 zero errors on both devices. Common's 130 dynamic exports remain unchanged.
+
+## Synchronization allocation ownership split
+
+`common/bionic_sync.c` owns the host publication guard, static mutex/condition/
+rwlock allocation and pointer lookup. `bionic_sync.h` holds initializer values
+and four hidden helper declarations. `hooks.c` keeps the API wrappers, explicit
+initialization/destruction and shared-memory handle translation. Its size falls
+from 3588 to 3480 lines; the new implementation file is 131 lines.
+
+The extracted helper bodies match the previous source apart from internal
+linkage. Rwlock pointer publication moves behind one private helper; shared
+handle translation still occurs afterward. No allocation policy, locking
+scope, condition clock or destruction behavior changes in this split. The
+library's 130 dynamic exports match by name, type, binding and visibility;
+none of the new cross-file helpers is exported.
+
+Fresh library/probe builds and runs `20260907T021854-5ecc07d9` (29854870) and
+`20260907T021854-fb23cbb2` (KB2000) each complete **58 PASS / 2 UNSUPPORTED**,
+including the three synchronization first-use probes, VVL, SyncVal and
+capture/replay. This structural change adds no compatibility coverage beyond
+those existing workloads; their documented limitations still apply.

@@ -97,6 +97,7 @@ static int locale_inited = 0;
 static hybris_hook_cb hook_callback = NULL;
 
 #include "bionic_tls.h"
+#include "bionic_sync.h"
 
 #include "linker_bridge.h"
 
@@ -106,11 +107,6 @@ static hybris_hook_cb hook_callback = NULL;
 *  - Check for shared rwlock
 */
 
-/* Base address to check for Android specifics */
-#define ANDROID_TOP_ADDR_VALUE_MUTEX  0xFFFF
-#define ANDROID_TOP_ADDR_VALUE_COND   0xFFFF
-#define ANDROID_TOP_ADDR_VALUE_RWLOCK 0xFFFF
-
 #define ANDROID_MUTEX_SHARED_MASK      0x2000
 #define ANDROID_COND_SHARED_MASK       0x0001
 #define ANDROID_COND_COUNTER_INCREMENT 0x0002
@@ -118,13 +114,6 @@ static hybris_hook_cb hook_callback = NULL;
 #define ANDROID_RWLOCKATTR_SHARED_MASK 0x0010
 
 #define ANDROID_COND_IS_SHARED(c)  (((c)->value & ANDROID_COND_SHARED_MASK) != 0)
-
-/* For the static initializer types */
-#define ANDROID_PTHREAD_MUTEX_INITIALIZER            0
-#define ANDROID_PTHREAD_RECURSIVE_MUTEX_INITIALIZER  0x4000
-#define ANDROID_PTHREAD_ERRORCHECK_MUTEX_INITIALIZER 0x8000
-#define ANDROID_PTHREAD_COND_INITIALIZER             0
-#define ANDROID_PTHREAD_RWLOCK_INITIALIZER           0
 
 #define MALI_HIST_DUMP_THREAD_NAME "mali-hist-dump"
 
@@ -250,96 +239,6 @@ int android_pthread_cond_signal(android_cond_t *cond)
     return __android_pthread_cond_pulse(cond, 1);
 }
 
-static void hybris_set_mutex_attr(unsigned int android_value, pthread_mutexattr_t *attr)
-{
-    /* Init already sets as PTHREAD_MUTEX_NORMAL */
-    pthread_mutexattr_init(attr);
-
-    if (android_value & ANDROID_PTHREAD_RECURSIVE_MUTEX_INITIALIZER) {
-        pthread_mutexattr_settype(attr, PTHREAD_MUTEX_RECURSIVE);
-    } else if (android_value & ANDROID_PTHREAD_ERRORCHECK_MUTEX_INITIALIZER) {
-        pthread_mutexattr_settype(attr, PTHREAD_MUTEX_ERRORCHECK);
-    }
-}
-
-/* Android mutex storage is only four-byte aligned, even on AArch64. Use
- * memcpy under a host lock: pointer-width atomics can SIGBUS on valid bionic
- * objects. This lock protects publication only, never the user's critical
- * section or a wait on its backing mutex. */
-static pthread_mutex_t static_sync_guard = PTHREAD_MUTEX_INITIALIZER;
-
-static uintptr_t hybris_read_sync_value(const void *storage)
-{
-    uintptr_t value;
-    pthread_mutex_lock(&static_sync_guard);
-    memcpy(&value, storage, sizeof(value));
-    pthread_mutex_unlock(&static_sync_guard);
-    return value;
-}
-
-static pthread_mutex_t* hybris_get_static_mutex(void *storage)
-{
-    uintptr_t value;
-    pthread_mutex_lock(&static_sync_guard);
-    memcpy(&value, storage, sizeof(value));
-    if (value <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
-        pthread_mutex_t *candidate = malloc(sizeof(*candidate));
-        pthread_mutexattr_t attr;
-        if (!candidate) {
-            fprintf(stderr, "HYBRIS: fatal: cannot allocate static mutex\n");
-            abort();
-        }
-        hybris_set_mutex_attr(value, &attr);
-        int error = pthread_mutex_init(candidate, &attr);
-        pthread_mutexattr_destroy(&attr);
-        if (error) {
-            fprintf(stderr, "HYBRIS: fatal: cannot initialize static mutex (%d)\n", error);
-            abort();
-        }
-        value = (uintptr_t)candidate;
-        memcpy(storage, &value, sizeof(value));
-    }
-    pthread_mutex_unlock(&static_sync_guard);
-    return (pthread_mutex_t *)value;
-}
-
-static pthread_cond_t* hybris_get_static_cond(void *storage)
-{
-    uintptr_t value;
-    pthread_mutex_lock(&static_sync_guard);
-    memcpy(&value, storage, sizeof(value));
-    if (value <= ANDROID_TOP_ADDR_VALUE_COND) {
-        pthread_cond_t *candidate = malloc(sizeof(*candidate));
-        if (!candidate) {
-            fprintf(stderr, "HYBRIS: fatal: cannot allocate static condition variable\n");
-            abort();
-        }
-        int error = pthread_cond_init(candidate, NULL);
-        if (error) {
-            fprintf(stderr, "HYBRIS: fatal: cannot initialize static condition variable (%d)\n", error);
-            abort();
-        }
-        value = (uintptr_t)candidate;
-        memcpy(storage, &value, sizeof(value));
-    }
-    pthread_mutex_unlock(&static_sync_guard);
-    return (pthread_cond_t *)value;
-}
-
-static pthread_rwlock_t* hybris_alloc_init_rwlock(void)
-{
-    pthread_rwlock_t *realrwlock = malloc(sizeof(*realrwlock));
-    if (!realrwlock) {
-        fprintf(stderr, "HYBRIS: fatal: cannot allocate static rwlock\n");
-        abort();
-    }
-    int error = pthread_rwlock_init(realrwlock, NULL);
-    if (error) {
-        fprintf(stderr, "HYBRIS: fatal: cannot initialize static rwlock (%d)\n", error);
-        abort();
-    }
-    return realrwlock;
-}
 
 /*
  * utils, such as malloc, memcpy
@@ -1327,14 +1226,7 @@ static int _hybris_hook_pthread_rwlock_destroy(pthread_rwlock_t *__rwlock)
 
 static pthread_rwlock_t* hybris_set_realrwlock(pthread_rwlock_t *rwlock)
 {
-    uintptr_t value;
-    pthread_mutex_lock(&static_sync_guard);
-    memcpy(&value, rwlock, sizeof(value));
-    if (value <= ANDROID_TOP_ADDR_VALUE_RWLOCK) {
-        value = (uintptr_t)hybris_alloc_init_rwlock();
-        memcpy(rwlock, &value, sizeof(value));
-    }
-    pthread_mutex_unlock(&static_sync_guard);
+    uintptr_t value = hybris_get_static_rwlock_value(rwlock);
 
     if (hybris_is_pointer_in_shm((void*)value))
         return (pthread_rwlock_t *)hybris_get_shmpointer((hybris_shm_pointer_t)value);

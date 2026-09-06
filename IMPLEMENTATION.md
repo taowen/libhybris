@@ -24,6 +24,12 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+`common/bionic_sync.c` now owns the static synchronization publication guard,
+backing allocation and raw-pointer lookup. Its private header centralizes
+initializer values and hidden helper declarations. `hooks.c` retains API
+wrappers, explicit initialization/destruction and shared-handle translation;
+the split reduces it from 3588 to 3480 lines without changing those policies.
+
 Static condition-variable lookup and first allocation now use the same short
 host publication guard as mutexes/rwlocks. Signal, broadcast and all four wait
 wrappers share it, while actual waiting happens after the guard is released.
