@@ -425,3 +425,10 @@ Stdio position hooks now implement bionic's offset-only fpos via ftello/fseeko
 longer copies uninitialized host position storage. Native/hybris probe checks
 byte-stream save/restore and pipe ESPIPE with bionic position=-1. 32-bit
 overflow, large-file boundaries and multibyte state remain unverified.
+
+
+Widget rendering now has a dynamic-UBO probe with nonzero aligned descriptor
+base and dynamic offset, deliberately different data in the other slots,
+exact expected good/alternate pixels and an ICD validation/SyncVal variant.
+The effective range remains 272 bytes. Larger UBO blocks, multiple dynamic
+bindings and draw-time reconstruction of dynamic capture remain open.

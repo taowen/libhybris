@@ -1192,3 +1192,25 @@ Rebuilt runs `20260907T035849-5ba9e5ab` (29854870) and
 including ordinary/64-bit position cases, validation/SyncVal and capture/replay.
 Both hybris pipe queries now return -1, ESPIPE (29), position=-1, matching
 native. Defined exports remain common=130, Vulkan=643, ICD=3.
+
+
+`ubo-dynamic` retains the 272-byte widget block and uses a dynamic uniform
+buffer descriptor. It aligns four slots to minUniformBufferOffsetAlignment,
+sets descriptor base=stride and binds dynamic offset=2*stride for good data
+at slot 3. Slots 0/1/2 contain the alternate field values; ignoring either
+base or dynamic offset therefore changes the expected pixel. A second legal
+binding uses dynamic offset=stride and must produce the alternate color.
+Native/frontend/ICD run both bindings. `ubo-dynamic-validation` adds VVL and
+SyncVal on the ICD path. Base, dynamic offset, range and total size are logged.
+This does not enlarge the shader block to 1.2KB, cover multiple dynamic
+bindings, descriptor templates or re-record/resubmit, or add dynamic capture
+resource reconstruction. Existing static-widget capture cases are retained.
+
+Fresh library/probe builds and runs `20260907T040239-01b5cc15` (29854870)
+and `20260907T040239-ec81c1a9` (KB2000) each report 75 PASS, 2 UNSUPPORTED.
+Both devices use alignment=64, base=320, dynamic=640 (good) / 320
+(alternate), range=272, allocation buffer size=1232. All three routes produce
+exact good/alternate pixels, and both ICD dynamic validation variants report
+zero errors. Static validation/SyncVal and capture/replay remain passing.
+The 1232-byte buffer contains four aligned slots; it is not a 1232-byte shader
+block.

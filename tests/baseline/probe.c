@@ -60,6 +60,10 @@ int main(int argc, char **argv) {
     rc = caps_probe(0);
   else if (!strcmp(mode, "wsi-disabled"))
     rc = caps_probe(1);
+  else if (!strcmp(mode, "ubo-dynamic"))
+    rc = ubo_dynamic_probe(0);
+  else if (!strcmp(mode, "ubo-dynamic-validation"))
+    rc = ubo_dynamic_probe(1);
   else if (!strcmp(mode, "ubo-validation"))
     rc = ubo_validation_probe();
   else if (!strcmp(mode, "validation"))
