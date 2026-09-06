@@ -69,6 +69,13 @@ can run earlier, so the host timeout and pre-exec PID tracking are still require
 Exit 0 means the implemented checks passed, 3 means unsupported, 124 timeout;
 the runner returns nonzero for FAIL/TIMEOUT/CRASH.
 
+## Debug a saved failure
+
+Use [tools/debug-baseline.py](../../tools/debug-baseline.py) to replay one saved
+case under LLDB with copied ELF files, symbolized stacks, registers and mappings.
+See [the debugging guide](../../tools/DEBUGGING.md) for commands and limitations.
+This works as shell on Redmi and X300; APK installation is not required.
+
 ## Coverage
 
 - Vulkan: enumerate extensions and device features; create instance/device/queue;

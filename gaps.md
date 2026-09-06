@@ -319,3 +319,16 @@ widget validation、capture 崩溃及 core11 transfer 失败仍未解决。
 该修补不证明 signal/fork、SVE/SME、所有 Android pthread 布局或后加载模块
 的 IE TLS 初值重放。下一步仍需打通 X300 ICD graphics pipeline 和 core11
 传输，再继续 G02/G04 的应用与 WSI 验收；不能据此关闭 G03。
+
+
+2026-09-07 调试效率补充：新增 [保存用例的一键 LLDB 取证](tools/DEBUGGING.md)，
+固定保存产物、命令、工具哈希和设备 fingerprint，自动收集停机 mappings、
+ELF/build-id、线程栈/寄存器与有限内存；显式加载独立 Android linker 的模块
+后能恢复闭源驱动的 unwind 链。红米正常绘制退出 0、X300 管线崩溃及超时
+清理已实际验证，不要求 root。现有构建已有 DWARF，无需新增构建模式。
+X300 `debug-icd-ubo-d6afd0a4` 位于 `20260907T062706-9fb06554` 结果目录，
+确认 Mali `0xa237bc` 读取 instance 相关对象头的 `0x1cdc0de`，故障地址
+`0x1cdc1de`；支持 MMUD 路径依赖 Android loader 私有数据的判断，尚未修复。
+重新实际构建后，红米 `20260907T064509-e1042b03` 的 tls-mrs/core11/ubo
+三项通过；X300 `20260907T064510-08fcee5d` 仍为 tls-mrs PASS、core11 FAIL、
+ubo CRASH。没有把成功取证计为兼容性通过，也未改变 G02/G04/G06 门槛。
