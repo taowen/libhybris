@@ -26,6 +26,8 @@ int main(int argc, char **argv) {
     rc = life_probe(1);
   else if (!strcmp(mode, "init"))
     rc = init_probe();
+  else if (!strcmp(mode, "stdio"))
+    rc = stdio_probe();
   else if (!strcmp(mode, "vk-alloc"))
     rc = vulkan_allocator_probe(0);
   else if (!strcmp(mode, "icd-alloc-direct"))

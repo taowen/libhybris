@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 ROOT="$(cd ../.. && pwd)"
 OUT="${OUT:-$PWD/build}"
 BUNDLE="$OUT/bundle"
-SOURCES=(probe.c probe_common.c probe_egl.c probe_egl_lifecycle.c probe_vulkan.c probe_dispatch.c
+SOURCES=(probe.c probe_stdio.c probe_common.c probe_egl.c probe_egl_lifecycle.c probe_vulkan.c probe_dispatch.c
          probe_lifecycle.c probe_vulkan_init.c probe_lock_init.c probe_cond_init.c probe_cond_clock.c probe_shared_unavailable.c probe_tls_bounds.c probe_tls_destructor.c probe_caps.c probe_caps2.c probe_properties2.c probe_widget.c probe_validation.c)
 HYBRIS_LIB="${HYBRIS_LIB:-$OUT/install/usr/lib/hybris}"
 RUNTIME="${RUNTIME:-$OUT/runtime}"
@@ -28,7 +28,7 @@ BUNDLE="$(cd "$BUNDLE" && pwd)"
 PROBE_SRC="$BUNDLE/src"
 rm -rf "$PROBE_SRC"
 mkdir -p "$PROBE_SRC/shaders"
-cp tls_fixture.cpp sync_fixture.h "$PROBE_SRC/"
+cp tls_fixture.cpp sync_fixture.h stdio_fixture.h "$PROBE_SRC/"
 cp "${SOURCES[@]}" probe.h dispatch_commands.inc capability_fields.inc feature_compare.inc property_compare.inc "$PROBE_SRC/"
 cp shaders/widget.vert shaders/widget.frag shaders/widget.vert.inc shaders/widget.frag.inc "$PROBE_SRC/shaders/"
 

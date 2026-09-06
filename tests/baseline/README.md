@@ -1157,3 +1157,21 @@ Rebuilt runs `20260907T034933-8421f3d3` (29854870) and
 `20260907T034933-d7d8d7cd` (KB2000) each completed **69 PASS / 2 UNSUPPORTED**,
 including allocation callbacks, synchronization, TLS, validation/SyncVal and
 capture/replay. No new API capability is claimed by the file split.
+
+
+`stdio` runs the same bionic fixture natively and through Android DSO imports.
+It writes buffered file content, calls fflush(NULL), and checks bytes via
+pread before closing; it also flushes an open_memstream and checks its
+published pointer, length and contents before closing. Its file lives in the
+runner's isolated directory and is removed on success. The shared source is
+part of the probe manifest. The old common library crashed with exit 139 in
+`20260907T035222-4e6ec2cc`, while native passed. The memory case was not reached
+in that old hybris process and has no separate captured pre-fix failure.
+The bridge removes the descriptor precheck from fflush and fflush_unlocked:
+NULL must reach glibc's flush-all operation, and descriptorless memory streams
+must still flush. The unlocked entry is not independently exercised here;
+concurrent flushing, input streams and wide-stream cases remain unverified.
+Rebuilt runs `20260907T035349-1a7cf3cc` (29854870) and
+`20260907T035349-ede7da43` (KB2000) each completed **71 PASS / 2 UNSUPPORTED**,
+including both stdio cases in native and hybris, validation/SyncVal and
+capture/replay. Defined exports remain common=130, Vulkan=643, ICD=3.

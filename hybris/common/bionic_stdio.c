@@ -149,10 +149,6 @@ int _hybris_hook_fflush(FILE *fp)
 {
     TRACE_HOOK("fp %p", fp);
 
-    if(fileno(_get_actual_fp(fp)) < 0) {
-        return 0;
-    }
-
     return fflush(_get_actual_fp(fp));
 }
 
@@ -457,10 +453,6 @@ int _hybris_hook_ferror_unlocked(FILE *fp)
 int _hybris_hook_fflush_unlocked(FILE *fp)
 {
     TRACE_HOOK("fp %p", fp);
-
-    if(fileno_unlocked(_get_actual_fp(fp)) < 0) {
-        return 0;
-    }
 
     return fflush_unlocked(_get_actual_fp(fp));
 }

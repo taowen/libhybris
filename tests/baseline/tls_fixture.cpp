@@ -143,3 +143,6 @@ extern "C" int shared_fixture_init(unsigned kind) {
 #include "sync_fixture.h"
 extern "C" int sync_fixture_destroy(unsigned kind) { return sync_destroy_lifecycle(kind); }
 extern "C" int sync_fixture_kind(unsigned unused) { (void)unused; return sync_kind_lifecycle(); }
+
+#include "stdio_fixture.h"
+extern "C" int stdio_fixture_flush(unsigned memory) { return stdio_flush_lifecycle(memory); }

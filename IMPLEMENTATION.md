@@ -409,3 +409,12 @@ stdio buffer queries. `hooks.c` keeps the hook table and drops 695 lines to
 by mmap). Existing public `endmntent` ABI remains; newly cross-file hooks and
 standard-stream storage are hidden. This moves existing implementations
 without changing FILE/offset semantics or proving 32-bit stream ABI support.
+
+
+Stdio flushing no longer probes fileno before fflush/fflush_unlocked. NULL
+means flush all output streams, and memory streams have no descriptor but
+still require flushing. The previous guard crashed for NULL and skipped
+memory-stream updates. A bionic source fixture compares native and hybris
+file-buffer flush-all/readback and open_memstream flush/content publication.
+The unlocked entry receives the same correction but is not independently
+executed by this fixture; broad stdio/FILE ABI coverage remains open.

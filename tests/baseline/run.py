@@ -153,6 +153,8 @@ for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked', 'libtls-fixt
 
 
 cases = [
+    ('native', 'stdio', 'probe-bionic'),
+    ('hybris', 'stdio', 'probe-glibc'),
     ('native', 'vk-alloc', 'probe-bionic'),
     ('hybris', 'vk-alloc', 'probe-glibc'),
     ('native', 'rwlock-kind', 'probe-bionic'),

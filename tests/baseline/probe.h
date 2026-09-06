@@ -49,6 +49,7 @@ int vulkan_init_probe(void);
 int vulkan_allocator_probe(int direct_icd);
 int lock_init_probe(int rwlock);
 int sync_destroy_probe(int check_kind);
+int stdio_probe(void);
 int cond_init_probe(void);
 int cond_clock_probe(void);
 int shared_unavailable_probe(void);
