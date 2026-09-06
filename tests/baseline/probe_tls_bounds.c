@@ -3,6 +3,23 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 
+struct replay_args {
+  void (*promote)(size_t, const void *, size_t, size_t);
+  void *(*get_tls)(void);
+  int passed;
+};
+
+static void *promote_on_worker(void *opaque) {
+  struct replay_args *a = opaque;
+  unsigned char second = 29;
+  a->promote(901, &second, 1, 1);
+  unsigned char *base = (unsigned char *)a->get_tls() - 8;
+  a->passed = base[900] == 17 && base[901] == 29;
+  printf("TLS_REPLAY worker prior=%u own=%u %s\n", base[900], base[901],
+         a->passed ? "PASS" : "FAIL");
+  return NULL;
+}
+
 /* Isolated children deliberately call the linker callback with corrupt metadata.
  * No Android library or GPU object is created in this process. */
 int tls_bounds_probe(void) {
@@ -36,6 +53,20 @@ int tls_bounds_probe(void) {
   }
   /* The exact end with an empty segment is legal and must not be rejected. */
   promote(1024, NULL, 0, 0);
+  struct replay_args replay = { .promote = promote,
+      .get_tls = dlsym(h, "_hybris_hook___get_tls_hooks") };
+  if (!replay.get_tls) return 2;
+  unsigned char first = 17;
+  promote(900, &first, 1, 1);
+  /* Catch-up must preserve mutations to entries already applied locally. */
+  unsigned char *base = (unsigned char *)replay.get_tls() - 8;
+  base[900] = 41;
+  pthread_t worker;
+  if (pthread_create(&worker, NULL, promote_on_worker, &replay)) return 2;
+  if (pthread_join(worker, NULL) || !replay.passed) return 2;
+  base = (unsigned char *)replay.get_tls() - 8;
+  if (base[900] != 41 || base[901] != 29) return 2;
+  printf("TLS_REPLAY main mutation=41 catchup=29 PASS\n");
   printf("TLS_BOUNDS PASS\n");
   return 0;
 }

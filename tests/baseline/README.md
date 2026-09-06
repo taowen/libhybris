@@ -598,3 +598,25 @@ signal-handler/reentrant access are not validated. IE TLS accesses that do
 not call this resolver still require an initialized thread. This is not proof
 of every vendor TLS destructor, compat heap cleanup, DSO unmapping or static
 slot reclamation. Those remaining cases must be tested separately.
+
+## TLS registration catch-up across threads
+
+The isolated `tls-bounds` process also registers an initialized byte on main,
+then a different byte on a fresh worker. The worker must see both initializers;
+main must catch up with the second initializer while preserving a local mutation
+of the first. No Android library or GPU object is loaded by this case, so its
+synthetic offsets cannot overlap vendor TLS.
+
+Before the fix, `20260907T014423-1a5cb51e` read worker values `0,29` instead
+of `17,29`: registration advanced its per-thread cursor past modules registered
+on other threads without replaying them. Registration now applies its missing
+entries under the existing mutex before advancing that cursor. Previously
+initialized entries are left intact.
+
+Fresh library/probe builds and runs `20260907T014600-82060cd9` (29854870) and
+`20260907T014600-448b50be` (KB2000) each complete **52 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. Both workers read `17,29` and both
+main threads preserve the mutated first value `41` while receiving `29`.
+All 130 common dynamic exports remain unchanged. This directly verifies the
+registry callback's replay bookkeeping, not concurrent ELF loading, static slot
+reclamation or signal-safe initialization.

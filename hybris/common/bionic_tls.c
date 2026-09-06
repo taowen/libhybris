@@ -245,8 +245,12 @@ void _hybris_init_static_tls_for_thread(size_t static_offset,
     e->init_data     = owned_init;
     e->init_size     = init_size;
     e->segment_size  = segment_size;
-    hybris_apply_static_tls_locked(e);
-    /* This thread is now caught up through the entry we just appended. */
+    /* The promoter may not have touched TLS since another thread appended
+     * modules. Apply that missing prefix too before advancing its cursor.
+     * Never replay earlier entries: they may contain live thread-local writes. */
+    for (int i = tls_module_init_count; i < g_promoted_tls.count; i++) {
+        hybris_apply_static_tls_locked(&g_promoted_tls.entries[i]);
+    }
     tls_module_init_count = g_promoted_tls.count;
     pthread_mutex_unlock(&g_promoted_tls.mutex);
 }
@@ -304,14 +308,10 @@ void *_hybris_hook___get_tls_hooks()
      * tls_module_init_count itself need no lock -- it's a per-thread
      * __thread int with single-writer (this thread).
      *
-     * Invariant: every thread that ever runs bionic-side TLS-using code
-     * first passes through this hook (bionic .so code paths almost
-     * always interleave TLS access with hooked-libc calls -- errno,
-     * locale, pthread keys, etc.). If a future change makes that no
-     * longer true, glibc-spawned workers that only do TLSDESC reads on
-     * bionic .sos and never call a hooked libc function will read zeros
-     * for non-zero __thread initialisers; the catch-up trigger needs to
-     * move (e.g. hook pthread_create to seed tls_module_init_count). */
+     * Q's static TLSDESC resolver also calls this hook before returning
+     * the offset, so pure TLSDESC first touches catch up without a libc
+     * call. IE accesses that bypass that resolver still require an
+     * initialized thread. */
     pthread_mutex_lock(&g_promoted_tls.mutex);
     if (__builtin_expect(tls_module_init_count < g_promoted_tls.count, 0)) {
         for (int i = tls_module_init_count; i < g_promoted_tls.count; i++) {

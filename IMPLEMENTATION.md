@@ -24,6 +24,13 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+Promoted TLS registration now replays every entry missing from the calling
+thread before advancing its initialization cursor. Previously a thread promoting
+a later module could skip earlier modules registered by another thread. The
+independent `tls-bounds` workload checks cross-thread initial values and that
+catch-up preserves already-mutated TLS bytes. This addresses registry replay;
+it does not provide slot reclamation, IE first-touch or signal reentrancy.
+
 | Gap | State | Next concrete evidence |
 |---|---|---|
 | G01 | AArch64 baseline verified | Standalone default build, fixed inputs/toolchain, library/probe hashes and sampled runtime mappings verified on two devices; see baseline README. |
