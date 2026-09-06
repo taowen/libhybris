@@ -1142,3 +1142,18 @@ Rebuilt runs `20260907T034553-3c4de9ce` (29854870) and
 `20260907T034553-5b6f5c0c` (KB2000) each completed **69 PASS / 2 UNSUPPORTED**,
 including validation/SyncVal and capture/replay. Both direct cases report
 HAL-reject=-1, calls=2, live=0, followed by three successful recovery cycles.
+
+
+Stdio module split: `bionic_stdio.c` owns 78 compiled FILE hooks, standard
+stream mapping/storage, wide streams, mount-table streams and buffer queries.
+The central registration stays in `hooks.c`, which drops 695 lines. Moved
+function bodies and hook registrations were compared with the prior revision;
+the existing public endmntent hook remains public and new cross-file symbols
+remain hidden. Defined export sets remain common=130, Vulkan=643, ICD=3.
+This is structural regression coverage using the existing workloads, not
+exhaustive stdio semantics: 32-bit FILE/offset ABI, all wide/mount-table
+operations, error states and concurrent stream access remain unverified.
+Rebuilt runs `20260907T034933-8421f3d3` (29854870) and
+`20260907T034933-d7d8d7cd` (KB2000) each completed **69 PASS / 2 UNSUPPORTED**,
+including allocation callbacks, synchronization, TLS, validation/SyncVal and
+capture/replay. No new API capability is claimed by the file split.

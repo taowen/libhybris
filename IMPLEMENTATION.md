@@ -400,3 +400,12 @@ complete three recovery cycles. Runs `20260907T034553-3c4de9ce` and
 callbacks are prohibited from calling Vulkan commands; references to their
 Vulkan reentrancy as an acceptance requirement were corrected. Other failure
 positions and interaction with application allocator locks remain untested.
+
+
+`common/bionic_stdio.c` now owns the bionic standard-stream storage/mapping,
+78 compiled stdio/FILE hooks, wide-character streams, mount-table streams and
+stdio buffer queries. `hooks.c` keeps the hook table and drops 695 lines to
+2019. The private header shares the existing bionic offset types (also used
+by mmap). Existing public `endmntent` ABI remains; newly cross-file hooks and
+standard-stream storage are hidden. This moves existing implementations
+without changing FILE/offset semantics or proving 32-bit stream ABI support.
