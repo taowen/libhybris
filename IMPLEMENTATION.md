@@ -373,3 +373,12 @@ next round. Failure paths still reach both barriers; partial thread startup
 cancels before entering them. The evidence checker now requires peak_live=4;
 previous peak-2/peak-1 traces fail that stronger gate. This establishes actual
 object overlap, not a guarantee of backend execution overlap or handle reuse.
+
+
+Application allocation callbacks now have a native/frontend/ICD lifecycle
+probe: three instance cycles return callback allocations to zero, followed by
+an allocation-refusing create returning OUT_OF_HOST_MEMORY. Runs
+`20260907T033851-afd02fc4` and `20260907T033851-da205be7` each complete
+68 PASS / 2 UNSUPPORTED. Failure is measured at the API boundary; the loader
+may stop it before ICD creation. Callback reentrancy and individual ICD/HAL
+failure sites remain unverified.

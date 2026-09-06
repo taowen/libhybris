@@ -112,3 +112,83 @@ int vulkan_init_probe(void) {
   printf("VK_INIT %s\n", rc ? "FAIL" : "PASS");
   return rc;
 }
+
+struct allocation_probe { unsigned live, calls; int reject; };
+struct allocation_header { void *base; size_t size; };
+
+static void *VKAPI_CALL instance_allocate(void *user, size_t size, size_t alignment,
+                                         VkSystemAllocationScope scope) {
+  (void)scope;
+  struct allocation_probe *p = user;
+  __atomic_add_fetch(&p->calls, 1, __ATOMIC_RELAXED);
+  if (p->reject) return NULL;
+  if (alignment < _Alignof(struct allocation_header)) alignment = _Alignof(struct allocation_header);
+  if (!alignment || (alignment & (alignment - 1)) ||
+      size > SIZE_MAX - sizeof(struct allocation_header) - (alignment - 1)) return NULL;
+  void *base = malloc(size + sizeof(struct allocation_header) + alignment - 1);
+  if (!base) return NULL;
+  uintptr_t address = ((uintptr_t)base + sizeof(struct allocation_header) + alignment - 1) & ~(alignment - 1);
+  struct allocation_header *h = (struct allocation_header *)address - 1;
+  h->base = base;
+  h->size = size;
+  __atomic_add_fetch(&p->live, 1, __ATOMIC_RELAXED);
+  return (void *)address;
+}
+
+static void VKAPI_CALL instance_free(void *user, void *memory) {
+  if (!memory) return;
+  struct allocation_probe *p = user;
+  struct allocation_header *h = (struct allocation_header *)memory - 1;
+  free(h->base);
+  __atomic_sub_fetch(&p->live, 1, __ATOMIC_RELAXED);
+}
+
+static void *VKAPI_CALL instance_reallocate(void *user, void *original, size_t size,
+    size_t alignment, VkSystemAllocationScope scope) {
+  if (!size) { instance_free(user, original); return NULL; }
+  void *replacement = instance_allocate(user, size, alignment, scope);
+  if (replacement && original) {
+    size_t old_size = ((struct allocation_header *)original - 1)->size;
+    memcpy(replacement, original, old_size < size ? old_size : size);
+    instance_free(user, original);
+  }
+  return replacement;
+}
+
+int vulkan_allocator_probe(void) {
+  void *library = dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!library) return 2;
+  PFN_vkGetInstanceProcAddr gipa = dlsym(library, "vkGetInstanceProcAddr");
+  PFN_vkCreateInstance create = gipa ? (PFN_vkCreateInstance)gipa(NULL, "vkCreateInstance") : NULL;
+  if (!create) return 2;
+  struct allocation_probe state = {0};
+  VkAllocationCallbacks callbacks = {.pUserData = &state, .pfnAllocation = instance_allocate,
+      .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
+  VkInstanceCreateInfo info = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+  int failed = 0;
+  for (unsigned round = 0; round < 3; ++round) {
+    VkInstance instance = VK_NULL_HANDLE;
+    VkResult result = create(&info, &callbacks, &instance);
+    if (result != VK_SUCCESS) { printf("VK_ALLOC create=%d\n", result); failed = 1; break; }
+    PFN_vkEnumeratePhysicalDevices enumerate = (PFN_vkEnumeratePhysicalDevices)gipa(instance, "vkEnumeratePhysicalDevices");
+    PFN_vkDestroyInstance destroy = (PFN_vkDestroyInstance)gipa(instance, "vkDestroyInstance");
+    uint32_t count = 0;
+    if (!enumerate || enumerate(instance, &count, NULL) != VK_SUCCESS || !count) failed = 1;
+    if (!destroy) return 2;
+    destroy(instance, &callbacks);
+    printf("VK_ALLOC round=%u calls=%u live=%u\n", round, state.calls, state.live);
+    if (!state.calls || state.live) failed = 1;
+  }
+  state.reject = 1;
+  VkInstance rejected = VK_NULL_HANDLE;
+  VkResult result = create(&info, &callbacks, &rejected);
+  printf("VK_ALLOC reject=%d expected=%d live=%u\n", result, VK_ERROR_OUT_OF_HOST_MEMORY, state.live);
+  if (result == VK_SUCCESS) {
+    PFN_vkDestroyInstance destroy = (PFN_vkDestroyInstance)gipa(rejected, "vkDestroyInstance");
+    if (destroy) destroy(rejected, &callbacks);
+  }
+  if (result != VK_ERROR_OUT_OF_HOST_MEMORY || state.live) failed = 1;
+  if (dlclose(library)) failed = 1;
+  printf("VK_ALLOC %s\n", failed ? "FAIL" : "PASS");
+  return failed ? 2 : 0;
+}

@@ -1090,3 +1090,20 @@ Rebuilt runs `20260907T033524-371d9b4f` (29854870) and
 including native/hybris/ICD concurrent instance workloads and validation/capture.
 Both evidence files report created=16, destroyed=16, remaining=0, peak_live=4,
 reused_handles=0. Thus actual raw-handle reuse remains unverified.
+
+
+`vk-alloc` supplies application allocation/reallocation/free callbacks for
+three instance create/query/destroy cycles and checks that outstanding callback
+allocations return to zero after each destruction. A final create refuses
+all callback allocations and requires VK_ERROR_OUT_OF_HOST_MEMORY without
+outstanding allocations. It runs through native, replacement frontend and
+standard ICD. The callback allocator preserves alignment and realloc contents;
+this does not test every allocation failure position, callback reentrancy,
+device/resource callbacks or concurrent allocation races.
+Rebuilt runs `20260907T033851-afd02fc4` (29854870) and
+`20260907T033851-da205be7` (KB2000) each completed **68 PASS / 2 UNSUPPORTED**,
+including all three allocator paths, validation/SyncVal and capture/replay.
+All successful cycles ended with live=0, and refusal returned -1
+(VK_ERROR_OUT_OF_HOST_MEMORY). The standard loader may reject allocation
+before reaching the ICD; this is API-boundary failure evidence, not proof of
+failure at the ICD record allocation or every HAL allocation site.
