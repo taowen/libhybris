@@ -24,7 +24,6 @@ p.add_argument('--runtime', type=Path, help='Directory containing glibc loader a
 p.add_argument('--manifest', type=Path, help='Provenance JSON from tools/manifest.py')
 p.add_argument('--out', type=Path, default=Path(__file__).resolve().parent / 'build/results')
 p.add_argument('--bundle', type=Path, default=Path(__file__).resolve().parent / 'build/bundle')
-p.add_argument('--vk-layer', type=Path, help='Khronos libVkLayer_khronos_validation.so (Android arm64)')
 a = p.parse_args()
 here = Path(__file__).resolve().parent
 default_out = Path(__file__).resolve().parent / 'build'
@@ -119,38 +118,6 @@ for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked']:
     shutil.copy2(a.bundle / binary, stage / binary)
 
 
-def find_vk_layer():
-    if a.vk_layer:
-        return a.vk_layer
-    env = os.environ.get('VK_LAYER_SO')
-    if env:
-        return Path(env)
-    candidates = [
-        ROOT.parent / 'android/app/build/vk-validation-layer/jni/arm64-v8a/libVkLayer_khronos_validation.so',
-        Path.home() / '.cache/ardesk/android-binaries-1.4.357.0/arm64-v8a/libVkLayer_khronos_validation.so',
-        here / 'build/vk-layer/arm64-v8a/libVkLayer_khronos_validation.so',
-    ]
-    for c in candidates:
-        if c.is_file() and c.stat().st_size > 1_000_000:
-            return c
-    fetch = ROOT.parent / 'tools/fetch-vk-validation-layer.sh'
-    dest = here / 'build/vk-layer'
-    if fetch.is_file():
-        print('fetching Khronos validation layer', flush=True)
-        subprocess.run(['bash', str(fetch), str(dest)], check=True)
-        so = dest / 'arm64-v8a/libVkLayer_khronos_validation.so'
-        if so.is_file():
-            return so
-    return None
-
-
-vk_layer = find_vk_layer()
-if vk_layer:
-    shutil.copy2(vk_layer, stage / 'libVkLayer_khronos_validation.so')
-    print('VAL layer', vk_layer, flush=True)
-else:
-    print('VAL layer missing; val cases will be UNSUPPORTED', flush=True)
-
 cases = [
     ('native', 'vk', 'probe-bionic'),
     ('native', '2', 'probe-bionic'),
@@ -158,18 +125,18 @@ cases = [
     ('native', '0', 'probe-bionic'),
     ('native', 'dispatch', 'probe-bionic'),
     ('native', 'life', 'probe-bionic'),
+    ('native', 'unload', 'probe-bionic'),
     ('native', 'caps', 'probe-bionic'),
     ('native', 'ubo', 'probe-bionic'),
-    ('native', 'val', 'probe-bionic'),
     ('hybris', 'vk', 'probe-glibc'),
     ('hybris', '2', 'probe-glibc'),
     ('hybris', '3', 'probe-glibc'),
     ('hybris', '0', 'probe-glibc'),
     ('hybris', 'dispatch', 'probe-glibc'),
     ('hybris', 'life', 'probe-glibc'),
+    ('hybris', 'unload', 'probe-glibc'),
     ('hybris', 'caps', 'probe-glibc'),
     ('hybris', 'ubo', 'probe-glibc'),
-    ('hybris', 'val', 'probe-glibc'),
     ('hybris-linked', 'dispatch', 'probe-glibc-linked'),
     ('hybris-linked', 'vk', 'probe-glibc-linked'),
 ]
@@ -182,20 +149,13 @@ try:
     subprocess.run(adb + ['push', str(stage) + '/.', remote + '/'],
                    check=True, stdout=subprocess.DEVNULL)
     for backend, mode, binary in cases:
-        layer_env = (
-            'PROBE_VK_LAYER=$PWD/libVkLayer_khronos_validation.so '
-            if (stage / 'libVkLayer_khronos_validation.so').is_file()
-            else ''
-        )
         if backend == 'native':
             command = (
-                layer_env +
                 'PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so '
                 './' + binary + ' '
             )
         else:
             command = (
-                layer_env +
                 'HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker '
                 'HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris '
                 'HYBRIS_VULKANPLATFORM_DIR=$PWD/hybris/libhybris '

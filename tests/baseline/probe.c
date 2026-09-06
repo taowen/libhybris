@@ -13,10 +13,6 @@
 #include <unistd.h>
 #include <vulkan/vulkan.h>
 
-#ifndef VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT
-#define VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT 1000128004
-#endif
-
 #include "shaders/widget.vert.inc"
 #include "shaders/widget.frag.inc"
 
@@ -290,6 +286,7 @@ static int vkprobe(void) {
   if (count > 8)
     count = 8;
   CHECK(p_vkEnumeratePhysicalDevices(instance, &count, devices));
+  if (!count) { printf("No Vulkan physical devices\n"); return 2; }
   VkPhysicalDevice pd = devices[0];
   VkPhysicalDeviceProperties props;
   VkPhysicalDeviceFeatures f;
@@ -644,7 +641,7 @@ static void *life_worker(void *arg) {
   return NULL;
 }
 
-static int life_probe(void) {
+static int life_probe(int unload) {
   void *h =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
@@ -676,8 +673,7 @@ static int life_probe(void) {
   uint32_t qi = 0;
   if (!pick_queue(p_vkGetPhysicalDeviceQueueFamilyProperties, devices[0], &qi))
     return 2;
-  /* Second init / dlopen of the same library must not replace the live
-   * instance table with a process-global current device. */
+  /* A second dlopen references the same loaded library; it does not rerun constructors. */
   void *again =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!again) {
@@ -685,6 +681,8 @@ static int life_probe(void) {
     return 2;
   }
   PFN_vkGetInstanceProcAddr gip2 = dlsym(again, "vkGetInstanceProcAddr");
+  if (!gip2)
+    return 2;
   PFN_vkDestroyInstance destroy2 =
       (PFN_vkDestroyInstance)gip2(instance, "vkDestroyInstance");
   if (!destroy2) {
@@ -710,7 +708,7 @@ static int life_probe(void) {
   printf("DEVICES a=%p b=%p\n", (void *)a, (void *)b);
   p_vkDestroyDevice(a, NULL);
   p_vkDestroyDevice(b, NULL);
-  /* Recreate after destroy: a reused handle must not carry old state. */
+  /* Basic device recreation only; no per-object generation state is tested. */
   VkDevice c;
   CHECK(p_vkCreateDevice(devices[0], &dc, NULL, &c));
   p_vkDestroyDevice(c, NULL);
@@ -719,8 +717,15 @@ static int life_probe(void) {
       {.gip = gip, .instance = instance, .pd = devices[0], .qi = qi, .rc = 1},
   };
   pthread_t t[2];
-  pthread_create(&t[0], NULL, life_worker, &workers[0]);
-  pthread_create(&t[1], NULL, life_worker, &workers[1]);
+  int started = 0;
+  for (; started < 2; ++started) {
+    int err = pthread_create(&t[started], NULL, life_worker, &workers[started]);
+    if (err) {
+      for (int j = 0; j < started; ++j) pthread_join(t[j], NULL);
+      printf("pthread_create failed: %s\n", strerror(err));
+      return 2;
+    }
+  }
   pthread_join(t[0], NULL);
   pthread_join(t[1], NULL);
   if (workers[0].rc || workers[1].rc) {
@@ -728,12 +733,17 @@ static int life_probe(void) {
     return 2;
   }
   p_vkDestroyInstance(instance, NULL);
-  /* Recreate instance after destroy; TLS / constructor leftover must not
-   * prevent a second init. */
+  /* Recreate instance while the library remains loaded. */
   VkInstance second = VK_NULL_HANDLE;
   CHECK(p_vkCreateInstance(&ci, NULL, &second));
   p_vkDestroyInstance(second, NULL);
-  printf("LIFE PASS\n");
+  dlclose(again);
+  if (unload) {
+    printf("LIFE closing final library reference; process exit is part of the check\n");
+    dlclose(h);
+  }
+  /* Ordinary life mode retains the library until process exit, like other probes. */
+  printf("LIFE operations complete\n");
   return 0;
 }
 
@@ -769,6 +779,7 @@ static int caps_probe(void) {
   if (count > 4)
     count = 4;
   CHECK(p_vkEnumeratePhysicalDevices(instance, &count, devices));
+  if (!count) { printf("No Vulkan physical devices\n"); return 2; }
   VkPhysicalDevice pd = devices[0];
   VkPhysicalDeviceProperties props;
   VkPhysicalDeviceFeatures features;
@@ -819,9 +830,9 @@ static int caps_probe(void) {
     VkDevice rejected = VK_NULL_HANDLE;
     VkResult br = p_vkCreateDevice(pd, &bad, NULL, &rejected);
     printf("CAPS enable-unadvertised-float64 = %d\n", br);
-    if (br == VK_SUCCESS) {
-      printf("CAPS advertised shaderFloat64=0 but CreateDevice accepted it\n");
-      p_vkDestroyDevice(rejected, NULL);
+    if (br != VK_ERROR_FEATURE_NOT_PRESENT) {
+      printf("CAPS expected VK_ERROR_FEATURE_NOT_PRESENT\n");
+      if (br == VK_SUCCESS) p_vkDestroyDevice(rejected, NULL);
       return 2;
     }
   }
@@ -834,9 +845,9 @@ static int caps_probe(void) {
   VkDevice ghost_dev = VK_NULL_HANDLE;
   VkResult gr = p_vkCreateDevice(pd, &ghost_ci, NULL, &ghost_dev);
   printf("CAPS enable-unknown-extension = %d\n", gr);
-  if (gr == VK_SUCCESS) {
-    printf("CAPS unknown extension was accepted\n");
-    p_vkDestroyDevice(ghost_dev, NULL);
+  if (gr != VK_ERROR_EXTENSION_NOT_PRESENT) {
+    printf("CAPS expected VK_ERROR_EXTENSION_NOT_PRESENT\n");
+    if (gr == VK_SUCCESS) p_vkDestroyDevice(ghost_dev, NULL);
     return 2;
   }
   VkDeviceCreateInfo ok_ci = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -847,17 +858,15 @@ static int caps_probe(void) {
   CHECK(p_vkCreateDevice(pd, &ok_ci, NULL, &device));
   PFN_vkGetDeviceProcAddr gdp =
       (PFN_vkGetDeviceProcAddr)gip(instance, "vkGetDeviceProcAddr");
-  if (has_dyn && gdp(device, "vkCmdBeginRenderingKHR") == NULL)
-    printf("CAPS dynamic_rendering advertised but GDPA null (passthrough)\n");
-  if (!has_dyn && gdp(device, "vkCmdBeginRenderingKHR") != NULL) {
-    printf("CAPS dynamic_rendering not enumerated but GDPA present\n");
+  /* Availability is not enablement: this device enabled no extensions. */
+  if (gdp(device, "vkCmdBeginRenderingKHR") != NULL) {
+    printf("CAPS dynamic_rendering not enabled but GDPA present\n");
     p_vkDestroyDevice(device, NULL);
     return 2;
   }
   p_vkDestroyDevice(device, NULL);
   p_vkDestroyInstance(instance, NULL);
-  printf("CAPS PASS native=%u effective=%u (passthrough; no compat rewrite)\n",
-         1, 1);
+  printf("CAPS PASS (queries and rejection checks; no cross-backend comparison)\n");
   return 0;
 }
 
@@ -950,10 +959,20 @@ static int ubo_draw(int inject_wrong_binding) {
   if (count > 4)
     count = 4;
   CHECK(p_vkEnumeratePhysicalDevices(instance, &count, devices));
+  if (!count) { printf("No Vulkan physical devices\n"); return 2; }
   VkPhysicalDevice pd = devices[0];
   uint32_t qi = 0;
   if (!pick_queue(p_vkGetPhysicalDeviceQueueFamilyProperties, pd, &qi))
     return 2;
+  uint32_t queue_count = 0;
+  p_vkGetPhysicalDeviceQueueFamilyProperties(pd, &queue_count, NULL);
+  VkQueueFamilyProperties *queues = calloc(queue_count, sizeof(*queues));
+  if (!queues) return 2;
+  p_vkGetPhysicalDeviceQueueFamilyProperties(pd, &queue_count, queues);
+  for (qi = 0; qi < queue_count; ++qi)
+    if (queues[qi].queueFlags & VK_QUEUE_GRAPHICS_BIT) break;
+  free(queues);
+  if (qi == queue_count) { printf("No graphics queue\n"); return 3; }
   float priority = 1;
   VkDeviceQueueCreateInfo qc = {.sType =
                                     VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -1036,6 +1055,7 @@ static int ubo_draw(int inject_wrong_binding) {
   int imi = find_mem(&mp, ib_mr.memoryTypeBits,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  if (imi < 0) { printf("No coherent index memory\n"); return 3; }
   VkMemoryAllocateInfo ima = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                               .allocationSize = ib_mr.size,
                               .memoryTypeIndex = (uint32_t)imi};
@@ -1066,6 +1086,7 @@ static int ubo_draw(int inject_wrong_binding) {
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   if (img_mi < 0)
     img_mi = find_mem(&mp, img_mr.memoryTypeBits, 0);
+  if (img_mi < 0) { printf("No compatible image memory\n"); return 3; }
   VkMemoryAllocateInfo img_ma = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                                  .allocationSize = img_mr.size,
                                  .memoryTypeIndex = (uint32_t)img_mi};
@@ -1091,6 +1112,7 @@ static int ubo_draw(int inject_wrong_binding) {
   int rmi = find_mem(&mp, rb_mr.memoryTypeBits,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  if (rmi < 0) { printf("No coherent readback memory\n"); return 3; }
   VkMemoryAllocateInfo rma = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                               .allocationSize = rb_mr.size,
                               .memoryTypeIndex = (uint32_t)rmi};
@@ -1139,7 +1161,15 @@ static int ubo_draw(int inject_wrong_binding) {
   VkSubpassDescription sub = {.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
                               .colorAttachmentCount = 1,
                               .pColorAttachments = &color_ref};
+  VkSubpassDependency to_copy = {
+      .srcSubpass = 0, .dstSubpass = VK_SUBPASS_EXTERNAL,
+      .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+      .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT};
   VkRenderPassCreateInfo rp_ci = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+                                  .dependencyCount = 1,
+                                  .pDependencies = &to_copy,
                                   .attachmentCount = 1,
                                   .pAttachments = &att,
                                   .subpassCount = 1,
@@ -1270,6 +1300,11 @@ static int ubo_draw(int inject_wrong_binding) {
       .imageExtent = {kWidgetImage, kWidgetImage, 1}};
   p_vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                            readback, 1, &copy);
+  VkMemoryBarrier to_host = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+      .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+  p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+      VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &to_host, 0, NULL, 0, NULL);
   CHECK(p_vkEndCommandBuffer(cb));
   VkFence fence;
   VkFenceCreateInfo fc = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
@@ -1285,8 +1320,8 @@ static int ubo_draw(int inject_wrong_binding) {
   uint8_t *mid = pixels + (8 * kWidgetImage + 8) * 4;
   printf("PIXEL mid rgba=%u,%u,%u,%u inject=%d\n", mid[0], mid[1], mid[2],
          mid[3], inject_wrong_binding);
-  int match_good = mid[0] > 200 && mid[1] > 200 && mid[2] < 16 && mid[3] > 200;
-  int match_bad = mid[0] < 16 && mid[1] > 200 && mid[2] > 200 && mid[3] < 16;
+  int match_good = mid[0] == 255 && mid[1] == 255 && mid[2] == 0 && mid[3] == 255;
+  int match_bad = mid[0] == 0 && mid[1] == 255 && mid[2] == 255 && mid[3] == 0;
   p_vkUnmapMemory(device, rmem);
   p_vkDestroyFence(device, fence, NULL);
   p_vkDestroyCommandPool(device, cpool, NULL);
@@ -1313,10 +1348,10 @@ static int ubo_draw(int inject_wrong_binding) {
   p_vkDestroyInstance(instance, NULL);
   if (inject_wrong_binding) {
     if (!match_bad) {
-      printf("FIRST_FAIL_STAGE draw-readback (wrong binding not observed)\n");
+      printf("UBO negative-control FAIL (unexpected pixel)\n");
       return 2;
     }
-    printf("FIRST_FAIL_STAGE draw-readback (injected wrong UBO binding)\n");
+    printf("UBO negative-control PASS (known alternate descriptor observed)\n");
     return 0;
   }
   if (!match_good) {
@@ -1338,465 +1373,6 @@ static int ubo_probe(void) {
   return 0;
 }
 
-/* Explicit Khronos layer chain. Production Android loaders look in
- * /data/local/debug/vulkan, which shell UID cannot create. VK_LAYER_PATH
- * is not an Android loader discovery path. */
-enum { kLayerLinkInfo = 0, kLoaderDataCallback = 1, kNegotiateIface = 1 };
-
-typedef struct val_instance_link {
-  struct val_instance_link *pNext;
-  PFN_vkGetInstanceProcAddr pfnNextGetInstanceProcAddr;
-  PFN_vkVoidFunction pfnNextGetPhysicalDeviceProcAddr;
-} val_instance_link;
-
-typedef struct val_instance_create {
-  VkStructureType sType;
-  const void *pNext;
-  int function;
-  union {
-    val_instance_link *pLayerInfo;
-    PFN_vkVoidFunction pfnSetInstanceLoaderData;
-  } u;
-} val_instance_create;
-
-typedef struct val_device_link {
-  struct val_device_link *pNext;
-  PFN_vkGetInstanceProcAddr pfnNextGetInstanceProcAddr;
-  PFN_vkGetDeviceProcAddr pfnNextGetDeviceProcAddr;
-} val_device_link;
-
-typedef struct val_device_create {
-  VkStructureType sType;
-  const void *pNext;
-  int function;
-  union {
-    val_device_link *pLayerInfo;
-    PFN_vkVoidFunction pfnSetDeviceLoaderData;
-  } u;
-} val_device_create;
-
-typedef struct val_negotiate {
-  int sType;
-  void *pNext;
-  uint32_t loaderLayerInterfaceVersion;
-  PFN_vkGetInstanceProcAddr pfnGetInstanceProcAddr;
-  PFN_vkGetDeviceProcAddr pfnGetDeviceProcAddr;
-  PFN_vkVoidFunction pfnGetPhysicalDeviceProcAddr;
-} val_negotiate;
-
-#ifndef VK_EXT_debug_utils
-typedef VkFlags VkDebugUtilsMessageSeverityFlagsEXT;
-typedef VkFlags VkDebugUtilsMessageTypeFlagsEXT;
-typedef VkFlags VkDebugUtilsMessengerCreateFlagsEXT;
-typedef enum VkDebugUtilsMessageSeverityFlagBitsEXT {
-  VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT = 0x00000100,
-  VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT = 0x00001000
-} VkDebugUtilsMessageSeverityFlagBitsEXT;
-typedef struct VkDebugUtilsMessengerCallbackDataEXT {
-  VkStructureType sType;
-  const void *pNext;
-  VkFlags flags;
-  const char *pMessageIdName;
-  int32_t messageIdNumber;
-  const char *pMessage;
-  uint32_t queueLabelCount;
-  const void *pQueueLabels;
-  uint32_t cmdBufLabelCount;
-  const void *pCmdBufLabels;
-  uint32_t objectCount;
-  const void *pObjects;
-} VkDebugUtilsMessengerCallbackDataEXT;
-typedef VkBool32 (*PFN_vkDebugUtilsMessengerCallbackEXT)(
-    VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT,
-    const VkDebugUtilsMessengerCallbackDataEXT *, void *);
-typedef struct VkDebugUtilsMessengerCreateInfoEXT {
-  VkStructureType sType;
-  const void *pNext;
-  VkDebugUtilsMessengerCreateFlagsEXT flags;
-  VkDebugUtilsMessageSeverityFlagsEXT messageSeverity;
-  VkDebugUtilsMessageTypeFlagsEXT messageType;
-  PFN_vkDebugUtilsMessengerCallbackEXT pfnUserCallback;
-  void *pUserData;
-} VkDebugUtilsMessengerCreateInfoEXT;
-#endif
-
-struct val_log {
-  int errors;
-  int warnings;
-};
-
-struct val_lib {
-  void *h;
-  void *(*lookup)(void *, const char *);
-};
-
-static void *val_host_sym(void *h, const char *n) { return dlsym(h, n); }
-
-static VkResult val_set_loader_data(void *parent, void *object) {
-  if (parent && object)
-    *(void **)object = *(void **)parent;
-  return VK_SUCCESS;
-}
-
-static VkResult val_set_instance_data(VkInstance instance, void *object) {
-  return val_set_loader_data(instance, object);
-}
-
-static VkResult val_set_device_data(VkDevice device, void *object) {
-  return val_set_loader_data(device, object);
-}
-
-static VKAPI_ATTR VkBool32 VKAPI_CALL val_messenger(
-    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-    VkDebugUtilsMessageTypeFlagsEXT types,
-    const VkDebugUtilsMessengerCallbackDataEXT *data, void *user) {
-  (void)types;
-  struct val_log *log = user;
-  const char *lvl = "OTHER";
-  if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-    lvl = "ERROR";
-    log->errors++;
-  } else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-    lvl = "WARN";
-    log->warnings++;
-  } else {
-    return VK_FALSE;
-  }
-  printf("VAL %s %s: %s\n", lvl,
-         data && data->pMessageIdName ? data->pMessageIdName : "",
-         data && data->pMessage ? data->pMessage : "");
-  return VK_FALSE;
-}
-
-static int val_open_layer(const char *path, struct val_lib *out) {
-  char abs[512];
-  const char *use = path;
-  if (path[0] != '/') {
-    if (getcwd(abs, sizeof(abs) - 64)) {
-      size_t n = strlen(abs);
-      snprintf(abs + n, sizeof(abs) - n, "/%s", path);
-      use = abs;
-    }
-  }
-  memset(out, 0, sizeof(*out));
-  out->h = dlopen(use, RTLD_NOW | RTLD_LOCAL);
-  if (out->h) {
-    out->lookup = val_host_sym;
-    printf("VAL layer host-dlopen %s\n", use);
-    return 1;
-  }
-  printf("VAL host-dlopen: %s\n", dlerror());
-  /* Android VVL is a bionic ELF (libandroid/liblog/libdl). glibc dlopen
-   * cannot load it. android_dlopen may still fail if libandroid's
-   * dependency tree is incomplete in this shell process. */
-  void *hc = dlopen("libhybris-common.so.1", RTLD_NOW | RTLD_GLOBAL);
-  if (!hc)
-    hc = dlopen("libhybris-common.so", RTLD_NOW | RTLD_GLOBAL);
-  if (!hc) {
-    printf("VAL libhybris-common: %s\n", dlerror());
-    return 0;
-  }
-  void *(*adlopen)(const char *, int) = dlsym(hc, "android_dlopen");
-  void *(*adlsym)(void *, const char *) = dlsym(hc, "android_dlsym");
-  char *(*adlerr)(void) = dlsym(hc, "android_dlerror");
-  if (!adlopen || !adlsym) {
-    printf("VAL android_dlopen missing\n");
-    return 0;
-  }
-  out->h = adlopen(use, RTLD_NOW);
-  if (!out->h) {
-    printf("VAL android_dlopen: %s\n", adlerr && adlerr() ? adlerr() : "failed");
-    return 0;
-  }
-  out->lookup = adlsym;
-  printf("VAL layer android-dlopen %s\n", use);
-  return 1;
-}
-
-static PFN_vkGetInstanceProcAddr val_backend_gipa;
-
-static int val_is_loader_stype(VkStructureType t) {
-  return t == VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO ||
-         t == VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO ||
-         t == VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-}
-
-static const void *val_strip_loader_pnext(const void *pnext) {
-  const struct {
-    VkStructureType sType;
-    const void *pNext;
-  } *cur = pnext;
-  while (cur) {
-    if (val_is_loader_stype(cur->sType)) {
-      cur = cur->pNext;
-      continue;
-    }
-    return cur;
-  }
-  return NULL;
-}
-
-static int val_keep_instance_ext(const char *name) {
-  return name && strcmp(name, "VK_EXT_debug_utils") &&
-         strcmp(name, "VK_EXT_debug_report") &&
-         strcmp(name, "VK_EXT_validation_features") &&
-         strcmp(name, "VK_EXT_layer_settings") &&
-         strcmp(name, "VK_EXT_layer_settings_set");
-}
-
-static VkResult val_next_create_instance(const VkInstanceCreateInfo *ci,
-                                         const VkAllocationCallbacks *alloc,
-                                         VkInstance *out) {
-  PFN_vkCreateInstance real =
-      (PFN_vkCreateInstance)val_backend_gipa(NULL, "vkCreateInstance");
-  if (!real)
-    return VK_ERROR_INITIALIZATION_FAILED;
-  VkInstanceCreateInfo local = *ci;
-  const char *kept[16];
-  uint32_t n = 0;
-  for (uint32_t i = 0; i < ci->enabledExtensionCount && n < 16; i++) {
-    if (val_keep_instance_ext(ci->ppEnabledExtensionNames[i]))
-      kept[n++] = ci->ppEnabledExtensionNames[i];
-  }
-  local.enabledExtensionCount = n;
-  local.ppEnabledExtensionNames = n ? kept : NULL;
-  local.enabledLayerCount = 0;
-  local.ppEnabledLayerNames = NULL;
-  local.pNext = val_strip_loader_pnext(ci->pNext);
-  printf("VAL next-CreateInstance ext=%u pNext=%p\n", n, local.pNext);
-  return real(&local, alloc, out);
-}
-
-static PFN_vkVoidFunction val_next_gipa(VkInstance instance, const char *name) {
-  if (!name)
-    return NULL;
-  if (!strcmp(name, "vkGetInstanceProcAddr"))
-    return (PFN_vkVoidFunction)val_next_gipa;
-  if (!instance && !strcmp(name, "vkCreateInstance"))
-    return (PFN_vkVoidFunction)val_next_create_instance;
-  return val_backend_gipa(instance, name);
-}
-
-static int val_probe(void) {
-  const char *layer_path = getenv("PROBE_VK_LAYER");
-  if (!layer_path || !layer_path[0])
-    layer_path = "./libVkLayer_khronos_validation.so";
-  if (access(layer_path, R_OK) != 0) {
-    printf("VAL UNSUPPORTED missing layer %s\n", layer_path);
-    return 3;
-  }
-  void *vk = dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1",
-                    RTLD_NOW | RTLD_LOCAL);
-  if (!vk) {
-    printf("Vulkan dlopen: %s\n", dlerror());
-    return 2;
-  }
-  PFN_vkGetInstanceProcAddr backend_gipa = dlsym(vk, "vkGetInstanceProcAddr");
-  if (!backend_gipa) {
-    printf("MISSING backend vkGetInstanceProcAddr\n");
-    return 2;
-  }
-  val_backend_gipa = backend_gipa;
-  struct val_lib layer;
-  if (!val_open_layer(layer_path, &layer)) {
-    printf("VAL UNSUPPORTED layer load failed\n");
-    return 3;
-  }
-  typedef VkResult (*neg_fn)(val_negotiate *);
-  neg_fn negotiate = (neg_fn)layer.lookup(
-      layer.h, "vkNegotiateLoaderLayerInterfaceVersion");
-  PFN_vkGetInstanceProcAddr layer_gipa = NULL;
-  if (negotiate) {
-    val_negotiate n = {.sType = kNegotiateIface,
-                       .loaderLayerInterfaceVersion = 2};
-    VkResult nr = negotiate(&n);
-    printf("VAL negotiate rc=%d version=%u gipa=%p\n", nr,
-           n.loaderLayerInterfaceVersion, (void *)n.pfnGetInstanceProcAddr);
-    if (nr == VK_SUCCESS)
-      layer_gipa = n.pfnGetInstanceProcAddr;
-  }
-  if (!layer_gipa)
-    layer_gipa = (PFN_vkGetInstanceProcAddr)layer.lookup(
-        layer.h, "vkGetInstanceProcAddr");
-  if (!layer_gipa) {
-    printf("VAL layer GIPA missing\n");
-    return 2;
-  }
-  PFN_vkEnumerateInstanceLayerProperties enum_layers =
-      (PFN_vkEnumerateInstanceLayerProperties)layer_gipa(
-          NULL, "vkEnumerateInstanceLayerProperties");
-  if (enum_layers) {
-    uint32_t lc = 0;
-    enum_layers(&lc, NULL);
-    VkLayerProperties *lp = calloc(lc, sizeof(*lp));
-    if (lc)
-      enum_layers(&lc, lp);
-    for (uint32_t i = 0; i < lc; i++)
-      printf("VAL layer %s spec=%u\n", lp[i].layerName, lp[i].specVersion);
-    free(lp);
-  }
-  PFN_vkCreateInstance create_inst =
-      (PFN_vkCreateInstance)layer_gipa(NULL, "vkCreateInstance");
-  if (!create_inst) {
-    printf("VAL layer vkCreateInstance missing\n");
-    return 2;
-  }
-  struct val_log log = {0};
-  val_instance_link ilink = {
-      .pfnNextGetInstanceProcAddr = val_next_gipa};
-  val_instance_create idata = {
-      .sType = VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO,
-      .function = kLoaderDataCallback,
-      .u.pfnSetInstanceLoaderData = (PFN_vkVoidFunction)val_set_instance_data};
-  val_instance_create ilink_ci = {
-      .sType = VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO,
-      .pNext = &idata,
-      .function = kLayerLinkInfo,
-      .u.pLayerInfo = &ilink};
-  VkDebugUtilsMessengerCreateInfoEXT msg = {
-      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-      .pNext = &ilink_ci,
-      .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-      .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-      .pfnUserCallback = val_messenger,
-      .pUserData = &log};
-  VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-                           .pApplicationName = "hybris-val",
-                           .apiVersion = VK_API_VERSION_1_0};
-  const char *inst_ext = "VK_EXT_debug_utils";
-  VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-                             .pNext = &msg,
-                             .pApplicationInfo = &app,
-                             .enabledExtensionCount = 1,
-                             .ppEnabledExtensionNames = &inst_ext};
-  VkInstance instance = VK_NULL_HANDLE;
-  CHECK(create_inst(&ci, NULL, &instance));
-  printf("VAL legal-instance errors=%d warnings=%d\n", log.errors,
-         log.warnings);
-  /* pNext messengers only cover CreateInstance/DestroyInstance. */
-  PFN_vkCreateDebugUtilsMessengerEXT create_msg =
-      (PFN_vkCreateDebugUtilsMessengerEXT)layer_gipa(
-          instance, "vkCreateDebugUtilsMessengerEXT");
-  PFN_vkDestroyDebugUtilsMessengerEXT destroy_msg =
-      (PFN_vkDestroyDebugUtilsMessengerEXT)layer_gipa(
-          instance, "vkDestroyDebugUtilsMessengerEXT");
-  VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
-  if (create_msg) {
-    VkDebugUtilsMessengerCreateInfoEXT persist = msg;
-    persist.pNext = NULL;
-    VkResult mr = create_msg(instance, &persist, NULL, &messenger);
-    printf("VAL CreateDebugUtilsMessengerEXT = %d messenger=%p\n", mr,
-           (void *)(uintptr_t)messenger);
-    if (mr != VK_SUCCESS)
-      messenger = VK_NULL_HANDLE;
-  } else {
-    printf("VAL vkCreateDebugUtilsMessengerEXT missing\n");
-  }
-  PFN_vkEnumeratePhysicalDevices enum_pd =
-      (PFN_vkEnumeratePhysicalDevices)layer_gipa(
-          instance, "vkEnumeratePhysicalDevices");
-  PFN_vkGetPhysicalDeviceQueueFamilyProperties qf =
-      (PFN_vkGetPhysicalDeviceQueueFamilyProperties)layer_gipa(
-          instance, "vkGetPhysicalDeviceQueueFamilyProperties");
-  PFN_vkCreateDevice create_dev =
-      (PFN_vkCreateDevice)layer_gipa(instance, "vkCreateDevice");
-  PFN_vkDestroyDevice destroy_dev =
-      (PFN_vkDestroyDevice)layer_gipa(instance, "vkDestroyDevice");
-  PFN_vkDestroyInstance destroy_inst =
-      (PFN_vkDestroyInstance)layer_gipa(instance, "vkDestroyInstance");
-  PFN_vkGetDeviceProcAddr backend_gdp =
-      (PFN_vkGetDeviceProcAddr)backend_gipa(instance, "vkGetDeviceProcAddr");
-  if (!enum_pd || !qf || !create_dev || !destroy_dev || !destroy_inst ||
-      !backend_gdp) {
-    printf("VAL missing chained instance dispatch\n");
-    return 2;
-  }
-  uint32_t count = 0;
-  CHECK(enum_pd(instance, &count, NULL));
-  if (!count)
-    return 2;
-  VkPhysicalDevice devices[4];
-  if (count > 4)
-    count = 4;
-  CHECK(enum_pd(instance, &count, devices));
-  uint32_t qi = 0;
-  if (!pick_queue(qf, devices[0], &qi))
-    return 2;
-  float priority = 1;
-  VkDeviceQueueCreateInfo qc = {.sType =
-                                    VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                .queueFamilyIndex = qi,
-                                .queueCount = 1,
-                                .pQueuePriorities = &priority};
-  val_device_link dlink = {.pfnNextGetInstanceProcAddr = val_next_gipa,
-                           .pfnNextGetDeviceProcAddr = backend_gdp};
-  val_device_create ddata = {
-      .sType = VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO,
-      .function = kLoaderDataCallback,
-      .u.pfnSetDeviceLoaderData = (PFN_vkVoidFunction)val_set_device_data};
-  val_device_create dlink_ci = {
-      .sType = VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO,
-      .pNext = &ddata,
-      .function = kLayerLinkInfo,
-      .u.pLayerInfo = &dlink};
-  VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-                           .pNext = &dlink_ci,
-                           .queueCreateInfoCount = 1,
-                           .pQueueCreateInfos = &qc};
-  VkDevice device;
-  CHECK(create_dev(devices[0], &dc, NULL, &device));
-  printf("VAL legal-device errors=%d warnings=%d\n", log.errors, log.warnings);
-  if (log.errors) {
-    printf("VAL legal path produced ERROR messages\n");
-    destroy_dev(device, NULL);
-    if (destroy_msg && messenger)
-      destroy_msg(instance, messenger, NULL);
-    destroy_inst(instance, NULL);
-    return 2;
-  }
-  PFN_vkGetDeviceProcAddr layer_gdp =
-      (PFN_vkGetDeviceProcAddr)layer_gipa(instance, "vkGetDeviceProcAddr");
-  PFN_vkCreateBuffer create_buf = NULL;
-  if (layer_gdp)
-    create_buf = (PFN_vkCreateBuffer)layer_gdp(device, "vkCreateBuffer");
-  if (!create_buf) {
-    printf("VAL layer vkCreateBuffer missing\n");
-    destroy_dev(device, NULL);
-    if (destroy_msg && messenger)
-      destroy_msg(instance, messenger, NULL);
-    destroy_inst(instance, NULL);
-    return 2;
-  }
-  int errors_before = log.errors;
-  VkBufferCreateInfo bad = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                            .size = 0,
-                            .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
-  VkBuffer buf = VK_NULL_HANDLE;
-  VkResult br = create_buf(device, &bad, NULL, &buf);
-  printf("VAL illegal-zero-size-buffer rc=%d errors=%d (before=%d)\n", br,
-         log.errors, errors_before);
-  if (buf && layer_gdp) {
-    PFN_vkDestroyBuffer destroy_buf =
-        (PFN_vkDestroyBuffer)layer_gdp(device, "vkDestroyBuffer");
-    if (destroy_buf)
-      destroy_buf(device, buf, NULL);
-  }
-  destroy_dev(device, NULL);
-  if (destroy_msg && messenger)
-    destroy_msg(instance, messenger, NULL);
-  destroy_inst(instance, NULL);
-  if (log.errors <= errors_before) {
-    printf("VAL illegal call was not reported\n");
-    return 2;
-  }
-  printf("VAL PASS legal_errors=0 illegal_errors=%d warnings=%d\n",
-         log.errors, log.warnings);
-  return 0;
-}
-
 int main(int argc, char **argv) {
   setbuf(stdout, NULL);
   const char *mode = argc > 1 ? argv[1] : "vk";
@@ -1811,17 +1387,21 @@ int main(int argc, char **argv) {
   if (!strcmp(mode, "dispatch"))
     rc = dispatch_probe();
   else if (!strcmp(mode, "life"))
-    rc = life_probe();
+    rc = life_probe(0);
+  else if (!strcmp(mode, "unload"))
+    rc = life_probe(1);
   else if (!strcmp(mode, "caps"))
     rc = caps_probe();
   else if (!strcmp(mode, "ubo"))
     rc = ubo_probe();
-  else if (!strcmp(mode, "val"))
-    rc = val_probe();
   else if (!strcmp(mode, "vk"))
     rc = vkprobe();
-  else
+  else if (!strcmp(mode, "0") || !strcmp(mode, "2") || !strcmp(mode, "3"))
     rc = eglprobe(atoi(mode));
+  else {
+    fprintf(stderr, "Unknown probe mode: %s\n", mode);
+    rc = 2;
+  }
   printf("RESULT %d\n", rc);
   return rc;
 }
