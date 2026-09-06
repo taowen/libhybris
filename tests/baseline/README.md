@@ -864,3 +864,25 @@ Fresh probe builds and runs `20260907T023959-ac41857d` (29854870) and
 `20260907T023959-961f4ab9` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
 including VVL, SyncVal and capture/replay. Native and hybris each pass all three
 shared-context cycles on both devices. Production code is unchanged.
+
+## Simultaneous current contexts on separate threads
+
+The isolated half of `egl-life` now includes two workers, each owning one
+context and pbuffer. Both attempt to make their context current before main
+opens the start gate. Each then performs eight state checks and clear/readback
+iterations, requiring the original buffer binding/size and exact red or green
+pixel. No mutex serializes their GL calls. Each releases thread state before
+join, and main switches between both contexts to check preserved state again.
+The sequence repeats for all three lifecycle cycles. Partial thread creation
+releases the cancellation gate and joins all started workers.
+
+This proves simultaneous current contexts and successful independent threaded
+clear/readback. It does not establish GPU execution overlap, shader-draw
+concurrency, shared-resource synchronization, application callbacks or general
+generation tracking. Shared-context work remains sequential with glFinish.
+
+Fresh probe builds and runs `20260907T024324-39d298a2` (29854870) and
+`20260907T024324-8d0ade38` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. Native and hybris each report six
+successful worker results across three cycles on each device. Production code
+is unchanged in this batch.

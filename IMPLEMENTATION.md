@@ -24,6 +24,13 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+The isolated EGL contexts also run on two threads: both make their context
+current before a host gate releases their clear/readback loops. Each checks
+its own context/surface, buffer binding/size and exact red or green pixel for
+eight iterations, releases thread state, and returns to main for another
+state check. This tests simultaneous current contexts, not guaranteed GPU
+execution overlap, shared-resource hazards or concurrent shader draws.
+
 The EGL lifecycle workload now also creates a share group of two GLES2
 contexts. It checks shared buffer size changes, exact shared-texture pixels,
 independent buffer binding state and continued access after destroying the

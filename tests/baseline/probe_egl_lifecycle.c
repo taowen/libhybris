@@ -1,4 +1,5 @@
 #include "probe.h"
+#include <sched.h>
 
 struct context_pair {
   void *e, *g;
@@ -9,7 +10,7 @@ struct context_pair {
   int result;
 };
 
-static int check_contexts(struct context_pair *pair, int initialize) {
+static int check_contexts(struct context_pair *pair, int initialize, int only_context) {
   void *e = pair->e, *g = pair->g;
   E(eglMakeCurrent);
   E(eglGetCurrentContext);
@@ -27,6 +28,7 @@ static int check_contexts(struct context_pair *pair, int initialize) {
   G(glGetError);
   for (int pass = 0; pass < (initialize ? 1 : 8); ++pass) {
     for (int i = 0; i < 2; ++i) {
+      if (only_context >= 0 && i != only_context) continue;
       if (!p_eglMakeCurrent(pair->display, pair->surfaces[i], pair->surfaces[i], pair->contexts[i])) {
         printf("CONTEXT_SWITCH failed error=%x\n", p_eglGetError()); return 2;
       }
@@ -66,9 +68,56 @@ static void *migrate_contexts(void *opaque) {
   void *e = pair->e;
   E(eglBindAPI);
   E(eglReleaseThread);
-  pair->result = p_eglBindAPI(EGL_OPENGL_ES_API) ? check_contexts(pair, 0) : 2;
+  pair->result = p_eglBindAPI(EGL_OPENGL_ES_API) ? check_contexts(pair, 0, -1) : 2;
   if (!p_eglReleaseThread()) pair->result = 2;
   return NULL;
+}
+
+struct parallel_context {
+  struct context_pair *pair;
+  int *start, *ready;
+  int index, result;
+};
+
+static void *render_context(void *opaque) {
+  struct parallel_context *work = opaque;
+  void *e = work->pair->e;
+  E(eglBindAPI);
+  E(eglMakeCurrent);
+  E(eglReleaseThread);
+  struct context_pair *pair = work->pair;
+  int i = work->index;
+  work->result = p_eglBindAPI(EGL_OPENGL_ES_API) &&
+      p_eglMakeCurrent(pair->display, pair->surfaces[i], pair->surfaces[i], pair->contexts[i]) ? 0 : 2;
+  __atomic_add_fetch(work->ready, 1, __ATOMIC_RELEASE);
+  int start;
+  while (!(start = __atomic_load_n(work->start, __ATOMIC_ACQUIRE))) sched_yield();
+  if (start > 0 && !work->result)
+    work->result = check_contexts(pair, 0, i);
+  if (!p_eglReleaseThread()) work->result = 2;
+  return NULL;
+}
+
+static int parallel_contexts(struct context_pair *pair) {
+  int start = 0, ready = 0;
+  struct parallel_context work[2] = {
+      {.pair=pair, .start=&start, .ready=&ready, .index=0, .result=2},
+      {.pair=pair, .start=&start, .ready=&ready, .index=1, .result=2}};
+  pthread_t threads[2];
+  int started = 0;
+  for (; started < 2; ++started)
+    if (pthread_create(&threads[started], NULL, render_context, &work[started])) break;
+  if (started == 2)
+    while (__atomic_load_n(&ready, __ATOMIC_ACQUIRE) != 2) sched_yield();
+  /* Both contexts are current on separate threads before either renders. */
+  __atomic_store_n(&start, started == 2 ? 1 : -1, __ATOMIC_RELEASE);
+  int failed = started != 2;
+  for (int i = 0; i < started; ++i) {
+    if (pthread_join(threads[i], NULL)) return 2;
+    printf("EGL_PARALLEL context=%d result=%d\n", i, work[i].result);
+    failed |= work[i].result != 0;
+  }
+  return failed ? 2 : 0;
 }
 
 static int check_shared(struct context_pair *pair, int cycle) {
@@ -170,10 +219,11 @@ int egl_lifecycle_probe(void) {
       pair.surfaces[i] = p_eglCreatePbufferSurface(pair.display, config, pa);
       if (pair.contexts[i] == EGL_NO_CONTEXT || pair.surfaces[i] == EGL_NO_SURFACE) return 2;
     }
-    if (check_contexts(&pair, 1) || check_contexts(&pair, 0)) return 2;
+    if (check_contexts(&pair, 1, -1) || check_contexts(&pair, 0, -1)) return 2;
     pthread_t thread;
     if (pthread_create(&thread, NULL, migrate_contexts, &pair)) return 2;
-    if (pthread_join(thread, NULL) || pair.result || check_contexts(&pair, 0)) return 2;
+    if (pthread_join(thread, NULL) || pair.result || parallel_contexts(&pair) ||
+        check_contexts(&pair, 0, -1)) return 2;
     for (int i = 0; i < 2; ++i) {
       if (!p_eglMakeCurrent(pair.display, pair.surfaces[i], pair.surfaces[i], pair.contexts[i])) return 2;
       p_glDeleteBuffers(1, &pair.buffers[i]);
