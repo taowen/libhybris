@@ -345,3 +345,16 @@ X300 `20260907T065437-096b67ab` 为 93 PASS / 4 UNSUPPORTED / 2 CRASH / 2 FAIL�
 caps/caps2 记录值不变。关闭选项的同库负对照 `20260907T065418-7b030d21`
 仍复现原崩溃。native-groups、ICD core11、template 和 template-validation 尚未解决；
 其余固件、驱动内部优化行为、任意 layer/应用、WSI 均未据此验收。
+
+2026-09-07 ICD 版本协商修复：删除 private manifest 写死的 API 1.0，新增
+`icd-version` 独立探针，直接查询 adapter/HAL 并用实测版本生成 driver.json。
+Khronos loader 在 JSON <1.1 时不会查询 driver version，并向 HAL 传入 1.0；
+此前“interface 5 会自动纠正”判断有误，旧 Adreno 通过记录不证明 HAL 收到
+应用请求的 1.1。该错误导致 X300 core11 入口缺失及 template 路径失败。
+现 X300 实测 1.3.305、红米 1.1.128；发现失败会停止依赖用例，缺失 HAL
+负对照 `20260907T070107-1a7bcb32` 已验证。
+开启上述 Mali 选项后，完整 X300 `20260907T070031-042f6354` 与红米
+`20260907T070032-2711e780` 均为 97 PASS / 4 UNSUPPORTED / 1 CRASH，唯一
+崩溃为 native-groups；core11、template、对应 validation、两种 capture/replay
+均通过。默认关闭 Mali 选项时原管线问题仍存在。该 headless 结果不关闭
+任意应用、WSI/present、一帧窗口捕获或其他驱动版本的验收门槛。

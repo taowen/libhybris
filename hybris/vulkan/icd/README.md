@@ -95,3 +95,31 @@ match the pre-workaround run. Same-built-library opt-out run
 `20260907T065418-7b030d21` reproduces the original pipeline crash.
 Other build-id rejection, nonzero encoded properties, malformed ELF notes and
 secure execution have code checks but no independent runtime fault injection.
+
+## Manifest version discovery
+
+The baseline now runs `icd-version` directly against the adapter before any
+standard-loader case. The probe negotiates interface 5 and calls the adapter's
+`vkEnumerateInstanceVersion`, which forwards to the HAL. Its validated result
+becomes the private JSON manifest's `api_version` and `device.json`'s
+`icd_api_version`. Even a selected ICD case includes this prerequisite.
+Discovery failure aborts the dependent cases, preserving the failed probe's
+output and summary. No fixed version is substituted after a failure.
+
+The previous manifest's hard-coded 1.0 was incorrect: the Khronos loader
+checks the JSON version before consulting vkEnumerateInstanceVersion. A 1.0
+manifest causes it to pass API 1.0 to the driver even when the application asks
+for 1.1. Negotiating loader interface 5 does not bypass that check. This caused
+Mali core11 proc lookup failure and an absent template implementation beneath
+the loader trampoline. Older passing Adreno tests do not prove the requested
+instance version reached the HAL.
+Reference: https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderDriverInterface.md#driver-api-version
+
+The adapter reports 1.3.305 on X300 and 1.1.128 on Redmi. These are observed
+instance versions, not a conformance or full feature-execution claim. With the
+Mali option above, final X300 `20260907T070031-042f6354` and Redmi
+`20260907T070032-2711e780` both have 97 PASS / 4 UNSUPPORTED / 1 CRASH
+(native-groups). This includes core11 transfer, template drawing/validation,
+ordinary/dynamic capture and the version probe. Missing-HAL negative control
+`20260907T070107-1a7bcb32` reports icd-version FAIL and runs no dependent case.
+The 1.0 HAL fallback and multiple HALs in one process remain untested here.

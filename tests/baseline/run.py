@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -242,14 +243,9 @@ if a.icd_hal:
     (stage / 'standard').mkdir()
     shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
     metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
-    (stage / 'driver.json').write_text(json.dumps({
-        'file_format_version': '1.0.0',
-        'ICD': {'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
-                'api_version': '1.0.0'}}))
-    # The manifest starts at 1.0; interface 5 queries the HAL's supported
-    # instance version via vkEnumerateInstanceVersion.
+    # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
+              for mode in ('version', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     if a.validation_layer:
         (stage / 'layers').mkdir()
@@ -282,6 +278,8 @@ try:
         if unknown:
             raise SystemExit('unknown selected cases: ' + ', '.join(sorted(unknown)))
         cases = [case for case in cases if case[0] + '-' + case[1] in a.selected_cases]
+        if any(case[0].startswith('icd') for case in cases) and ('icd', 'version', 'probe-glibc') not in cases:
+            cases.insert(0, ('icd', 'version', 'probe-glibc'))
     metadata['selected_cases'] = a.selected_cases
     for backend, mode, binary in cases:
         if backend == 'native':
@@ -329,6 +327,22 @@ try:
             kill_remote()
         (a.out / (name + '.log')).write_bytes(output or b'')
         decoded = (output or b'').decode('utf-8', errors='replace')
+        if backend == 'icd' and mode == 'version' and code == 0:
+            versions = [m.group(1) for line in decoded.splitlines()
+                        if (m := re.fullmatch(r'ICD_API_VERSION (\d+\.\d+\.\d+)', line))]
+            if len(versions) != 1:
+                print('ICD version discovery returned no unique version', flush=True)
+                code = 2
+            else:
+                metadata['icd_api_version'] = versions[0]
+                driver_json = stage / 'driver.json'
+                driver_json.write_text(json.dumps({
+                    'file_format_version': '1.0.0',
+                    'ICD': {'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
+                            'api_version': versions[0]}}))
+                subprocess.run(adb + ['push', str(driver_json), remote + '/driver.json'],
+                               check=True, stdout=subprocess.DEVNULL, timeout=30)
+
         if backend == 'icd' and mode == 'vk-init' and code == 0:
             try:
                 evidence = instance_evidence(decoded)
@@ -388,6 +402,8 @@ try:
         status = classify(code)
         results.append(dict(case=name, status=status, exit_code=code, binary=binary))
         print(name, status, 'exit=' + str(code), flush=True)
+        if backend == 'icd' and mode == 'version' and code != 0:
+            raise SystemExit('ICD version discovery failed; dependent cases were not run')
     if a.capture_tools:
         for dynamic in (False, True):
             folder = 'capture-dynamic' if dynamic else 'capture'

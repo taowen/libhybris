@@ -1603,3 +1603,19 @@ now pass on X300; core11, template/template-validation and native-groups remain
 open. Same-build opt-out `20260907T065418-7b030d21` still crashes at pipeline
 creation. This option is disabled by default and not a claim of general Mali
 compatibility. No unit-test suite was added; common's 130 export names are unchanged.
+
+ICD manifest version (2026-09-07): the new standalone `icd-version` case directly
+queries the adapter/HAL before provisioning driver.json. It is automatically
+included when selecting any ICD case. The version, output and mappings are
+retained; discovery failure stops dependent cases. This corrects the old
+hard-coded 1.0 manifest, which prevented loader version discovery and downgraded
+requests reaching the driver. It does not change the workload's requested API
+or enable extra extensions to hide a missing core implementation.
+
+Final full runs with `--icd-mali-loader-quirk`: X300
+`20260907T070031-042f6354` and Redmi `20260907T070032-2711e780` each have
+**97 PASS / 4 UNSUPPORTED / 1 CRASH** (native-groups). Actual ICD instance versions
+are 1.3.305 and 1.1.128 respectively. Core11 transfer, template/validation and
+both capture/replay gates now pass on X300. The driver-specific opt-in remains
+required there. Missing-HAL run `20260907T070107-1a7bcb32` correctly reports
+icd-version FAIL without starting dependent cases. No unit-test suite was added.
