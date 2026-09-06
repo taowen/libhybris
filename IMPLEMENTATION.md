@@ -89,17 +89,19 @@ implement Android ashmem support or validate working process-shared locks.
 The shared rwlock destroy path still needs handle translation before destroy,
 and the allocator's mapping/growth/concurrent-open behavior needs further work.
 
-`common/bionic_sync.c` now owns the static synchronization publication guard,
-backing allocation and raw-pointer lookup. Its private header centralizes
-initializer values and hidden helper declarations. The follow-up split moves
-17 mutex/condition API hooks, explicit initialization/destruction, shared-handle
-translation and Android condition futex pulse helpers into that same module.
-`hooks.c` retains their symbol registration and the rwlock API wrappers. This
-removes another 541 lines from `hooks.c`; hook behavior and the existing
-Android condition pulse exports are preserved, with private hooks hidden.
-Both-device regression runs `20260907T030507-d17a9d9b` and
-`20260907T030507-63e6a157` each pass 61 cases with 2 unsupported; the common
-130-symbol and Vulkan 643-symbol defined export sets are unchanged.
+`common/bionic_sync.c` owns static synchronization publication, backing
+allocation, mutex/condition/rwlock ABI hooks and shared-handle translation.
+Its private header contains initializer values and cross-file declarations;
+`hooks.c` retains symbol registration. Moving the 17 mutex/condition hooks
+removed 541 lines, and moving the 15 rwlock/attribute hooks removed another
+225 lines. Existing Android condition pulse and rwlock kind accessor exports
+retain their ABI; newly cross-file hooks remain hidden. These structural
+changes preserve the existing shared-memory behavior and its limitations.
+The rwlock split passed runs `20260907T031532-6df22c8a` and
+`20260907T031532-c897f4f0` (63 PASS / 2 UNSUPPORTED each), with the common
+130-symbol and Vulkan 643-symbol defined export sets unchanged.
+The mutex/condition split passed runs `20260907T030507-d17a9d9b` and
+`20260907T030507-63e6a157` (61 PASS / 2 UNSUPPORTED each).
 
 Destroying an unused process-private static mutex, condition or rwlock now
 succeeds without treating its initializer as a glibc pointer. The independent

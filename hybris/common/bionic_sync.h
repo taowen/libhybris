@@ -70,4 +70,39 @@ __attribute__((visibility("hidden")))
 int _hybris_hook_pthread_cond_timedwait_relative_np(pthread_cond_t *cond,
                 pthread_mutex_t *mutex, const struct timespec *reltime);
 
+/* Rwlock ABI hooks; the two existing kind accessors retain public visibility. */
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlockattr_init(pthread_rwlockattr_t *__attr);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlockattr_destroy(pthread_rwlockattr_t *__attr);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlockattr_setpshared(pthread_rwlockattr_t *__attr,
+                                            int pshared);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlockattr_getpshared(pthread_rwlockattr_t *__attr,
+                                            int *pshared);
+int _hybris_hook_pthread_rwlockattr_setkind_np(pthread_rwlockattr_t *attr, int pref);
+int _hybris_hook_pthread_rwlockattr_getkind_np(const pthread_rwlockattr_t *attr, int *pref);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_init(pthread_rwlock_t *__rwlock,
+                                  __const pthread_rwlockattr_t *__attr);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_destroy(pthread_rwlock_t *__rwlock);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_rdlock(pthread_rwlock_t *__rwlock);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_tryrdlock(pthread_rwlock_t *__rwlock);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_timedrdlock(pthread_rwlock_t *__rwlock,
+                                         __const struct timespec *abs_timeout);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_wrlock(pthread_rwlock_t *__rwlock);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_trywrlock(pthread_rwlock_t *__rwlock);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_timedwrlock(pthread_rwlock_t *__rwlock,
+                                         __const struct timespec *abs_timeout);
+__attribute__((visibility("hidden")))
+int _hybris_hook_pthread_rwlock_unlock(pthread_rwlock_t *__rwlock);
+
 #endif

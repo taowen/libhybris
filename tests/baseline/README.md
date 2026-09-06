@@ -1009,3 +1009,16 @@ including native/hybris success for all five kinds, validation/SyncVal and
 capture/replay. The 130 common and 643 Vulkan defined exports are unchanged.
 No claim is made about double destroy, destruction while in use, 32-bit ABI,
 working shared synchronization or reclamation of the shared allocator.
+
+
+Rwlock hook split regression: moved 15 rwlock/attribute hooks and their handle
+lookup from `hooks.c` into `bionic_sync.c`. The two existing public kind
+accessors remain exported; other moved entry points are hidden. Bodies and
+registration were compared to the preceding revision; all 130 common and
+643 Vulkan defined exports remain unchanged after rebuilding.
+Runs `20260907T031532-6df22c8a` (29854870) and
+`20260907T031532-c897f4f0` (KB2000) each completed **63 PASS / 2 UNSUPPORTED**,
+including rwlock first use, static destruction/reinitialization, TLS, graphics,
+validation/SyncVal and capture/replay. This is structural regression evidence;
+shared rwlock destroy translation, timed-lock semantics, kind preferences and
+fairness are not newly verified by the existing first-use workload.

@@ -31,7 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Owns static synchronization-object publication and mutex/condition ABI hooks.
+/* Owns static synchronization-object publication and synchronization ABI hooks.
  * The registration table in hooks.c selects these private entry points. */
 static void hybris_set_mutex_attr(unsigned int android_value, pthread_mutexattr_t *attr)
 {
@@ -125,7 +125,7 @@ static pthread_rwlock_t* hybris_alloc_init_rwlock(void)
 }
 
 /* Return the stored value unchanged for an existing shared-memory handle.
- * Handle translation belongs to hooks.c and happens after releasing the guard. */
+ * API hooks translate handles after releasing the publication guard. */
 uintptr_t hybris_get_static_rwlock_value(void *storage)
 {
     uintptr_t value;
@@ -699,4 +699,229 @@ int _hybris_hook_pthread_cond_timedwait_relative_np(pthread_cond_t *cond,
         deadline.tv_nsec -= 1000000000;
     }
     return _hybris_hook_pthread_cond_clockwait(cond, mutex, CLOCK_MONOTONIC, &deadline);
+}
+
+/*
+ * pthread_rwlockattr_* functions
+ *
+ * Specific implementations to workaround the differences between at the
+ * pthread_rwlockattr_t struct differences between Bionic and Glibc.
+ *
+ * */
+
+int _hybris_hook_pthread_rwlockattr_init(pthread_rwlockattr_t *__attr)
+{
+    pthread_rwlockattr_t *realattr;
+
+    TRACE_HOOK("attr %p", __attr);
+
+    realattr = malloc(sizeof(pthread_rwlockattr_t));
+    *((uintptr_t *)__attr) = (uintptr_t) realattr;
+
+    return pthread_rwlockattr_init(realattr);
+}
+
+int _hybris_hook_pthread_rwlockattr_destroy(pthread_rwlockattr_t *__attr)
+{
+    int ret;
+    pthread_rwlockattr_t *realattr = (pthread_rwlockattr_t *) *(uintptr_t *) __attr;
+
+    TRACE_HOOK("attr %p", __attr);
+
+    ret = pthread_rwlockattr_destroy(realattr);
+    free(realattr);
+
+    return ret;
+}
+
+int _hybris_hook_pthread_rwlockattr_setpshared(pthread_rwlockattr_t *__attr,
+                                            int pshared)
+{
+    pthread_rwlockattr_t *realattr = (pthread_rwlockattr_t *) *(uintptr_t *) __attr;
+
+    TRACE_HOOK("attr %p pshared %d", __attr, pshared);
+
+    return pthread_rwlockattr_setpshared(realattr, pshared);
+}
+
+int _hybris_hook_pthread_rwlockattr_getpshared(pthread_rwlockattr_t *__attr,
+                                            int *pshared)
+{
+    pthread_rwlockattr_t *realattr = (pthread_rwlockattr_t *) *(uintptr_t *) __attr;
+
+    TRACE_HOOK("attr %p pshared %p", __attr, pshared);
+
+    return pthread_rwlockattr_getpshared(realattr, pshared);
+}
+
+int _hybris_hook_pthread_rwlockattr_setkind_np(pthread_rwlockattr_t *attr, int pref)
+{
+    pthread_rwlockattr_t *realattr = (pthread_rwlockattr_t *) *(uintptr_t *) attr;
+
+    TRACE_HOOK("attr %p pref %i", attr, pref);
+
+    return pthread_rwlockattr_setkind_np(realattr, pref);
+}
+
+int _hybris_hook_pthread_rwlockattr_getkind_np(const pthread_rwlockattr_t *attr, int *pref)
+{
+    pthread_rwlockattr_t *realattr = (pthread_rwlockattr_t *) *(uintptr_t *) attr;
+
+    TRACE_HOOK("attr %p pref %p", attr, pref);
+
+    return pthread_rwlockattr_getkind_np(realattr, pref);
+}
+
+/*
+ * pthread_rwlock_* functions
+ *
+ * Specific implementations to workaround the differences between at the
+ * pthread_rwlock_t struct differences between Bionic and Glibc.
+ *
+ * */
+
+int _hybris_hook_pthread_rwlock_init(pthread_rwlock_t *__rwlock,
+                                  __const pthread_rwlockattr_t *__attr)
+{
+    pthread_rwlock_t *realrwlock = NULL;
+    pthread_rwlockattr_t *realattr = NULL;
+    int pshared = 0;
+
+    TRACE_HOOK("rwlock %p attr %p", __rwlock, __attr);
+
+    if (__attr != NULL)
+        realattr = (pthread_rwlockattr_t *) *(uintptr_t *) __attr;
+
+    if (realattr)
+        pthread_rwlockattr_getpshared(realattr, &pshared);
+
+    if (!pshared) {
+        /* non shared, standard rwlock: use malloc */
+        realrwlock = malloc(sizeof(pthread_rwlock_t));
+
+        *((uintptr_t *) __rwlock) = (uintptr_t) realrwlock;
+    }
+    else {
+        /* process-shared condition: use the shared memory segment */
+        hybris_shm_pointer_t handle = hybris_shm_alloc(sizeof(pthread_rwlock_t));
+
+        *((uintptr_t *)__rwlock) = (uintptr_t) handle;
+
+        if (handle)
+            realrwlock = (pthread_rwlock_t *)hybris_get_shmpointer(handle);
+    }
+
+    if (!realrwlock)
+        return ENOMEM;
+    return pthread_rwlock_init(realrwlock, realattr);
+}
+
+int _hybris_hook_pthread_rwlock_destroy(pthread_rwlock_t *__rwlock)
+{
+    int ret;
+    uintptr_t value = hybris_read_sync_value(__rwlock);
+    /* An unused static initializer has no host rwlock to destroy. */
+    if (value <= ANDROID_TOP_ADDR_VALUE_RWLOCK) {
+        value = 0;
+        memcpy(__rwlock, &value, sizeof(value));
+        return 0;
+    }
+    pthread_rwlock_t *realrwlock = (pthread_rwlock_t *)value;
+
+    TRACE_HOOK("rwlock %p", __rwlock);
+
+    if (!hybris_is_pointer_in_shm((void*)realrwlock)) {
+        ret = pthread_rwlock_destroy(realrwlock);
+        free(realrwlock);
+    }
+    else {
+        ret = pthread_rwlock_destroy(realrwlock);
+        realrwlock = (pthread_rwlock_t *)hybris_get_shmpointer((hybris_shm_pointer_t)realrwlock);
+    }
+
+    return ret;
+}
+
+static pthread_rwlock_t* hybris_set_realrwlock(pthread_rwlock_t *rwlock)
+{
+    uintptr_t value = hybris_get_static_rwlock_value(rwlock);
+
+    if (hybris_is_pointer_in_shm((void*)value))
+        return (pthread_rwlock_t *)hybris_get_shmpointer((hybris_shm_pointer_t)value);
+    return (pthread_rwlock_t *)value;
+}
+
+int _hybris_hook_pthread_rwlock_rdlock(pthread_rwlock_t *__rwlock)
+{
+    TRACE_HOOK("rwlock %p", __rwlock);
+
+    pthread_rwlock_t *realrwlock = hybris_set_realrwlock(__rwlock);
+
+    return pthread_rwlock_rdlock(realrwlock);
+}
+
+int _hybris_hook_pthread_rwlock_tryrdlock(pthread_rwlock_t *__rwlock)
+{
+    TRACE_HOOK("rwlock %p", __rwlock);
+
+    pthread_rwlock_t *realrwlock = hybris_set_realrwlock(__rwlock);
+
+    return pthread_rwlock_tryrdlock(realrwlock);
+}
+
+int _hybris_hook_pthread_rwlock_timedrdlock(pthread_rwlock_t *__rwlock,
+                                         __const struct timespec *abs_timeout)
+{
+    TRACE_HOOK("rwlock %p abs timeout %p", __rwlock, abs_timeout);
+
+    pthread_rwlock_t *realrwlock = hybris_set_realrwlock(__rwlock);
+
+    return pthread_rwlock_timedrdlock(realrwlock, abs_timeout);
+}
+
+int _hybris_hook_pthread_rwlock_wrlock(pthread_rwlock_t *__rwlock)
+{
+    TRACE_HOOK("rwlock %p", __rwlock);
+
+    pthread_rwlock_t *realrwlock = hybris_set_realrwlock(__rwlock);
+
+    return pthread_rwlock_wrlock(realrwlock);
+}
+
+int _hybris_hook_pthread_rwlock_trywrlock(pthread_rwlock_t *__rwlock)
+{
+    TRACE_HOOK("rwlock %p", __rwlock);
+
+    pthread_rwlock_t *realrwlock = hybris_set_realrwlock(__rwlock);
+
+    return pthread_rwlock_trywrlock(realrwlock);
+}
+
+int _hybris_hook_pthread_rwlock_timedwrlock(pthread_rwlock_t *__rwlock,
+                                         __const struct timespec *abs_timeout)
+{
+    TRACE_HOOK("rwlock %p abs timeout %p", __rwlock, abs_timeout);
+
+    pthread_rwlock_t *realrwlock = hybris_set_realrwlock(__rwlock);
+
+    return pthread_rwlock_timedwrlock(realrwlock, abs_timeout);
+}
+
+int _hybris_hook_pthread_rwlock_unlock(pthread_rwlock_t *__rwlock)
+{
+    uintptr_t value = hybris_read_sync_value(__rwlock);
+
+    TRACE_HOOK("rwlock %p", __rwlock);
+
+    if (value <= ANDROID_TOP_ADDR_VALUE_RWLOCK) {
+        LOGD("Trying to unlock a rwlock that's not locked/initialized"
+               " by Hybris, not unlocking.");
+        return 0;
+    }
+
+    pthread_rwlock_t *realrwlock = (pthread_rwlock_t *) value;
+    if (hybris_is_pointer_in_shm((void*)value))
+        realrwlock = (pthread_rwlock_t *)hybris_get_shmpointer((hybris_shm_pointer_t)value);
+
+    return pthread_rwlock_unlock(realrwlock);
 }
