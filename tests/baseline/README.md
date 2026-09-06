@@ -1351,3 +1351,22 @@ All widget variants, validation/SyncVal and ordinary/dynamic capture evidence
 pass after extraction; fixed attachment divergence remains draw 60 / 61.
 This batch reorganizes fixture ownership and does not close additional
 compatibility or arbitrary-application diagnosis gates.
+
+
+`attachment_evidence.py` extends both capture gates with creation-to-copy
+lineage: successful image/view/framebuffer creation, consistent owning device,
+active render pass/framebuffer/view/image, format/dimensions, identity swizzle
+and matching mip/layer/aspect/copy extent. Bind/draw/render/copy commands must
+use the same submitted command buffer and follow creation/use order. The
+comparison's `attachment_lineage` retains object IDs and creation indices.
+This is limited to the single-image fixed fixture; aliases, multiple views,
+subpasses, dynamic rendering, generations and WSI remain unverified.
+Offline checks against `20260907T043548-b2be0f97` accept all four existing
+captures and reject twelve copied-evidence mutations of framebuffer attachment,
+view image or draw command buffer (`attachment-negative-check.log`).
+
+Rebuilt runs `20260907T043953-23de5729` (29854870) and
+`20260907T043953-70e52865` (KB2000) each report 88 PASS, 2 UNSUPPORTED.
+Both ordinary/dynamic good/alternate captures pass the stronger attachment
+lineage gate, with framebuffer=21, view=13, image=11 and command buffer=26
+(capture-local IDs). Validation/SyncVal, shader and pixel checks also pass.

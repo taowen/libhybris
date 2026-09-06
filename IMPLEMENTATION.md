@@ -477,3 +477,10 @@ draw routine consumes owned good/alternate data and a byte count, leaving
 resource setup, upload, recording and readback in probe_widget.c. Small-layout
 size/offset assertions join the existing large-layout checks. This is a
 maintainability change; generation and general draw-history gaps remain open.
+
+
+Attachment evidence now separately checks successful image/view/framebuffer
+creation, render-pass attachment selection and copy-source identity, including
+view/copy subresource and dimensions. Recorded bind/draw/copy commands must
+belong to the submitted command buffer. This remains a fixed one-image
+fixture, not runtime resource generations or WSI lineage.

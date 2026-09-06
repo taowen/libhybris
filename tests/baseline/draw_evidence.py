@@ -1,6 +1,7 @@
 """Check GFXReconstruct resource evidence for the single-draw widget fixture."""
 import hashlib
 import struct
+from attachment_evidence import check_attachment
 
 
 def check_draw(calls, report, local, evidence, binding, indices, expected, dynamic=False):
@@ -71,6 +72,7 @@ def check_draw(calls, report, local, evidence, binding, indices, expected, dynam
     if len(attachments) != 1 or attachments[0]['format'] != 'VK_FORMAT_R8G8B8A8_UNORM':
         raise ValueError('unexpected draw attachment')
     attachment = attachments[0]
+    lineage = check_attachment(calls, attachment)
     subresources = attachment['subresources']
     if len(subresources) != 1 or subresources[0]['dimensions'] != [16, 16, 1]:
         raise ValueError('unexpected attachment subresource')
@@ -86,7 +88,7 @@ def check_draw(calls, report, local, evidence, binding, indices, expected, dynam
             'set': write['dstSet'], 'buffer': info['buffer'], 'range': info['range'],
             'descriptor_type': descriptor_type, 'descriptor_offset': info['offset'],
             'dynamic_offset': dynamic_offset, 'effective_offset': effective_offset,
-            'image': attachment['imageId'],
+            'image': attachment['imageId'], 'attachment_lineage': lineage,
             'ubo_sha256': hashlib.sha256(reference).hexdigest(),
             'before_sha256': hashlib.sha256(before).hexdigest(),
             'after_sha256': hashlib.sha256(after).hexdigest()}
