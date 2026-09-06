@@ -32,6 +32,7 @@
       return 2;                                                                \
   } while (0)
 
+void probe_mappings(const char *phase);
 void *sym(void *handle, const char *name);
 int find_mem(const VkPhysicalDeviceMemoryProperties *properties,
              uint32_t bits, VkMemoryPropertyFlags need);

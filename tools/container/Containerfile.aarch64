@@ -1,0 +1,20 @@
+# Fixed Debian base and package snapshot. Updating either is an explicit change.
+FROM docker.io/library/debian@sha256:38a76d01668772e381ad2826d876627c89e7133e2f8a0f5d567306798b0f2a16
+
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* \
+    && printf '%s\n' 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260801T000000Z trixie main' > /etc/apt/sources.list \
+    && dpkg --add-architecture arm64 \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates autoconf automake libtool make pkg-config file \
+        gcc g++ gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+        libc6-dev-arm64-cross python3 \
+        libvulkan-dev:arm64 libegl-dev:arm64 libgles-dev:arm64 \
+        libx11-dev:arm64 libx11-xcb-dev:arm64 libxcb1-dev:arm64 \
+        libxcb-dri3-dev:arm64 libxcb-present-dev:arm64 libxcb-sync-dev:arm64 \
+        libxext-dev:arm64 libxfixes-dev:arm64 libxshmfence-dev:arm64 \
+        libdrm-dev:arm64 libwayland-dev:arm64 libwayland-bin \
+        libwayland-egl-backend-dev wayland-protocols \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work

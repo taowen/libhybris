@@ -156,6 +156,7 @@ int life_probe(int unload) {
     return 2;
   }
   if (unload) {
+    probe_mappings("before-frontend-close");
     printf("LIFE closing final library reference; process exit is part of the check\n");
     if (dlclose(h) != 0) {
       printf("LIFE final frontend dlclose failed: %s\n", dlerror());
@@ -380,6 +381,7 @@ int tls_probe(void) {
   pthread_barrier_wait(&ready);
   int dc = -1;
   if (ctx.rc == 0) {
+    probe_mappings("before-frontend-close");
     dc = dlclose(h);
     printf("TLS frontend dlclose=%d\n", dc);
   } else {

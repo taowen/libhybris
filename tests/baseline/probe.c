@@ -38,6 +38,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Unknown probe mode: %s\n", mode);
     rc = 2;
   }
+  probe_mappings("complete");
   printf("RESULT %d\n", rc);
   return rc;
 }

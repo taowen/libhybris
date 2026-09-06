@@ -4,7 +4,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PARENT="$(cd "$ROOT/../.." && pwd)"
 OUT="$ROOT/tests/baseline/build"
 HEADERS=""
 CLEAN=0
@@ -19,10 +18,10 @@ Builds libhybris for aarch64 glibc and stages:
   $OUT/runtime   glibc loader and DT_NEEDED runtime .so files
   $OUT/manifest.json  ELF sha256/build-id for every staged binary
 
---headers defaults to the sibling android-headers checkout when available.
-The AArch64 toolchain comes from tools/ensure-glibc-builder.sh in the parent
-project when present; otherwise set BUILDER_IMAGE to a Debian-based image
-that has aarch64-linux-gnu-gcc, autoconf, wayland, vulkan and X11 -dev:arm64.
+Without --headers, fetch the pinned Android headers using this repository's
+tools/fetch-android-headers.sh. tools/ensure-builder.sh builds the pinned
+Debian cross-toolchain recipe. BUILDER_IMAGE may explicitly override it.
+Build snapshots, header/compiler identities and ELF hashes are recorded.
 EOF
 }
 
@@ -37,12 +36,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$HEADERS" ]]; then
-    if [[ -f "$PARENT/third_party/android-headers/android-config.h" ]]; then
-        HEADERS="$PARENT/third_party/android-headers"
-    else
-        echo "pass --headers pointing at android-config.h / android-version.h" >&2
-        exit 2
-    fi
+    HEADERS="$(HYBRIS_DEPS_DIR="${HYBRIS_DEPS_DIR:-$OUT/deps}" "$ROOT/tools/fetch-android-headers.sh")"
 fi
 if [[ ! -f "$HEADERS/android-config.h" || ! -f "$HEADERS/android-version.h" ]]; then
     echo "android headers missing android-config.h or android-version.h: $HEADERS" >&2
@@ -50,53 +44,60 @@ if [[ ! -f "$HEADERS/android-config.h" || ! -f "$HEADERS/android-version.h" ]]; 
 fi
 
 if [[ -z "${BUILDER_IMAGE:-}" ]]; then
-    if [[ -x "$PARENT/tools/ensure-glibc-builder.sh" ]]; then
-        BUILDER_IMAGE="$("$PARENT/tools/ensure-glibc-builder.sh")"
-    else
-        echo "set BUILDER_IMAGE to an aarch64 glibc cross toolchain image" >&2
-        exit 2
-    fi
+    BUILDER_IMAGE="$("$ROOT/tools/ensure-builder.sh")"
 fi
 
 mkdir -p "$OUT"
 SRC_COPY="$OUT/src"
+HEADERS_COPY="$OUT/headers"
 INSTALL="$OUT/install"
 RUNTIME="$OUT/runtime"
-PC="$OUT/pc"
 LOG="$OUT/hybris-build.log"
 
 if [[ "$CLEAN" = 1 ]]; then
-    rm -rf "$SRC_COPY" "$INSTALL" "$RUNTIME" "$PC" "$LOG"
+    rm -rf "$SRC_COPY" "$INSTALL" "$RUNTIME" "$LOG"
 fi
 
 # Copy only build inputs; custom output directories inside the checkout cannot
 # recursively copy themselves. A fresh install/runtime avoids stale artifacts.
-rm -rf "$SRC_COPY" "$INSTALL" "$RUNTIME"
+rm -rf "$SRC_COPY" "$HEADERS_COPY" "$INSTALL" "$RUNTIME"
 mkdir -p "$SRC_COPY"
 cp -a "$ROOT/hybris" "$SRC_COPY/"
 cp -a "$ROOT/compat" "$SRC_COPY/"
 
-# Bind the headers as they are; they are not rewritten.
-HEADERS_ABS="$(cd "$HEADERS" && pwd)"
+# Snapshot headers so external edits during compilation cannot change inputs.
+cp -a "$HEADERS" "$HEADERS_COPY"
+rm -rf "$HEADERS_COPY/.git"
+HEADERS_ABS="$(cd "$HEADERS_COPY" && pwd)"
 OUT_ABS="$(cd "$OUT" && pwd)"
 SRC_ABS="$(cd "$SRC_COPY" && pwd)"
 
+SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+SOURCE_DIRTY=()
+if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null || true)" ]]; then
+    SOURCE_DIRTY=(--source-dirty)
+fi
+BUILDER_ID="$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$BUILDER_IMAGE")"
+python3 "$ROOT/tools/build_inputs.py" --source "$SRC_COPY" --headers "$HEADERS_COPY" \
+    --recipe "$ROOT/tools/container/Containerfile.aarch64" --image-id "$BUILDER_ID" \
+    --build-script "$ROOT/tools/build-aarch64.sh" \
+    --out "$OUT/build-inputs.json"
+
 "$CONTAINER_ENGINE" run --rm --network host --userns=keep-id \
     --volume "$SRC_ABS:/src:Z" \
-    --volume "$HEADERS_ABS:/headers:Z" \
+    --volume "$HEADERS_ABS:/headers:ro,Z" \
     --volume "$OUT_ABS:/out:Z" \
     --workdir /src \
-    "$BUILDER_IMAGE" bash -eu -c '
+    "$BUILDER_ID" bash -eu -c '
 set -euo pipefail
 HOST_TRIPLE=aarch64-linux-gnu
 CC_BIN=${HOST_TRIPLE}-gcc
 CXX_BIN=${HOST_TRIPLE}-g++
 BUILD_DIR=/src/hybris
 OUT_DIR=/out/install
-PC_DIR=/out/pc
 RUNTIME_DIR=/out/runtime
 BUILD_LOG=/out/hybris-build.log
-mkdir -p "$OUT_DIR" "$PC_DIR" "$RUNTIME_DIR"
+mkdir -p "$OUT_DIR" "$RUNTIME_DIR"
 : >"$BUILD_LOG"
 run_logged() {
     if "$@" >>"$BUILD_LOG" 2>&1; then
@@ -107,70 +108,18 @@ run_logged() {
         exit 1
     fi
 }
-HOST_WAYLAND_INCLUDE="$(pkg-config --variable=includedir wayland-client 2>/dev/null || echo /usr/include)"
-HOST_WAYLAND_PROTOCOLS_DATADIR="$(pkg-config --variable=pkgdatadir wayland-protocols 2>/dev/null || echo /usr/share/wayland-protocols)"
+# Query target packages, not fabricated .pc versions or host libraries.
+export PKG_CONFIG_PATH=
+export PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
 HOST_WAYLAND_SCANNER="$(command -v wayland-scanner)"
-HOST_VULKAN_INCLUDE="$(pkg-config --variable=includedir vulkan 2>/dev/null || echo /usr/include)"
-HOST_X11_INCLUDE="$(pkg-config --variable=includedir x11 2>/dev/null || echo /usr/include)"
-HOST_XCB_INCLUDE="$(pkg-config --variable=includedir xcb 2>/dev/null || echo /usr/include)"
-write_pc() {
-    local name="$1" cflags="$2" libs="$3"
-    cat >"$PC_DIR/$name.pc" <<EOF
-Name: $name
-Description: target-side $name (synthesised for aarch64 cross-build)
-Version: 1.22.0
-Cflags: $cflags
-Libs: -Wl,--no-as-needed $libs
-EOF
-}
-find_guest_libdir() {
-    local name="$1"
-    local dir
-    for dir in /usr/lib/aarch64-linux-gnu /lib/aarch64-linux-gnu \
-               /usr/aarch64-linux-gnu/lib; do
-        if [[ -e "$dir/lib${name}.so" || -e "$dir/lib${name}.so.0" ||
-              -e "$dir/lib${name}.so.1" || -e "$dir/lib${name}.so.6" ]]; then
-            printf "%s" "$dir"
-            return 0
-        fi
-    done
-    return 1
-}
-link_libs() {
-    local name="$1" dir
-    if dir="$(find_guest_libdir "$name")"; then
-        printf "%s" "-L$dir -l${name}"
-    else
-        echo "ERROR: no aarch64 lib${name} in the builder image" >&2
-        exit 1
-    fi
-}
-write_pc wayland-client "-I$HOST_WAYLAND_INCLUDE" "$(link_libs wayland-client)"
-write_pc wayland-server "-I$HOST_WAYLAND_INCLUDE" "$(link_libs wayland-server)"
-write_pc wayland-egl "-I$HOST_WAYLAND_INCLUDE" "$(link_libs wayland-egl)"
-write_pc vulkan "-I$HOST_VULKAN_INCLUDE" "$(link_libs vulkan)"
-write_pc x11 "-I$HOST_X11_INCLUDE" "$(link_libs X11)"
-write_pc xcb "-I$HOST_XCB_INCLUDE" "$(link_libs xcb)"
-write_pc x11-xcb "-I$HOST_X11_INCLUDE" "$(link_libs X11-xcb)"
-cat >"$PC_DIR/wayland-scanner.pc" <<EOF
-wayland_scanner=$HOST_WAYLAND_SCANNER
-Name: wayland-scanner
-Description: host wayland-scanner tool
-Version: 1.22.0
-EOF
-cat >"$PC_DIR/wayland-protocols.pc" <<EOF
-pkgdatadir=$HOST_WAYLAND_PROTOCOLS_DATADIR
-Name: wayland-protocols
-Description: host wayland-protocols data
-Version: 1.32
-EOF
+pkg-config --modversion wayland-client wayland-server wayland-egl vulkan x11 xcb x11-xcb > /out/target-package-versions.txt
 export CC="$CC_BIN" CXX="$CXX_BIN"
 export AR="${HOST_TRIPLE}-ar" STRIP="${HOST_TRIPLE}-strip"
 export RANLIB="${HOST_TRIPLE}-ranlib" LD="${HOST_TRIPLE}-ld"
 export NM="${HOST_TRIPLE}-nm" OBJDUMP="${HOST_TRIPLE}-objdump"
-export PKG_CONFIG_PATH="$PC_DIR"
-export PKG_CONFIG_LIBDIR="$PC_DIR"
-export CPPFLAGS="-idirafter $HOST_WAYLAND_INCLUDE -idirafter /usr/include"
+export CPPFLAGS="-idirafter /usr/include"
+# Platform wrappers intentionally depend on libraries resolved later.
+export LDFLAGS="-Wl,--no-as-needed"
 if [[ ! -x "$BUILD_DIR/configure" ]]; then
     echo "==> autogen.sh"
     run_logged env -C "$BUILD_DIR" NOCONFIGURE=1 ./autogen.sh
@@ -283,7 +232,9 @@ for name in libc.so.6 libm.so.6 libpthread.so.0 libdl.so.2 librt.so.1 \
         fi
     done
 done
-"$CC_BIN" -dumpmachine > /out/compiler.txt
+dpkg-query -W > /out/builder-packages.txt
+"$CC_BIN" --version > /out/compiler.txt
+"$CC_BIN" -dumpmachine >> /out/compiler.txt
 "$CC_BIN" -dumpversion >> /out/compiler.txt
 echo "$LIB_DIR"
 '
@@ -294,11 +245,6 @@ if [[ ! -f "$INSTALL_LIB/libhybris-common.so.1.0.0" ]]; then
     exit 1
 fi
 
-SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
-SOURCE_DIRTY=()
-if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null || true)" ]]; then
-    SOURCE_DIRTY=(--source-dirty)
-fi
 COMPILER="$(tr '\n' ' ' < "$OUT/compiler.txt" 2>/dev/null || echo unknown)"
 CONFIGURE_ARGS="$(tr '\n' ' ' < "$OUT/configure-args.txt" | sed "s|--with-android-headers=/headers|--with-android-headers=$HEADERS_ABS|")"
 
@@ -307,6 +253,8 @@ python3 "$ROOT/tools/manifest.py" \
     --runtime "$RUNTIME" \
     --out "$OUT/manifest.json" \
     --source-commit "$SOURCE_COMMIT" \
+    --inputs "$OUT/build-inputs.json" \
+    --packages "$OUT/builder-packages.txt" \
     "${SOURCE_DIRTY[@]}" \
     --headers "$HEADERS_ABS" \
     --compiler "$COMPILER" \

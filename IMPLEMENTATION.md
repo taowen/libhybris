@@ -26,7 +26,7 @@ are committed and pushed separately to taowen/ardesk.
 
 | Gap | State | Next concrete evidence |
 |---|---|---|
-| G01 | Partial | Build a standalone checkout with pinned headers/toolchain; record their content identities and actual runtime mappings. |
+| G01 | AArch64 baseline verified | Standalone default build, fixed inputs/toolchain, library/probe hashes and sampled runtime mappings verified on two devices; see baseline README. |
 | G02 | Partial | Pinned vk.xml coverage for direct/link/GIPA/GDPA entries, alias/enablement rules and per-device dispatch. |
 | G03 | Partial | Observe TLS allocation/destruction and generation handling; exercise GLES multiple contexts and cross-thread teardown. |
 | G04 | Open | Standard loader + ICD adapter feasibility; legal/illegal validation cases and one frame capture/replay with matching pixels. |
@@ -59,7 +59,7 @@ their upstream structure unless a concrete fix requires changing them.
 ## Device coverage
 
 Currently connected: 29854870 (M2012K11AC) and 192.168.1.28:5555 (KB2000),
-both Android SDK 33. Only the first has the established baseline in this repo.
+both Android SDK 33. Both now have standalone smoke results in the baseline README.
 Neither is the original Mali-G1-Ultra or Adreno 830 Blender failure device.
 Work independent of those devices continues; their absence does not justify
 claiming the application regressions are fixed.
@@ -70,3 +70,11 @@ Structural split: fresh AArch64 library/probe builds; all 130 defined dynamic
 exports of libhybris-common match the pre-split ABI (name, type, binding and
 visibility). Device run 20260906T233801-473a9d70: 21 PASS, 2 UNSUPPORTED
 (desktop GL). This preserves the existing baseline, not broader conformance.
+
+
+Standalone build/provenance: repository-owned digest/snapshot-pinned toolchain,
+fixed downloaded headers with cached-content verification, source/header/probe
+snapshots and manifests, actual target pkg-config versions, runtime maps and
+Android mapped-file hashes. Independent checkout builds and two device runs
+completed (21 PASS / 2 UNSUPPORTED each). Modified cache and executable
+checks failed as intended. Next priority is G02/G04 Vulkan loader integration.

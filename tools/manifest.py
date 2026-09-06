@@ -107,6 +107,8 @@ def main() -> int:
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--source-commit')
     parser.add_argument('--source-dirty', action='store_true')
+    parser.add_argument('--inputs', type=Path)
+    parser.add_argument('--packages', type=Path)
     parser.add_argument('--headers')
     parser.add_argument('--compiler')
     parser.add_argument('--configure-args', default='')
@@ -128,6 +130,10 @@ def main() -> int:
         'elfs': describe_tree(args.hybris_lib, 'hybris') + describe_tree(args.runtime, 'runtime'),
         'note': 'Build script supplies source provenance; ELF hashes verify artifacts, not source-to-binary reproducibility.',
     }
+    if args.inputs:
+        payload['build_inputs'] = json.loads(args.inputs.read_text())
+    if args.packages:
+        payload['builder_packages'] = args.packages.read_text().splitlines()
     write_manifest(args.out, payload)
     print(args.out)
     return 0

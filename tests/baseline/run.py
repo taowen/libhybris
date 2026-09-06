@@ -15,7 +15,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
-from manifest import unexpected_platforms, verify_manifest  # noqa: E402
+from manifest import sha256_file, unexpected_platforms, verify_manifest  # noqa: E402
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
@@ -47,6 +47,16 @@ if stale:
 for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked']:
     if not (a.bundle / binary).is_file():
         raise SystemExit(f'missing {a.bundle / binary}; run tests/baseline/build.sh')
+
+probe_manifest = a.bundle / 'probe-manifest.json'
+probe_provenance = None
+if probe_manifest.is_file():
+    probe_provenance = json.loads(probe_manifest.read_text())
+    expected = {entry['name']: entry['sha256'] for entry in probe_provenance['binaries']}
+    actual = {name: sha256_file(a.bundle / name)
+              for name in ('probe-bionic', 'probe-glibc', 'probe-glibc-linked')}
+    if actual != expected:
+        raise SystemExit('probe manifest does not match the supplied executables')
 
 run_id = time.strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8]
 a.out = a.out / run_id
@@ -88,12 +98,16 @@ def kill_remote() -> None:
 
 metadata = {name: prop(name) for name in ['ro.product.model', 'ro.build.fingerprint', 'ro.build.version.sdk']}
 metadata['run_id'] = run_id
+metadata['commands'] = {}
+metadata['driver_observations'] = {}
+metadata['mapping_note'] = 'Snapshots observe file-backed paths at named phases. Staged hashes describe deployment files; Android file hashes are collected by path after execution, not from mapped pages.'
 metadata['hybris_source_commit'] = subprocess.check_output(
     ['git', '-C', str(here), 'rev-parse', 'HEAD'], text=True
 ).strip()
 metadata['hybris_lib'] = str(a.hybris_lib.resolve())
 metadata['runtime'] = str(a.runtime.resolve())
 metadata['manifest'] = str(a.manifest.resolve()) if a.manifest else None
+metadata['probe_manifest'] = str(probe_manifest.resolve()) if probe_provenance else None
 if a.manifest:
     provenance = json.loads(a.manifest.read_text())
     verify_manifest(provenance, a.hybris_lib, a.runtime)
@@ -107,6 +121,8 @@ else:
 (a.out / 'device.json').write_text(json.dumps(metadata, indent=2) + '\n')
 if a.manifest:
     shutil.copy2(a.manifest, a.out / 'manifest.json')
+if probe_provenance:
+    shutil.copy2(probe_manifest, a.out / 'probe-manifest.json')
 
 stage = a.out / 'stage'
 if stage.exists():
@@ -116,6 +132,8 @@ shutil.copytree(a.hybris_lib, stage / 'hybris', symlinks=False)
 shutil.copytree(a.runtime, stage / 'glibc', symlinks=False)
 for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked']:
     shutil.copy2(a.bundle / binary, stage / binary)
+    if probe_provenance and sha256_file(stage / binary) != expected[binary]:
+        raise SystemExit('probe changed while staging: ' + binary)
 
 
 cases = [
@@ -145,6 +163,7 @@ cases = [
 ]
 
 results = []
+observed_paths = set()
 try:
     if a.manifest:
         verify_manifest(provenance, stage / 'hybris', stage / 'glibc')
@@ -167,6 +186,7 @@ try:
                 './glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./' + binary + ' '
             )
         name = backend + '-' + mode
+        metadata['commands'][name] = {'directory': remote, 'command': command + mode}
         try:
             r = shell(
                 'cd ' + remote + ' && sh -c ' + shlex.quote(
@@ -180,15 +200,54 @@ try:
             output, code = exc.stdout or b'', 124
             kill_remote()
         (a.out / (name + '.log')).write_bytes(output or b'')
+        decoded = (output or b'').decode('utf-8', errors='replace')
+        metadata['driver_observations'][name] = [
+            line for line in decoded.splitlines()
+            if line.startswith(('GPU ', 'EGL ', 'GL vendor='))]
+        mappings = []
+        for line in decoded.splitlines():
+            if not line.startswith('MAPPING\t'):
+                continue
+            _, phase, mapping = line.split('\t', 2)
+            parts = mapping.split(None, 5)
+            if len(parts) != 6:
+                continue
+            address, permissions, offset, device, inode, path = parts
+            entry = dict(phase=phase, address=address, permissions=permissions,
+                         offset=offset, device=device, inode=inode, path=path)
+            if path.startswith(remote + '/'):
+                relative = path[len(remote) + 1:]
+                staged = stage / relative
+                if staged.is_file():
+                    entry['staged_sha256'] = sha256_file(staged)
+            elif path.startswith(('/system/', '/vendor/', '/apex/', '/odm/')):
+                observed_paths.add(path)
+            mappings.append(entry)
+        (a.out / (name + '-mappings.json')).write_text(
+            json.dumps(mappings, indent=2) + '\n')
         status = classify(code)
         results.append(dict(case=name, status=status, exit_code=code, binary=binary))
         print(name, status, 'exit=' + str(code), flush=True)
 finally:
     try:
-        kill_remote()
-        shell('rm -rf ' + remote, check=False, timeout=10)
+        # Hash Android files named by the snapshots. These are path-content
+        # hashes after execution, not a readback of live mapped pages.
+        if observed_paths:
+            try:
+                hashes = shell(
+                    'sha256sum ' + ' '.join(shlex.quote(p) for p in sorted(observed_paths)),
+                    capture_output=True, text=True, timeout=30)
+                (a.out / 'android-mapped-files.sha256').write_text(hashes.stdout)
+                (a.out / 'android-mapped-files-errors.log').write_text(hashes.stderr)
+            except (OSError, subprocess.SubprocessError) as exc:
+                (a.out / 'android-mapped-files-errors.log').write_text(str(exc) + '\n')
     finally:
-        (a.out / 'summary.json').write_text(json.dumps(results, indent=2) + '\n')
+        try:
+            kill_remote()
+            shell('rm -rf ' + remote, check=False, timeout=10)
+        finally:
+            (a.out / 'summary.json').write_text(json.dumps(results, indent=2) + '\n')
+            (a.out / 'device.json').write_text(json.dumps(metadata, indent=2) + '\n')
 
 failed = [r for r in results if r['status'] in {'FAIL', 'TIMEOUT', 'CRASH'}]
 raise SystemExit(1 if failed else 0)

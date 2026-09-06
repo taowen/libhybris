@@ -34,3 +34,25 @@ int pick_queue(PFN_vkGetPhysicalDeviceQueueFamilyProperties qf,
   return 1;
 }
 
+
+/* Diagnostic snapshots belong to this standalone probe, not the production
+ * bridge. Capture file-backed mappings; they identify observed paths, not
+ * arbitrary code bytes or mappings that disappeared before the snapshot. */
+void probe_mappings(const char *phase) {
+  FILE *maps = fopen("/proc/self/maps", "r");
+  if (!maps) {
+    printf("MAPPINGS_ERROR %s\n", phase);
+    return;
+  }
+  char line[4096];
+  unsigned lines = 0;
+  while (fgets(line, sizeof(line), maps)) {
+    if (++lines > 4096) {
+      printf("MAPPINGS_TRUNCATED %s\n", phase);
+      break;
+    }
+    if (strchr(line, '/'))
+      printf("MAPPING\t%s\t%s", phase, line);
+  }
+  fclose(maps);
+}

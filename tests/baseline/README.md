@@ -16,15 +16,32 @@ bash tests/baseline/build.sh
 python3 tests/baseline/run.py --serial 29854870
 ```
 
-`tools/build-aarch64.sh` cross-compiles this checkout, stages `build/install`
-and `build/runtime`, and writes `build/manifest.json` with ELF sha256/build-id
-for every installed binary. It refuses `vulkanplatform_x11.so`; that plugin is
-not a current source target. Each build starts with fresh source/install/runtime staging. The AArch64 toolchain image comes from the parent
-project's `tools/ensure-glibc-builder.sh` when this tree is checked out as
-`third_party/libhybris`. Otherwise set `BUILDER_IMAGE` and `--headers`.
+`tools/build-aarch64.sh` works in an independent checkout. The default
+builder is owned by this repository: `tools/ensure-builder.sh` uses
+`tools/container/Containerfile.aarch64`, a digest-pinned Debian base and
+the 2026-08-01 package snapshot. Host prerequisites are x86_64 Linux,
+Podman, Git, tar, Python 3.10+, sha256sum and file; running also needs adb.
+The first build downloads the compiler and dependencies.
+
+`tools/fetch-android-headers.sh` fetches Halium Android 11 headers at
+`2c6ac3dcc4f8db593dd69906b0ec22822abfed91` and verifies cached content.
+The default cache is `build/deps`; `HYBRIS_DEPS_DIR` may override it.
+Use `--headers` for custom headers or `BUILDER_IMAGE` for a custom image.
+Overrides record actual inputs but do not inherit the default recipe's
+reproducibility claim.
+
+Fresh source/header snapshots are taken before compilation. The library
+manifest contains their file hashes, the container image ID, compiler
+version, installed package versions, configure arguments and staged ELF
+sha256/build-id. The recipe and build script are also fingerprinted.
+The source commit/dirty flag is supplementary to these content identities.
+Staging rejects stale plugins such as `vulkanplatform_x11.so`.
 
 `tests/baseline/build.sh` compiles `probe-glibc`, `probe-glibc-linked` (DT_NEEDED libvulkan)
-and `probe-bionic`. Set `ANDROID_NDK_HOME` or an explicit `BIONIC_CC`.
+and `probe-bionic` from a source snapshot. Set `ANDROID_NDK_HOME` or an
+explicit `BIONIC_CC`. It uses the same pinned glibc builder by default;
+`GLIBC_CC` is an explicit override. `bundle/probe-manifest.json` records
+source hashes, compiler identity and the three executable hashes.
 
 ```sh
 python3 tests/baseline/run.py --serial 29854870 \
@@ -37,8 +54,16 @@ The runner uses a unique `/data/local/tmp/libhybris-baseline-<run-id>` directory
 verifies the supplied manifest against all staged ELF files (including SONAME
 aliases), rejects unknown platform plugins, and kills its recorded probe PID
 after a host timeout after checking its executable path. Manifest hashes describe
-staged files, not observed runtime mappings. Custom library paths do not inherit
+staged files. Per-case `*-mappings.json` records observed file-backed mappings
+at completion and, for unload/TLS cases, before closing the frontend.
+Staged paths are associated with their hashes. Android paths are hashed
+after execution in `android-mapped-files.sha256`; errors are retained.
+These snapshots do not capture every historical mapping or verify live
+mapped pages. `device.json` includes commands and queried driver strings.
+Custom library paths do not inherit
 the default manifest; supply their matching manifest explicitly. Results go under `build/results/<run-id>/`.
+When a probe manifest is supplied in the bundle, changed executables are
+rejected before deployment and staging is checked again.
 Each probe arms `alarm(25)` from its own constructor. A dependency constructor
 can run earlier, so the host timeout and pre-exec PID tracking are still required.
 Exit 0 means the implemented checks passed, 3 means unsupported, 124 timeout;
@@ -193,3 +218,26 @@ contains symbol lookup, memory and queue selection helpers. EGL, Vulkan fill,
 dispatch, lifecycle, capabilities and widget rendering live in separate
 probe_*.c translation units. build.sh uses the same explicit source list
 for bionic, glibc and the directly linked glibc variant.
+
+
+## Standalone build verification
+
+A temporary checkout outside the parent project used the repository's default
+builder and downloaded headers, then built all library and probe artifacts.
+The builder image ID was
+`62d617eddf3720b5c3574f6666c59bcb2abb7deb03f74a6801820b20fc874704`;
+the header snapshot hash was
+`fd30a127eb85c3258cf471906cb002b1f1e110acdccb6247c5dc3aee3a1ddffc`.
+
+- 29854870: `20260906T235359-6ecadb60`, 21 PASS / 2 UNSUPPORTED.
+- KB2000: `20260906T235440-110adca9`, 21 PASS / 2 UNSUPPORTED.
+
+Both unsupported cases are desktop GL. On 29854870 the TLS probe recorded
+both before-close and completion mappings, including common and vendor
+libraries. All 93 observed Android file paths were hashed without error.
+Temporary modified-header and modified-executable checks were rejected.
+These are standalone smoke results, not CTS or Blender regression results.
+
+The final runner rerun on 29854870, `20260906T235759-0a9d4916`,
+also completed with 21 PASS / 2 UNSUPPORTED, retaining all 23 commands,
+nonempty mapping snapshots and driver/probe identities.
