@@ -26,6 +26,8 @@ int main(int argc, char **argv) {
     rc = life_probe(1);
   else if (!strcmp(mode, "init"))
     rc = init_probe();
+  else if (!strcmp(mode, "tls-bounds"))
+    rc = tls_bounds_probe();
   else if (!strcmp(mode, "tls"))
     rc = tls_probe();
   else if (!strcmp(mode, "caps2"))

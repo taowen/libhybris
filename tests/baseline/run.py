@@ -181,6 +181,7 @@ cases = [
     ('hybris', 'unload', 'probe-glibc'),
     ('hybris', 'init', 'probe-glibc'),
     ('hybris', 'tls', 'probe-glibc'),
+    ('hybris', 'tls-bounds', 'probe-glibc'),
     ('hybris', 'caps', 'probe-glibc'),
     ('hybris', 'caps2', 'probe-glibc'),
     ('hybris', 'ubo', 'probe-glibc'),

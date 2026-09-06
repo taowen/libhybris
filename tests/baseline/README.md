@@ -536,3 +536,27 @@ memory size 1032 bytes, alignment 16. Runs `20260907T012238-92e0cbe2`
 (29854870) and `20260907T012239-23559b33` (KB2000) each complete
 **50 PASS / 2 UNSUPPORTED**, with VVL, SyncVal and draw capture evidence enabled.
 No new claim of actual TLS destructor execution follows from this source split.
+
+## Promoted TLS bounds
+
+The hybris-only `tls-bounds` probe calls the existing linker callback in
+isolated child processes, without loading Android/GPU libraries. Offset
+addition wraparound, filesz larger than memsz, memsz beyond the static area
+and a NULL source with nonzero filesz must each terminate with SIGABRT.
+A zero-length segment at the exact end remains accepted. Core dumps are
+disabled in these children; expected aborts are checked by the parent, not
+classified as successful GPU calls or hidden as unsupported results.
+
+Before the fix, run `20260907T012533-871fb7f5` failed the wraparound rejection:
+the callback accepted SIZE_MAX + 2 because its addition wrapped. The fix checks
+offset and remaining space by subtraction, and validates filesz/source before
+allocation, copying or publishing to the registry. Cleanup key creation and
+setspecific failures now abort with an explicit diagnostic instead of silently
+losing ownership. Key exhaustion/setspecific failure injection remains untested.
+
+Fresh library/probe builds preserve 130 common dynamic exports. Final runs
+`20260907T012712-1e831443` (29854870) and `20260907T012714-d19f1840` (KB2000)
+each complete **51 PASS / 2 UNSUPPORTED**, including VVL, SyncVal and draw
+capture evidence. All four invalid-range children and the legal empty-end
+case pass. This does not prove general ELF parsing safety, TLS destructor
+execution or static TLS slot reclamation.

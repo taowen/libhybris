@@ -197,3 +197,13 @@ Verified with optional VVL/SyncVal and capture on 29854870
 (`20260907T012238-92e0cbe2`) and KB2000 (`20260907T012239-23559b33`):
 50 PASS / 2 UNSUPPORTED each, including thread lifecycle, EGL migration and
 fixed draw-resource/attachment checks.
+
+TLS bounds fix: reject offset arithmetic wraparound, filesz > memsz and
+nonzero copies from NULL before allocating or registering promoted TLS data.
+Cleanup pthread key/create registration errors now fail explicitly. The old
+library demonstrably accepted the wraparound input; the new independent child
+probe checks four rejected inputs plus a legal zero-length end segment.
+Fresh builds and both device runs (`20260907T012712-1e831443`,
+`20260907T012714-d19f1840`) pass 51 cases with 2 UNSUPPORTED, including all
+optional Vulkan tooling. Resource-failure injection and destructor observation
+remain unverified; this does not close G03 as a whole.

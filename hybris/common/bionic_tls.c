@@ -115,8 +115,12 @@ static void _bionic_tls_cleanup(void *ptr)
 
 static void _bionic_tls_key_init(void)
 {
-    pthread_key_create(&bionic_tls_cleanup_key, _bionic_tls_cleanup);
-    pthread_key_create(&pthread_shadow_cleanup_key, _bionic_tls_cleanup);
+    int error = pthread_key_create(&bionic_tls_cleanup_key, _bionic_tls_cleanup);
+    if (!error) error = pthread_key_create(&pthread_shadow_cleanup_key, _bionic_tls_cleanup);
+    if (error) {
+        fprintf(stderr, "HYBRIS: fatal: TLS cleanup key creation failed (%d)\n", error);
+        abort();
+    }
 }
 
 static __attribute__((tls_model ("initial-exec"), aligned(16)))
@@ -179,7 +183,9 @@ static void hybris_apply_static_tls_locked(const struct hybris_promoted_tls* e)
      * segment so a future bionic .so whose .tbss tail would land past
      * BIONIC_STATIC_TLS_SIZE aborts here, instead of corrupting whatever
      * IE TLS the host glibc allocated next to tls_static_tls. */
-    if (e->static_offset + e->segment_size > BIONIC_STATIC_TLS_SIZE) {
+    if (e->static_offset > BIONIC_STATIC_TLS_SIZE ||
+        e->segment_size > BIONIC_STATIC_TLS_SIZE - e->static_offset ||
+        e->init_size > e->segment_size) {
         fprintf(stderr, "HYBRIS: fatal: bionic static TLS overflow "
                         "(offset=%zu memsz=%zu, max=%d). Bump BIONIC_STATIC_TLS_SIZE in bionic_tls.c.\n",
                 e->static_offset, e->segment_size, BIONIC_STATIC_TLS_SIZE);
@@ -202,6 +208,16 @@ void _hybris_init_static_tls_for_thread(size_t static_offset,
                                          size_t init_size,
                                          size_t segment_size)
 {
+    /* Validate before allocation, source reads or publication to the registry.
+     * Subtraction avoids wrapping a malicious/corrupt offset + memsz. */
+    if (static_offset > BIONIC_STATIC_TLS_SIZE ||
+        segment_size > BIONIC_STATIC_TLS_SIZE - static_offset ||
+        init_size > segment_size || (init_size && !init_ptr)) {
+        fprintf(stderr, "HYBRIS: fatal: invalid promoted TLS range "
+                        "(offset=%zu filesz=%zu memsz=%zu)\n",
+                static_offset, init_size, segment_size);
+        abort();
+    }
     void* owned_init = NULL;
     if (init_size > 0) {
         owned_init = malloc(init_size);
@@ -268,8 +284,12 @@ void *_hybris_hook___get_tls_hooks()
         pthread_internal_shadow_ptr = pthread_shadow;
 
         pthread_once(&bionic_tls_key_once, _bionic_tls_key_init);
-        pthread_setspecific(bionic_tls_cleanup_key, btls);
-        pthread_setspecific(pthread_shadow_cleanup_key, pthread_shadow);
+        int error = pthread_setspecific(bionic_tls_cleanup_key, btls);
+        if (!error) error = pthread_setspecific(pthread_shadow_cleanup_key, pthread_shadow);
+        if (error) {
+            fprintf(stderr, "HYBRIS: fatal: TLS cleanup registration failed (%d)\n", error);
+            abort();
+        }
         tls_inited = 1;
     }
 
@@ -303,4 +323,3 @@ void *_hybris_hook___get_tls_hooks()
 
     return tls_static_tls + BIONIC_TPIDR_OFFSET;
 }
-
