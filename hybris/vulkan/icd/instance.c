@@ -67,7 +67,8 @@ static void VKAPI_CALL destroy_instance(VkInstance instance,
     }
     pthread_mutex_unlock(&instance_guard);
     /* Vulkan requires external synchronization for destruction. Backend and
-     * allocation callbacks run outside the guard, so they may reenter. */
+     * allocation callbacks run outside the guard; callbacks may use their own
+     * locks but must not call Vulkan commands. */
     if (!state) return;
     state->destroy(instance, allocator);
     free_state(state);

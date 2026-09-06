@@ -113,15 +113,15 @@ int vulkan_init_probe(void) {
   return rc;
 }
 
-struct allocation_probe { unsigned live, calls; int reject; };
+struct allocation_probe { unsigned live, calls, fail_after; int reject; };
 struct allocation_header { void *base; size_t size; };
 
 static void *VKAPI_CALL instance_allocate(void *user, size_t size, size_t alignment,
                                          VkSystemAllocationScope scope) {
   (void)scope;
   struct allocation_probe *p = user;
-  __atomic_add_fetch(&p->calls, 1, __ATOMIC_RELAXED);
-  if (p->reject) return NULL;
+  unsigned call = __atomic_add_fetch(&p->calls, 1, __ATOMIC_RELAXED);
+  if (p->reject || (p->fail_after && call > p->fail_after)) return NULL;
   if (alignment < _Alignof(struct allocation_header)) alignment = _Alignof(struct allocation_header);
   if (!alignment || (alignment & (alignment - 1)) ||
       size > SIZE_MAX - sizeof(struct allocation_header) - (alignment - 1)) return NULL;
@@ -176,6 +176,17 @@ int vulkan_allocator_probe(int direct_icd) {
     printf("VK_ALLOC direct-initial-reject=%d calls=%u live=%u\n", result, state.calls, state.live);
     if (result != VK_ERROR_OUT_OF_HOST_MEMORY || state.calls != 1 || state.live) return 2;
     state.reject = 0;
+    state.calls = 0;
+    state.fail_after = 1;
+    rejected = VK_NULL_HANDLE;
+    result = create(&info, &callbacks, &rejected);
+    printf("VK_ALLOC direct-hal-reject=%d calls=%u live=%u\n", result, state.calls, state.live);
+    if (result == VK_SUCCESS) {
+      PFN_vkDestroyInstance destroy = (PFN_vkDestroyInstance)gipa(rejected, "vkDestroyInstance");
+      if (destroy) destroy(rejected, &callbacks);
+    }
+    if (result != VK_ERROR_OUT_OF_HOST_MEMORY || state.calls < 2 || state.live) return 2;
+    state.fail_after = 0;
   }
   for (unsigned round = 0; round < 3; ++round) {
     VkInstance instance = VK_NULL_HANDLE;

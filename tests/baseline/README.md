@@ -1072,7 +1072,7 @@ including validation/SyncVal and capture/replay. Both record 16 creations and
 observed concurrency/reuse; absence of reuse does not prove reuse handling.
 The common 130, Vulkan 643 and ICD 3 defined export sets remain unchanged.
 This covers ICD instance records only, not frontend/device/resource state,
-custom allocation callback failure/reentrancy, trace truncation or malformed
+custom allocation callback failure/locking, trace truncation or malformed
 HAL behavior. Destroy records precede backend destruction and do not imply
 GPU completion or driver unloading.
 
@@ -1098,7 +1098,7 @@ allocations return to zero after each destruction. A final create refuses
 all callback allocations and requires VK_ERROR_OUT_OF_HOST_MEMORY without
 outstanding allocations. It runs through native, replacement frontend and
 standard ICD. The callback allocator preserves alignment and realloc contents;
-this does not test every allocation failure position, callback reentrancy,
+this does not test every allocation failure position, callback locking,
 device/resource callbacks or concurrent allocation races.
 Rebuilt runs `20260907T033851-afd02fc4` (29854870) and
 `20260907T033851-da205be7` (KB2000) each completed **68 PASS / 2 UNSUPPORTED**,
@@ -1124,4 +1124,21 @@ including validation/SyncVal and capture/replay. Both direct cases record
 initial-reject=-1, calls=1, live=0; each recovery cycle also ends at live=0.
 Their final mapping records contain neither the standard nor Android Vulkan
 loader. This proves the tested adapter allocation refusal and subsequent
-recovery, not all allocation failure positions or reentrant callbacks.
+recovery, not all allocation failure positions or callback locking interactions.
+
+
+The direct allocator workload also allows the adapter record allocation and
+then refuses all subsequent allocations, exercising HAL creation failure and
+adapter-record rollback. It requires at least two allocation attempts,
+OUT_OF_HOST_MEMORY and no outstanding callback allocations, then restores
+allocation for three normal cycles. This targets the first required HAL
+allocation on the tested driver, not every optional allocation or failure site.
+Allocation callbacks must not call Vulkan commands; earlier references to
+callback reentrancy were not a valid API-conformance requirement. See
+[Vulkan host allocation rules](https://docs.vulkan.org/spec/latest/chapters/memory.html).
+Callbacks still run outside the instance table guard to avoid holding it
+across application allocator locks and work.
+Rebuilt runs `20260907T034553-3c4de9ce` (29854870) and
+`20260907T034553-5b6f5c0c` (KB2000) each completed **69 PASS / 2 UNSUPPORTED**,
+including validation/SyncVal and capture/replay. Both direct cases report
+HAL-reject=-1, calls=2, live=0, followed by three successful recovery cycles.

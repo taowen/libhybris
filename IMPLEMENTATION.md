@@ -363,7 +363,7 @@ records with unique generations and bounded opt-in lifecycle diagnostics.
 This establishes an instance ownership boundary without changing HAL handles
 or input chains. Device/resource generations, the replacement frontend's
 state and arbitrary draw/resource evidence remain open. Allocator failure,
-custom-callback reentrancy and malformed HAL behavior still need dedicated
+custom-callback locking and malformed HAL behavior still need dedicated
 coverage beyond the existing concurrent lifecycle workload.
 
 
@@ -380,7 +380,7 @@ probe: three instance cycles return callback allocations to zero, followed by
 an allocation-refusing create returning OUT_OF_HOST_MEMORY. Runs
 `20260907T033851-afd02fc4` and `20260907T033851-da205be7` each complete
 68 PASS / 2 UNSUPPORTED. Failure is measured at the API boundary; the loader
-may stop it before ICD creation. Callback reentrancy and individual ICD/HAL
+may stop it before ICD creation. Callback locking and individual ICD/HAL
 failure sites remain unverified.
 
 
@@ -389,4 +389,14 @@ allocation via its exported ICD resolver. It refuses the first allocation,
 requires exactly one callback and OUT_OF_HOST_MEMORY, then restores allocation
 for three complete instance lifetimes. This isolates adapter failure/recovery
 from the standard loader's earlier allocations; it does not exercise layer
-chaining, every HAL failure site, allocator reentrancy or device callbacks.
+chaining, every HAL failure site, allocator locking or device callbacks.
+
+
+Direct ICD allocation failure coverage now also permits the adapter record
+allocation before rejecting the next HAL allocation. Both tested devices
+return OUT_OF_HOST_MEMORY after two callbacks, free the adapter record and
+complete three recovery cycles. Runs `20260907T034553-3c4de9ce` and
+`20260907T034553-5b6f5c0c` each complete 69 PASS / 2 UNSUPPORTED. Allocation
+callbacks are prohibited from calling Vulkan commands; references to their
+Vulkan reentrancy as an acceptance requirement were corrected. Other failure
+positions and interaction with application allocator locks remain untested.
