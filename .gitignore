@@ -93,3 +93,9 @@ hybris/tests/test_vibrator
 hybris/tests/test_vulkan
 hybris/tests/test_wifi
 
+# Standalone graphics baseline outputs
+tests/baseline/build/
+tests/baseline/probe-glibc
+tests/baseline/probe-bionic
+tests/baseline/probe-glibc-linked
+
