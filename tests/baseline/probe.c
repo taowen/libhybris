@@ -45,7 +45,9 @@ int main(int argc, char **argv) {
   else if (!strcmp(mode, "caps2"))
     rc = caps2_probe();
   else if (!strcmp(mode, "caps"))
-    rc = caps_probe();
+    rc = caps_probe(0);
+  else if (!strcmp(mode, "wsi-disabled"))
+    rc = caps_probe(1);
   else if (!strcmp(mode, "ubo-validation"))
     rc = ubo_validation_probe();
   else if (!strcmp(mode, "validation"))

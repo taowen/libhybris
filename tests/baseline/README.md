@@ -787,3 +787,35 @@ Fresh library/probe builds and runs `20260907T022445-38be09a4` (29854870) and
 `20260907T022445-d0261787` (KB2000) each complete **59 PASS / 2 UNSUPPORTED**,
 including VVL, SyncVal and capture/replay. Each device returns ENOMEM (12) for
 all three shared initializers. Common's 130 dynamic exports remain unchanged.
+
+## WSI wrapper resolution scope
+
+The swapchain wrapper now uses the current device's GDPA to obtain its backend
+function before doing WSI preparation. Wayland create/destroy obtains backend
+functions from the supplied instance's GIPA on each call; no first-instance
+function pointer is retained globally. Missing creation functions are rejected
+before allocating Wayland objects. A missing destroy function for a mapped
+surface produces an explicit fatal diagnostic before removing the mapping.
+
+`wsi-disabled` is a hybris-only negative case built on the capability workload.
+It creates a device with no extensions, requires GDPA(CreateSwapchainKHR) to be
+NULL, then deliberately calls the direct export with a zeroed swapchain create
+description. The frontend must reject this with EXTENSION_NOT_PRESENT before
+using WSI. This is an intentional invalid application call testing a hybris
+guard policy, not a legal Vulkan workload or a normative Vulkan error test.
+It is not run against native/ICD or validation paths.
+
+Before the fix, `20260907T022910-9f4bfd8e` on 29854870 returned success (0)
+from the direct export despite GDPA returning NULL. No usable swapchain is
+established by that result. The new path returns -7 instead of using a global
+ELF entry that can bypass device enablement.
+
+Wayland changes are build-checked only: no compositor/surface lifecycle is
+exercised by this headless negative case. Full per-instance/device state,
+surface-capability wrapper resolution, mapping concurrency, destruction order,
+generation tracking and successful swapchain creation/presentation remain open.
+
+Fresh library/probe builds and runs `20260907T023048-a47b0dd0` (29854870) and
+`20260907T023048-bac54a9c` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. The negative case returns -7 on both
+devices. Vulkan's 643 dynamic exports remain unchanged.

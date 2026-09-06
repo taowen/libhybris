@@ -208,18 +208,17 @@ VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice physicalDevi
     return result;
 }
 
-static VkResult (*_real_vkCreateSwapchainKHR)(VkDevice, const VkSwapchainCreateInfoKHR*, const VkAllocationCallbacks*, VkSwapchainKHR*) = NULL;
-
 VkResult vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain)
 {
+    PFN_vkCreateSwapchainKHR create_swapchain = _real_vkGetDeviceProcAddr
+        ? (PFN_vkCreateSwapchainKHR)_real_vkGetDeviceProcAddr(device, "vkCreateSwapchainKHR")
+        : NULL;
+    if (!create_swapchain)
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
     ws_prepareSwapchain(pCreateInfo);
-    if (!_real_vkCreateSwapchainKHR) {
-        if (!vulkan_handle) _init_androidvulkan();
-        _real_vkCreateSwapchainKHR = (VkResult (*)(VkDevice, const VkSwapchainCreateInfoKHR*, const VkAllocationCallbacks*, VkSwapchainKHR*))
-            android_dlsym(vulkan_handle, "vkCreateSwapchainKHR");
-    }
-    return _real_vkCreateSwapchainKHR(device, pCreateInfo, pAllocator, pSwapchain);
+    return create_swapchain(device, pCreateInfo, pAllocator, pSwapchain);
 }
+
 #endif
 #ifdef WANT_WAYLAND
 static VkResult (*_real_vkGetPhysicalDeviceSurfaceCapabilities2KHR)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR*, VkSurfaceCapabilities2KHR*) = NULL;

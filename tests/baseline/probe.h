@@ -52,7 +52,7 @@ int shared_unavailable_probe(void);
 int tls_probe(void);
 int tls_bounds_probe(void);
 int tls_destructor_probe(void);
-int caps_probe(void);
+int caps_probe(int check_wsi_guard);
 int caps2_probe(void);
 int ubo_probe(void);
 int ubo_draw(int inject_wrong_binding, int validate);

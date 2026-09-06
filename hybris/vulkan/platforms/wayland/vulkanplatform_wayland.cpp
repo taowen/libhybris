@@ -93,8 +93,6 @@ struct WaylandDisplay *vulkan_wayland_get_mapping(VkSurfaceKHR surface)
     return it->second;
 }
 
-static VkResult (*_vkCreateAndroidSurfaceKHR)(VkInstance instance, const VkAndroidSurfaceCreateInfoKHR *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkSurfaceKHR *pSurface) = NULL;
-static PFN_vkVoidFunction (*_vkDestroySurfaceKHR)(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator) = NULL;
 static VkResult (*_vkEnumerateInstanceExtensionProperties)(const char *pLayerName, uint32_t *pPropertyCount, VkExtensionProperties *pProperties) = NULL;
 static VkResult (*_vkCreateInstance)(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkInstance *pInstance) = NULL;
 static PFN_vkVoidFunction (*_vkGetInstanceProcAddr)(VkInstance instance, const char *pName) = NULL;
@@ -209,6 +207,11 @@ static VkResult waylandws_vkCreateWaylandSurfaceKHR(VkInstance instance,
         const VkAllocationCallbacks* pAllocator,
         VkSurfaceKHR* pSurface)
 {
+    PFN_vkCreateAndroidSurfaceKHR create_surface = _vkGetInstanceProcAddr
+        ? (PFN_vkCreateAndroidSurfaceKHR)_vkGetInstanceProcAddr(instance, "vkCreateAndroidSurfaceKHR")
+        : NULL;
+    if (!create_surface)
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
     VkAndroidSurfaceCreateInfoKHR createInfo;
     VkResult result;
     WaylandDisplay *wdpy = new WaylandDisplay;
@@ -217,11 +220,6 @@ static VkResult waylandws_vkCreateWaylandSurfaceKHR(VkInstance instance,
     int ret;
 
     HYBRIS_TRACE_BEGIN("hybris-vulkan", "vkCreateWaylandSurfaceKHR", "");
-
-    if (_vkCreateAndroidSurfaceKHR == NULL) {
-        _vkCreateAndroidSurfaceKHR = (VkResult (*)(VkInstance, const VkAndroidSurfaceCreateInfoKHR *, const VkAllocationCallbacks *, VkSurfaceKHR *))
-            (*_vkGetInstanceProcAddr)(instance, "vkCreateAndroidSurfaceKHR");
-    }
 
     wdpy->wl_dpy = pCreateInfo->display;
     wdpy->wlegl = NULL;
@@ -251,7 +249,7 @@ static VkResult waylandws_vkCreateWaylandSurfaceKHR(VkInstance instance,
     createInfo.flags = 0;
     createInfo.window = win;
 
-    result = (*_vkCreateAndroidSurfaceKHR)(instance, &createInfo, pAllocator, pSurface);
+    result = create_surface(instance, &createInfo, pAllocator, pSurface);
 
     HYBRIS_TRACE_END("native-vulkan", "vkCreateWaylandSurfaceKHR", "");
 
@@ -276,17 +274,19 @@ static VkBool32 waylandws_vkGetPhysicalDeviceWaylandPresentationSupportKHR(VkPhy
 static void waylandws_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator)
 {
     if (vulkan_wayland_has_mapping(surface)) {
+        PFN_vkDestroySurfaceKHR destroy_surface = _vkGetInstanceProcAddr
+            ? (PFN_vkDestroySurfaceKHR)_vkGetInstanceProcAddr(instance, "vkDestroySurfaceKHR")
+            : NULL;
+        if (!destroy_surface) {
+            fprintf(stderr, "libhybris vulkan: no vkDestroySurfaceKHR for instance\n");
+            abort();
+        }
         WaylandDisplay *wdpy = (WaylandDisplay *)vulkan_wayland_pop_mapping(surface);
         WaylandNativeWindow *window = (WaylandNativeWindow *)wdpy->window;
 
-        if (_vkDestroySurfaceKHR == NULL) {
-            _vkDestroySurfaceKHR = (PFN_vkVoidFunction (*)(VkInstance, VkSurfaceKHR, const VkAllocationCallbacks *))
-                (*_vkGetInstanceProcAddr)(instance, "vkDestroySurfaceKHR");
-        }
-
         window->destroyWlEGLWindow();
         window->common.decRef(&window->common);
-        _vkDestroySurfaceKHR(instance, surface, pAllocator);
+        destroy_surface(instance, surface, pAllocator);
         freeWaylandDisplay(wdpy);
     }
 }

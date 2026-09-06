@@ -24,6 +24,13 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+Swapchain creation now resolves the real function through the current device's
+GDPA before preparing WSI. Wayland surface creation/destruction resolves through
+the current instance's GIPA instead of caching the first instance's pointer;
+destroy uses the proper void-return PFN type. `wsi-disabled` checks the
+frontend's deliberate rejection policy for an unsupported direct-export call.
+This is not a complete per-object dispatch table or working Wayland WSI proof.
+
 Missing shared-memory backing now returns failure before the allocator or
 translator touches the shared header. Mutex/condition/rwlock initialization
 returns ENOMEM when no backing object is obtained. `shared-unavailable`

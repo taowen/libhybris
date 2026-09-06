@@ -1,6 +1,6 @@
 #include "probe.h"
 
-int caps_probe(void) {
+int caps_probe(int check_wsi_guard) {
   void *h =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
@@ -153,6 +153,18 @@ int caps_probe(void) {
     printf("CAPS dynamic_rendering not enabled but GDPA present\n");
     p_vkDestroyDevice(device, NULL);
     return 2;
+  }
+  if (check_wsi_guard) {
+    if (gdp(device, "vkCreateSwapchainKHR")) return 2;
+    PFN_vkCreateSwapchainKHR create_swapchain = sym(h, "vkCreateSwapchainKHR");
+    if (!create_swapchain) return 2;
+    /* Intentional unsupported direct-export call: no extension/surface exists.
+     * The wrapper must reject it before touching WSI or entering the driver. */
+    VkSwapchainCreateInfoKHR swapchain_info = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    VkResult result = create_swapchain(device, &swapchain_info, NULL, &swapchain);
+    printf("WSI_DISABLED direct-create result=%d expected=%d\n", result, VK_ERROR_EXTENSION_NOT_PRESENT);
+    if (result != VK_ERROR_EXTENSION_NOT_PRESENT) return 2;
   }
   p_vkDestroyDevice(device, NULL);
   p_vkDestroyInstance(instance, NULL);

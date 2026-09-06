@@ -190,6 +190,7 @@ cases = [
     ('hybris', 'tls-bounds', 'probe-glibc'),
     ('hybris', 'tls-dtor', 'probe-glibc'),
     ('hybris', 'caps', 'probe-glibc'),
+    ('hybris', 'wsi-disabled', 'probe-glibc'),
     ('hybris', 'caps2', 'probe-glibc'),
     ('hybris', 'ubo', 'probe-glibc'),
     ('hybris-linked', 'dispatch', 'probe-glibc-linked'),
