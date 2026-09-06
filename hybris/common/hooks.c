@@ -3131,7 +3131,9 @@ static const char *_hybris_hook_dlerror(void)
 {
     TRACE("");
 
-    return android_dlerror();
+    /* Call the linker entry, not android_dlerror(). The wrapper would
+     * re-enter linker init and deadlock if this hook ran under pthread_once. */
+    return _android_dlerror ? _android_dlerror() : NULL;
 }
 
 void *_hybris_hook_dl_unwind_find_exidx(void* pc, int* pcount)
@@ -3942,9 +3944,19 @@ static void* __hybris_load_linker(const char *path)
     return handle;
 }
 
-static int linker_initialized = 0;
+static pthread_once_t linker_once = PTHREAD_ONCE_INIT;
 
-static void __hybris_linker_init()
+/* First-init ownership:
+ *   - glibc holds libhybris-common (DF_1_NODELETE) for the process lifetime.
+ *   - common holds the Android linker plugin via linker_handle and never
+ *     dlcloses it.
+ *   - android_dlopen callers hold vendor objects; this path does not
+ *     android_dlclose them when a frontend is closed.
+ * pthread_once is used because __hybris_linker_init talks to glibc
+ * dlopen/dlsym and android_linker_init only. It does not call android_*.
+ * Vendor hooks that later need android_* must use the _android_* pointers,
+ * not the wrappers, or a hook during init would deadlock. */
+static void __hybris_linker_init(void)
 {
     LOGD("Linker initialization");
     
@@ -4049,13 +4061,13 @@ static void __hybris_linker_init()
     if (_android_set_application_target_sdk_version) {
         _android_set_application_target_sdk_version(sdk_version);
     }
-
-    linker_initialized = 1;
 }
 
 #define ENSURE_LINKER_IS_LOADED() \
-    if (!linker_initialized) \
-        __hybris_linker_init();
+    do { \
+        if (pthread_once(&linker_once, __hybris_linker_init) != 0) \
+            abort(); \
+    } while (0)
 
 /* NOTE: As we're not linking directly with the linker anymore
  * but several users are using android_* functions directly we

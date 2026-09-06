@@ -57,12 +57,27 @@ the runner returns nonzero for FAIL/TIMEOUT/CRASH.
   This is not yet a generated per-device compatibility dispatch layer.
 - Life: two devices from one instance, destroy/recreate, second `dlopen`,
   and two threads creating/destroying devices and fences. This is not a
-  generation-tagged object table. A separate `unload` case closes the final
-  frontend library reference; process exit must also succeed. hybris keeps
-  `libhybris-common` mapped using the ELF `DF_1_NODELETE` flag because Android hook pointers
-  and TLS cleanup callbacks can outlive `libvulkan.so.1`. This retains common
-  code/state for the process lifetime, even if no Android driver was loaded.
-  It does not prove Android driver unload or callback teardown.
+  generation-tagged object table. Workers start after the first instance
+  exists, so they do not race first hybris entry.
+- Unload: destroy Vulkan objects, `dlclose` the last frontend reference,
+  then exit 0. Observed: `dlclose` returns 0 and the process exits 0.
+  Not observed: the frontend or Android driver is unmapped, or that
+  callbacks and objects are torn down. hybris keeps `libhybris-common`
+  mapped using ELF `DF_1_NODELETE` because Android hook pointers and TLS
+  cleanup callbacks can outlive `libvulkan.so.1`. The Android linker plugin
+  stays held by common. That is the supported close sequence; it is not
+  Android driver unload.
+- Init: two threads' first `android_dlopen` of the vendor Vulkan library
+  through `libhybris-common`, with no frontend constructor first.
+  Observed: both threads get a non-NULL handle, `vkGetInstanceProcAddr`,
+  and the same positive SDK version. Not observed: a particular handle
+  identity, driver unload, or that constructors ran twice. Native has no
+  `libhybris-common` and reports unsupported.
+- TLS: a worker uses Vulkan through the frontend (establishing Android TLS),
+  the main thread then `dlclose`s the last frontend reference, and the
+  worker returns afterwards. Observed: `dlclose` returns 0, the worker
+  joins, the process exits 0. Not observed: that TLS destructors ran, or
+  that any library was unmapped.
 - Caps: print limits and advertised features; reject enabling an
   unadvertised feature or unknown extension with the exact Vulkan error.
   A disabled device extension must not be exposed through GDPA. This does
@@ -105,6 +120,8 @@ from `1599593`; exact binaries and dirty-source status are recorded per run.
 | Caps (refuse unadvertised, passthrough) | PASS | PASS | — |
 | UBO 272B + injected wrong binding | PASS | PASS | — |
 | Final frontend dlclose + process exit | PASS | PASS | — |
+| Concurrent first android_dlopen | unsupported | PASS | — |
+| Worker TLS after frontend dlclose | PASS | PASS | — |
 | GLES context request 2, clear + shader draw + readback | PASS | PASS | — |
 | GLES context request 3, clear + shader draw + readback | PASS | PASS | — |
 | Native desktop GL context | unsupported | unsupported | — |
@@ -127,12 +144,19 @@ are under `build/results/<run-id>/` with `manifest.json` ELF hashes. Rebuild
 the library when measuring a different source revision; a dirty working tree
 is recorded as `source_dirty` in the manifest.
 
+Run `20260906T232721-259dad62` (`source_dirty` True over `c8be77a`) completed
+with 21 PASS and 3 UNSUPPORTED (desktop GL, and native `init` which has no
+`libhybris-common`). hybris `init` gave both threads the same handle and
+`vkGetInstanceProcAddr`, SDK 33. hybris and native `tls` printed
+`dlclose=0` and joined the worker after frontend close. That is not unmap
+or TLS-destructor evidence.
+
 ## Review checks
 
 The manifest verification was checked against modified, missing, extra and
 redirected SONAME ELF files. A fresh library build verified the ELF
-`NODELETE` flag with `readelf -d`. Run `20260906T230438-cbc4c7cd` completed with 18 PASS
-and 2 UNSUPPORTED (desktop GL). The earlier hybris unload SIGSEGV
+`NODELETE` flag with `readelf -d`. Run `20260906T232721-259dad62` completed
+with 21 PASS and 3 UNSUPPORTED. The earlier hybris unload SIGSEGV
 (`20260906T224739-95b7e3db`) is closed for this probe by pinning
 `libhybris-common`; vendor objects remain live. Both embedded widget
 shaders passed `spirv-val --target-env vulkan1.0` and matched a fresh
@@ -143,3 +167,9 @@ The common library uses the link-time `-Wl,-z,nodelete` setting
 ([GNU ld documentation](https://sourceware.org/binutils/docs/ld/Options.html)),
 so residency does not depend on reopening its pathname or an unchecked
 `dlopen` result. It does not disable process-exit finalizers.
+
+Supported close sequence: destroy Vulkan device/instance, drop the
+frontend glibc reference, exit the process. `libhybris-common` and the
+Android linker plugin stay mapped. First linker init is `pthread_once`;
+the init function does not call `android_*`. That serializes two threads'
+first `android_dlopen`. It does not unload the Android driver.

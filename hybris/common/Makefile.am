@@ -100,8 +100,10 @@ libhybris_common_la_CXXFLAGS = \
 	-std=gnu++11
 
 # Android linker hook pointers and TLS cleanup callbacks can outlive a frontend.
-# Keep common code/state mapped for the process lifetime; this does not make
-# Android libraries unloadable or fix their object/thread teardown.
+# Keep common code/state mapped for the process lifetime. Supported close
+# sequence: destroy Vulkan objects, drop the frontend glibc reference, exit.
+# common and the Android linker stay mapped. This does not make Android
+# libraries unloadable or fix their object/thread teardown.
 libhybris_common_la_LDFLAGS = \
 	-Wl,-z,nodelete \
 	-ldl \
