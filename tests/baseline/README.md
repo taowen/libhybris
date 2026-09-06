@@ -1,6 +1,7 @@
 # Headless GPU baseline
 
-One C probe, built for glibc and bionic, run on the same Android device.
+One probe executable, built from shared C sources for glibc and bionic,
+run on the same Android device.
 No APK, root, rootfs, compositor, X server, or CTS download is needed at runtime.
 This is a smoke test, not conformance certification or application compatibility coverage.
 
@@ -183,3 +184,12 @@ Android linker plugin stay mapped. First linker init uses `pthread_once`. The bu
 paths do not reenter public `android_*` wrappers; new callbacks must preserve
 that constraint. This probe does not exercise recursive initialization or
 all possible schedules. It does not unload the Android driver.
+
+
+## Source layout
+
+probe.c dispatches modes and installs the watchdog. probe_common.c
+contains symbol lookup, memory and queue selection helpers. EGL, Vulkan fill,
+dispatch, lifecycle, capabilities and widget rendering live in separate
+probe_*.c translation units. build.sh uses the same explicit source list
+for bionic, glibc and the directly linked glibc variant.

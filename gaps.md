@@ -2,7 +2,7 @@
 
 调研日期：2026-09-06。当前 libhybris 基准：`dcc3588262a2b5181a15998c63d5e7e684ef2631`。
 范围：评估把本仓库扩展为同进程的 GLES / 桌面 OpenGL / Vulkan 兼容栈；借鉴 Vortek、Gladio 的能力，不照搬它们的命令 IPC。
-本轮产物是调研和改造建议，没有实现下文的兼容层，也没有重新复现两次 Blender 故障。
+本文最初为调研建议，现作为持续实施的验收清单；阶段进度见 [实施状态](IMPLEMENTATION.md)。下文目标结构和完整兼容层尚未完成，两次 Blender 故障尚未重新复现。
 
 ## 1. 结论与边界
 
@@ -49,7 +49,7 @@
 | [GLES 包装](hybris/glesv2/glesv2.c) | GLES 导出与 Android 库桥接 | 提供桌面 OpenGL core/compat、GLX 或完整 GL→GLES 转换 |
 | [EGL X11](hybris/egl/platforms/x11/x11_window.cpp) | `TAWC-DRI` 与 `m_present_sock` 分支并存；后者发 AHB3 私有消息 | EGL X11 已只有统一窗口协议，或已经支持 Vulkan X11 |
 | [Vulkan Wayland](hybris/vulkan/platforms/wayland/wayland_window.cpp) | android_wlegl 缓冲区提交和 fence 等待 | 已通过 resize、surface lost、多窗口和 compositor release 压力测试 |
-| [loader/hooks](hybris/common/hooks.c)、[TLS 说明](TAWC_FORK.md) | 独立 Android linker、libc/线程桥接、ARM64 TLS thunk | 任意 Android 版本、任意 vendor library 都兼容 |
+| [loader bridge](hybris/common/linker_bridge.c)、[libc hooks](hybris/common/hooks.c)、[TLS 说明](TAWC_FORK.md) | 独立 Android linker、libc/线程桥接、ARM64 TLS thunk | 任意 Android 版本、任意 vendor library 都兼容 |
 
 摸底中发现本机旧安装目录残留 `vulkanplatform_x11.so`，但当前源码没有相应构建目标。以后必须干净 staging，并记录实际加载文件的 build-id/SHA256，不能拿安装目录文件名证明源码功能。
 
@@ -149,7 +149,7 @@ P0 = 兼容增强前的基础；P1 = 直接影响目标应用；P2 = 基础可�
 
 | ID / 优先级 | 缺口与风险 | 最小验收证据 |
 |---|---|---|
-| G01 / P0 | 自主构建与产物来源：现有 probe 自主运行，但库构建仍借父项目；旧 staging 残留 | 独立 checkout 构建脚本，固定 headers/compiler/deps；运行 manifest 含实际 ELF hash/build-id、driver、设备、env、quirk 配置；干净安装无旧平台库。**已落地** `tools/build-aarch64.sh` + `tools/manifest.py` + runner 唯一 run-id；仍依赖父项目 builder 镜像或 `BUILDER_IMAGE`，android-headers 仍在仓库外 |
+| G01 / P0 | 自主构建与产物来源：现有 probe 自主运行，但库构建仍借父项目；旧 staging 残留 | 独立 checkout 构建脚本，固定 headers/compiler/deps；运行 manifest 含实际 ELF hash/build-id、driver、设备、env、quirk 配置；干净安装无旧平台库。**部分落地** `tools/build-aarch64.sh` + `tools/manifest.py` + runner 唯一 run-id；仍依赖父项目 builder 镜像或 `BUILDER_IMAGE`，android-headers 仍在仓库外 |
 | G02 / P0 | 全入口 dispatch、core/KHR alias、每 instance/device 的真实函数表；避免包装绕过/递归/NULL branch | 从 vk.xml 固定版本生成覆盖表；同一测试经 link/dlsym/GIPA/GDPA；BeginRendering/KHR、Submit2/KHR 等按启用能力测试；未支持符号符合规范，不假成功。**部分落地**：普通 GIPA/GDPA 查询保留 backend 对 instance/device 的解析结果，只替换必要前端/WSI 包装；新增作用域/未启用扩展的负例测试，未解析的直接导出调用有错误信息。尚无 vk.xml 生成覆盖表，也无完整 per-instance/device 兼容状态表 |
 | G03 / P0 | 多线程/多 context/多 device 与对象生命周期 | 并行 create/destroy、二次 init/dlopen、回调、线程 TLS、handle 重用有回归；对象 state 按 generation 识别，不能用进程全局单一 current device。**部分落地**：谁持有谁：glibc 持有 `libhybris-common`（`DF_1_NODELETE`）至进程结束；common 持有 Android linker plugin，不 `dlclose` 它；frontend 持有自身 glibc 引用；vendor 对象由 `android_dlopen` 调用方持有，frontend 关闭不回收它们。允许的关闭顺序：销毁 Vulkan device/instance，丢掉 frontend 引用，进程退出。`ENSURE_LINKER_IS_LOADED()` 改为 `pthread_once`：审查现有 bundled linker 初始化路径未发现重入公开 `android_*` wrapper，后续新增回调必须继续遵守该约束；`_hybris_hook_dlerror` 改为直接调 `_android_dlerror`，避免 once 期间重入。baseline `life` 覆盖双 device、destroy/recreate、二次 dlopen、两线程 create/destroy，但不覆盖首次进入。`init` 覆盖两线程同时第一次 `android_dlopen`；`tls` 覆盖工作线程完成 Vulkan 创建/销毁后主线程关闭 frontend、再让工作线程退出；尚未观测 Android TLS 分配和析构是否发生。`20260906T233143-5f5b13ed`：hybris `init`/`tls`/`unload` PASS；native `init` 无对应实现，不再调度；hybris common 加载失败报 FAIL。注入第二次 pthread_create 失败后能释放 barrier、join 已启动线程并退出 2。`dlclose` 返回 0 不等于已解除映射；进程退出 0 不等于资源已回收；重复创建成功不等于 generation 管理。没有 generation 对象表或 GLES 多 context |
 | G04 / P0 | 标准 loader/layer/tool 接入 | 一个已知非法小测试被 validation 捕获；一个合法小测试零新增错误；完成一帧 capture/replay 且像素匹配，再扩大到应用。**未完成**：已撤回手写 validation chain；它篡改 dispatchable handle 并删减创建链/扩展，不能作为真实路径验证证据。尚无 glibc VVL、ICD adapter、标准 loader/layer、capture/replay |
