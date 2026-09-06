@@ -707,3 +707,34 @@ Fresh library/probe builds and runs `20260907T020805-a5abffff` (29854870) and
 including VVL, SyncVal and capture/replay. All four rwlock workers report zero
 errors on both devices; the prior mutex and concurrent Vulkan workloads also
 pass. The common library retains the same 130 dynamic exports.
+
+## Static condition-variable initialization and wakeup
+
+`cond-init` uses 32 fresh, zero-initialized bionic condition variables with
+four-byte alignment. A timed waiter and two threads calling signal/broadcast
+start together. Main changes the predicate under the same bionic mutex that
+the waiter uses, then broadcasts; the early signal/broadcast calls may cause
+spurious wakeups. The waiter loops on the predicate with a 500 ms absolute
+realtime deadline. Every wait/pulse must succeed, all threads join, and all
+condition variables and mutexes are destroyed. No condition is destroyed while
+a waiter is active. Failed worker creation cancels and joins started workers.
+
+The old common library passed `20260907T021201-1f959389` on 29854870. This is
+not a deterministic reproducer of lost wakeups. Code review found that signal,
+broadcast and wait wrappers could concurrently allocate different backing
+condition variables and overwrite one another's pointers. Lookup and first
+allocation now share the existing host publication guard. Actual wait/signal
+operations run after it is released. Initialization failures now have explicit
+fatal diagnostics; allocation-failure paths are not injected.
+
+This probe exercises timedwait's normal wakeup path, signal and broadcast. It
+does not validate plain wait, explicit/monotonic clocks, relative deadlines,
+expected timeout behavior, process-shared conditions, waiter cancellation,
+destruction with waiters, allocation reclamation or guard performance. The
+existing destroy hook's modification of glibc waiter metadata is unchanged and
+must not be inferred safe from this legal teardown workload.
+
+Fresh builds and runs `20260907T021359-9aa5efda` (29854870) and
+`20260907T021359-51c1edc4` (KB2000) each complete **58 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. All three condition workers report
+zero errors on both devices. Common's 130 dynamic exports remain unchanged.

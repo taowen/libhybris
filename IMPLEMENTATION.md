@@ -24,6 +24,15 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+Static condition-variable lookup and first allocation now use the same short
+host publication guard as mutexes/rwlocks. Signal, broadcast and all four wait
+wrappers share it, while actual waiting happens after the guard is released.
+`cond-init` races a timed waiter with signal/broadcast on 32 fresh bionic
+condition variables and releases a mutex-protected predicate. The old library
+also passed this run; the race is established by code review, not a captured
+lost wakeup. Shared conditions, alternate clocks and destruction with waiters
+remain unverified.
+
 Static rwlock first use now rechecks and publishes its backing pointer under
 the same short host guard used for static mutexes. The independent `rwlock-init`
 workload adds 32 fresh locks, four competing writers, four simultaneous readers

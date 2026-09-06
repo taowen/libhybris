@@ -303,13 +303,27 @@ static pthread_mutex_t* hybris_get_static_mutex(void *storage)
     return (pthread_mutex_t *)value;
 }
 
-static pthread_cond_t* hybris_alloc_init_cond(void)
+static pthread_cond_t* hybris_get_static_cond(void *storage)
 {
-    pthread_cond_t *realcond = malloc(sizeof(pthread_cond_t));
-    pthread_condattr_t attr;
-    pthread_condattr_init(&attr);
-    pthread_cond_init(realcond, &attr);
-    return realcond;
+    uintptr_t value;
+    pthread_mutex_lock(&static_sync_guard);
+    memcpy(&value, storage, sizeof(value));
+    if (value <= ANDROID_TOP_ADDR_VALUE_COND) {
+        pthread_cond_t *candidate = malloc(sizeof(*candidate));
+        if (!candidate) {
+            fprintf(stderr, "HYBRIS: fatal: cannot allocate static condition variable\n");
+            abort();
+        }
+        int error = pthread_cond_init(candidate, NULL);
+        if (error) {
+            fprintf(stderr, "HYBRIS: fatal: cannot initialize static condition variable (%d)\n", error);
+            abort();
+        }
+        value = (uintptr_t)candidate;
+        memcpy(storage, &value, sizeof(value));
+    }
+    pthread_mutex_unlock(&static_sync_guard);
+    return (pthread_cond_t *)value;
 }
 
 static pthread_rwlock_t* hybris_alloc_init_rwlock(void)
@@ -970,7 +984,7 @@ static int _hybris_hook_pthread_cond_destroy(pthread_cond_t *cond)
 
 static int _hybris_hook_pthread_cond_broadcast(pthread_cond_t *cond)
 {
-    uintptr_t value = (*(uintptr_t *) cond);
+    uintptr_t value = hybris_read_sync_value(cond);
 
     TRACE_HOOK("cond %p", cond);
 
@@ -984,8 +998,7 @@ static int _hybris_hook_pthread_cond_broadcast(pthread_cond_t *cond)
         realcond = (pthread_cond_t *)hybris_get_shmpointer((hybris_shm_pointer_t)value);
 
     if (value <= ANDROID_TOP_ADDR_VALUE_COND) {
-        realcond = hybris_alloc_init_cond();
-        *((uintptr_t *) cond) = (uintptr_t) realcond;
+        realcond = hybris_get_static_cond(cond);
     }
 
     return pthread_cond_broadcast(realcond);
@@ -993,7 +1006,7 @@ static int _hybris_hook_pthread_cond_broadcast(pthread_cond_t *cond)
 
 static int _hybris_hook_pthread_cond_signal(pthread_cond_t *cond)
 {
-    uintptr_t value = (*(uintptr_t *) cond);
+    uintptr_t value = hybris_read_sync_value(cond);
 
     TRACE_HOOK("cond %p", cond);
 
@@ -1007,8 +1020,7 @@ static int _hybris_hook_pthread_cond_signal(pthread_cond_t *cond)
         realcond = (pthread_cond_t *)hybris_get_shmpointer((hybris_shm_pointer_t)value);
 
     if (value <= ANDROID_TOP_ADDR_VALUE_COND) {
-        realcond = hybris_alloc_init_cond();
-        *((uintptr_t *) cond) = (uintptr_t) realcond;
+        realcond = hybris_get_static_cond(cond);
     }
 
     return pthread_cond_signal(realcond);
@@ -1017,7 +1029,7 @@ static int _hybris_hook_pthread_cond_signal(pthread_cond_t *cond)
 static int _hybris_hook_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 {
     /* Both cond and mutex can be statically initialized, check for both */
-    uintptr_t cvalue = (*(uintptr_t *) cond);
+    uintptr_t cvalue = hybris_read_sync_value(cond);
     uintptr_t mvalue = hybris_read_sync_value(mutex);
 
     TRACE_HOOK("cond %p mutex %p", cond, mutex);
@@ -1033,8 +1045,7 @@ static int _hybris_hook_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t 
         realcond = (pthread_cond_t *)hybris_get_shmpointer((hybris_shm_pointer_t)cvalue);
 
     if (cvalue <= ANDROID_TOP_ADDR_VALUE_COND) {
-        realcond = hybris_alloc_init_cond();
-        *((uintptr_t *) cond) = (uintptr_t) realcond;
+        realcond = hybris_get_static_cond(cond);
     }
 
     pthread_mutex_t *realmutex = (pthread_mutex_t *) mvalue;
@@ -1052,7 +1063,7 @@ static int _hybris_hook_pthread_cond_clockwait(pthread_cond_t *cond, pthread_mut
                  clockid_t clock_id, const struct timespec *abstime)
 {
     /* Both cond and mutex can be statically initialized, check for both */
-    uintptr_t cvalue = (*(uintptr_t *) cond);
+    uintptr_t cvalue = hybris_read_sync_value(cond);
     uintptr_t mvalue = hybris_read_sync_value(mutex);
 
     TRACE_HOOK("cond %p mutex %p abstime %p", cond, mutex, abstime);
@@ -1068,8 +1079,7 @@ static int _hybris_hook_pthread_cond_clockwait(pthread_cond_t *cond, pthread_mut
         realcond = (pthread_cond_t *)hybris_get_shmpointer((hybris_shm_pointer_t)cvalue);
 
     if (cvalue <= ANDROID_TOP_ADDR_VALUE_COND) {
-        realcond = hybris_alloc_init_cond();
-        *((uintptr_t *) cond) = (uintptr_t) realcond;
+        realcond = hybris_get_static_cond(cond);
     }
 
     pthread_mutex_t *realmutex = (pthread_mutex_t *) mvalue;
@@ -1087,7 +1097,7 @@ static int _hybris_hook_pthread_cond_timedwait(pthread_cond_t *cond,
                 pthread_mutex_t *mutex, const struct timespec *abstime)
 {
     /* Both cond and mutex can be statically initialized, check for both */
-    uintptr_t cvalue = (*(uintptr_t *) cond);
+    uintptr_t cvalue = hybris_read_sync_value(cond);
     uintptr_t mvalue = hybris_read_sync_value(mutex);
 
     TRACE_HOOK("cond %p mutex %p abstime %p", cond, mutex, abstime);
@@ -1103,8 +1113,7 @@ static int _hybris_hook_pthread_cond_timedwait(pthread_cond_t *cond,
         realcond = (pthread_cond_t *)hybris_get_shmpointer((hybris_shm_pointer_t)cvalue);
 
     if (cvalue <= ANDROID_TOP_ADDR_VALUE_COND) {
-        realcond = hybris_alloc_init_cond();
-        *((uintptr_t *) cond) = (uintptr_t) realcond;
+        realcond = hybris_get_static_cond(cond);
     }
 
     pthread_mutex_t *realmutex = (pthread_mutex_t *) mvalue;
@@ -1122,7 +1131,7 @@ static int _hybris_hook_pthread_cond_timedwait_relative_np(pthread_cond_t *cond,
                 pthread_mutex_t *mutex, const struct timespec *reltime)
 {
     /* Both cond and mutex can be statically initialized, check for both */
-    uintptr_t cvalue = (*(uintptr_t *) cond);
+    uintptr_t cvalue = hybris_read_sync_value(cond);
     uintptr_t mvalue = hybris_read_sync_value(mutex);
 
     TRACE_HOOK("cond %p mutex %p reltime %p", cond, mutex, reltime);
@@ -1138,8 +1147,7 @@ static int _hybris_hook_pthread_cond_timedwait_relative_np(pthread_cond_t *cond,
         realcond = (pthread_cond_t *)hybris_get_shmpointer((hybris_shm_pointer_t)cvalue);
 
     if (cvalue <= ANDROID_TOP_ADDR_VALUE_COND) {
-        realcond = hybris_alloc_init_cond();
-        *((uintptr_t *) cond) = (uintptr_t) realcond;
+        realcond = hybris_get_static_cond(cond);
     }
 
     pthread_mutex_t *realmutex = (pthread_mutex_t *) mvalue;
