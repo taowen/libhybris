@@ -28,7 +28,7 @@ BUNDLE="$(cd "$BUNDLE" && pwd)"
 PROBE_SRC="$BUNDLE/src"
 rm -rf "$PROBE_SRC"
 mkdir -p "$PROBE_SRC/shaders"
-cp "${SOURCES[@]}" probe.h dispatch_commands.inc "$PROBE_SRC/"
+cp "${SOURCES[@]}" probe.h dispatch_commands.inc capability_fields.inc "$PROBE_SRC/"
 cp shaders/widget.vert shaders/widget.frag shaders/widget.vert.inc shaders/widget.frag.inc "$PROBE_SRC/shaders/"
 
 

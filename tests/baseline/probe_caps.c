@@ -22,6 +22,7 @@ int caps_probe(void) {
   V(vkGetPhysicalDeviceProperties);
   V(vkGetPhysicalDeviceQueueFamilyProperties);
   V(vkGetPhysicalDeviceFormatProperties);
+  V(vkGetPhysicalDeviceImageFormatProperties);
   V(vkEnumerateDeviceExtensionProperties);
   V(vkCreateDevice);
   V(vkDestroyDevice);
@@ -38,6 +39,14 @@ int caps_probe(void) {
   VkPhysicalDeviceFeatures features;
   p_vkGetPhysicalDeviceProperties(pd, &props);
   p_vkGetPhysicalDeviceFeatures(pd, &features);
+#define CAP_UINT(name, value) printf("CAP_VALUE %s %llu\n", name, (unsigned long long)(value))
+#define CAP_SIGNED(name, value) printf("CAP_VALUE %s %lld\n", name, (long long)(value))
+#define CAP_FLOAT(name, value) printf("CAP_VALUE %s %.9g\n", name, (double)(value))
+  CAP_UINT("device.vendorID", props.vendorID);
+  CAP_UINT("device.deviceID", props.deviceID);
+  CAP_UINT("device.driverVersion", props.driverVersion);
+  CAP_UINT("device.apiVersion", props.apiVersion);
+#include "capability_fields.inc"
   printf("CAPS gpu=%s api=%u.%u.%u maxPush=%u minUboAlign=%u BC=%u\n",
          props.deviceName, VK_VERSION_MAJOR(props.apiVersion),
          VK_VERSION_MINOR(props.apiVersion), VK_VERSION_PATCH(props.apiVersion),
@@ -50,6 +59,7 @@ int caps_probe(void) {
   CHECK(p_vkEnumerateDeviceExtensionProperties(pd, NULL, &ext_count, ext));
   int has_dyn = 0, has_sync2 = 0;
   for (uint32_t i = 0; i < ext_count; i++) {
+    printf("CAP_VALUE extensions.%s %u\n", ext[i].extensionName, ext[i].specVersion);
     if (!strcmp(ext[i].extensionName, "VK_KHR_dynamic_rendering"))
       has_dyn = 1;
     if (!strcmp(ext[i].extensionName, "VK_KHR_synchronization2"))
@@ -63,6 +73,33 @@ int caps_probe(void) {
   printf("CAPS R8G8B8A8_UNORM linear=0x%x optimal=0x%x buffer=0x%x\n",
          fmt.linearTilingFeatures, fmt.optimalTilingFeatures,
          fmt.bufferFeatures);
+  const VkFormat formats[] = {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_SRGB,
+      VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT,
+      VK_FORMAT_BC1_RGBA_UNORM_BLOCK, VK_FORMAT_BC3_UNORM_BLOCK,
+      VK_FORMAT_BC6H_UFLOAT_BLOCK, VK_FORMAT_BC7_UNORM_BLOCK,
+      VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK, VK_FORMAT_ASTC_4x4_UNORM_BLOCK};
+  for (unsigned i = 0; i < sizeof(formats)/sizeof(formats[0]); ++i) {
+    p_vkGetPhysicalDeviceFormatProperties(pd, formats[i], &fmt);
+    printf("CAP_VALUE formats.%d.linear %u\n", formats[i], fmt.linearTilingFeatures);
+    printf("CAP_VALUE formats.%d.optimal %u\n", formats[i], fmt.optimalTilingFeatures);
+    printf("CAP_VALUE formats.%d.buffer %u\n", formats[i], fmt.bufferFeatures);
+    VkImageFormatProperties image = {0};
+    VkResult result = p_vkGetPhysicalDeviceImageFormatProperties(pd, formats[i],
+        VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &image);
+    printf("CAP_VALUE imageFormats.%d.result %d\n", formats[i], result);
+    if (result != VK_SUCCESS && result != VK_ERROR_FORMAT_NOT_SUPPORTED) return 2;
+    if (result == VK_SUCCESS) {
+      printf("CAP_VALUE imageFormats.%d.maxWidth %u\n", formats[i], image.maxExtent.width);
+      printf("CAP_VALUE imageFormats.%d.maxHeight %u\n", formats[i], image.maxExtent.height);
+      printf("CAP_VALUE imageFormats.%d.maxDepth %u\n", formats[i], image.maxExtent.depth);
+      printf("CAP_VALUE imageFormats.%d.maxMipLevels %u\n", formats[i], image.maxMipLevels);
+      printf("CAP_VALUE imageFormats.%d.maxArrayLayers %u\n", formats[i], image.maxArrayLayers);
+      printf("CAP_VALUE imageFormats.%d.sampleCounts %u\n", formats[i], image.sampleCounts);
+      printf("CAP_VALUE imageFormats.%d.maxResourceSize %llu\n", formats[i],
+             (unsigned long long)image.maxResourceSize);
+    }
+  }
   uint32_t qi = 0;
   if (!pick_queue(p_vkGetPhysicalDeviceQueueFamilyProperties, pd, &qi))
     return 2;

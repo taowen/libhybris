@@ -423,3 +423,36 @@ dynamic frontend exports (name/type/binding/visibility), then ran 29854870
 Both are **45 PASS / 2 UNSUPPORTED**. All five registry-query reports per device
 match their pre-split run exactly. The current fixed AArch64/Wayland-enabled
 build is verified; this is not a new platform/build-configuration matrix.
+
+
+## Capability differences
+
+`caps` writes named `CAP_VALUE` records; the runner preserves them in
+`*-caps-values.json` and compares native with hybris and optional ICD in
+`capability-differences.json`. The generator
+`tools/registry/generate-capability-fields.py /path/to/vk.xml` verifies the same
+pinned registry hash as the dispatch generator. It emits 174 named scalar
+values including all 55 core features, 106 limit members (arrays expanded),
+and five sparse properties, without reading padding or assuming struct packing.
+Device identity/version, extension spec versions and ten selected formats are
+also recorded. Image-format queries use 2D, optimal tiling, sampled plus
+transfer-destination usage and zero flags; error results are retained, and
+undefined output values after FORMAT_NOT_SUPPORTED are not serialized.
+
+Runs `20260907T010645-554aab1d` (29854870) and `20260907T010646-7003fc92` (KB2000)
+each completed **42 PASS / 2 UNSUPPORTED**, without optional VVL/capture cases.
+Each native record has 325 values. Frontend differences are empty on both
+devices. ICD exposes VK_ANDROID_native_buffer version 8 absent in native, and
+lacks native VK_EXT_hdr_metadata, VK_GOOGLE_display_timing,
+VK_KHR_incremental_present, VK_KHR_shared_presentable_image and VK_KHR_swapchain.
+The adapter directly forwards HAL device discovery, while native uses Android's
+loader; this is consistent with their different WSI ownership and is not an
+implemented compatibility transformation. No image or presentation semantics
+are proved by these queries. The report records differences without changing
+advertised capabilities or treating all differences as failures.
+
+Scope remains the first enumerated physical device, core 1.0 structures and
+the ten explicit format queries. Features2 extension chains, all devices,
+format creation/usage combinations and workaround reasons are not covered.
+Existing unsupported-feature/unknown-extension rejection and positive
+CreateDevice checks remain in the same `caps` workload.

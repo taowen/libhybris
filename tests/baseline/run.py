@@ -216,6 +216,7 @@ if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)
 
 results = []
+capabilities = {}
 observed_paths = set()
 try:
     if a.manifest:
@@ -263,6 +264,14 @@ try:
             kill_remote()
         (a.out / (name + '.log')).write_bytes(output or b'')
         decoded = (output or b'').decode('utf-8', errors='replace')
+        values = {}
+        for line in decoded.splitlines():
+            if line.startswith('CAP_VALUE '):
+                _, key, value = line.split()
+                values[key] = json.loads(value)
+        if values:
+            capabilities[backend] = {'values': values, 'probe_exit_code': code}
+            (a.out / (name + '-values.json')).write_text(json.dumps(values, indent=2) + '\n')
         registry_entries = []
         for line in decoded.splitlines():
             if line.startswith('REGISTRY_ENTRY '):
@@ -324,6 +333,23 @@ try:
         print('icd-capture-replay', status, 'exit=' + str(code), flush=True)
 finally:
     try:
+        if 'native' in capabilities:
+            native = capabilities['native']
+            differences = {}
+            for backend, observation in capabilities.items():
+                if backend == 'native':
+                    continue
+                effective = observation['values']
+                differences[backend] = {
+                    'complete_probes': native['probe_exit_code'] == observation['probe_exit_code'] == 0,
+                    'differences': {key: {'native': native['values'].get(key), 'effective': effective.get(key)}
+                                    for key in sorted(native['values'].keys() | effective.keys())
+                                    if native['values'].get(key) != effective.get(key)}}
+            (a.out / 'capability-differences.json').write_text(json.dumps({
+                'scope': 'first enumerated physical device; core features/limits/sparse, device extensions and ten format queries',
+                'image_query': '2D, optimal, sampled|transfer-dst, flags=0',
+                'note': 'Query differences are observations, not proof of rendering semantics or a workaround reason.',
+                'comparisons': differences}, indent=2) + '\n')
         # Hash Android files named by the snapshots. These are path-content
         # hashes after execution, not a readback of live mapped pages.
         if observed_paths:

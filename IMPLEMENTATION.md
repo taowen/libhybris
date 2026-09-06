@@ -142,3 +142,14 @@ binding and visibility. No extra public helper is exported. Runs on 29854870
 45 PASS / 2 UNSUPPORTED, and all five 726-command query reports exactly match
 the pre-split runs. VVL/SyncVal and full-image headless capture/replay also pass.
 This structural change does not add per-object state or new API support.
+
+
+Capability observations: registry-generated core feature/limit/sparse fields,
+device extension versions and ten format/image-format queries now produce
+named JSON values and native-to-frontend/ICD differences. Runs
+`20260907T010645-554aab1d` (29854870) and `20260907T010646-7003fc92` (KB2000)
+each complete 42 PASS / 2 UNSUPPORTED; validation/capture options were not
+selected for this probe-only batch. Each native observation contains 325
+values. The frontend matches native; direct-HAL ICD differs in six device
+extensions related to Android buffer/presentation. No values are rewritten
+to force equality. Features2 extension chains and format execution remain open.
