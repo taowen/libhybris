@@ -1022,3 +1022,21 @@ including rwlock first use, static destruction/reinitialization, TLS, graphics,
 validation/SyncVal and capture/replay. This is structural regression evidence;
 shared rwlock destroy translation, timed-lock semantics, kind preferences and
 fairness are not newly verified by the existing first-use workload.
+
+
+`rwlock-kind` checks bionic rwlock attribute default, both supported kind
+round trips, lock creation/read/write/destruction for each kind, and EINVAL
+for -1, 2, 3 and INT_MAX without changing the last valid kind. It shares the
+bionic lifecycle source between the native probe and the DSO used by hybris.
+Bionic's nonrecursive-writer enum is 1, while glibc's matching enum is 2;
+passing values through selected a different host policy and accepted the
+bionic-invalid 2. See the [AOSP attribute implementation](https://android.googlesource.com/platform/bionic/+/android-9.0.0_r3/libc/bionic/pthread_rwlock.cpp).
+Before the fix, `20260907T031839-af08782d` passed natively and failed through
+hybris because setting 2 returned success instead of EINVAL. The bridge now
+maps both directions explicitly and rejects the host-only policy domain.
+The workload does not establish starvation freedom, scheduling order,
+recursive-reader misuse behavior, timed locks or cross-process synchronization.
+After rebuilding libraries and probes, `20260907T032015-6cdbdcb6` (29854870)
+and `20260907T032015-9862e194` (KB2000) each completed **65 PASS / 2 UNSUPPORTED**,
+including native/hybris kind cases, validation/SyncVal and capture/replay.
+The 130 common and 643 Vulkan defined dynamic export sets remain unchanged.

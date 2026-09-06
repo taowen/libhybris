@@ -99,7 +99,7 @@ int lock_init_probe(int rwlock) {
   return rc;
 }
 
-int sync_destroy_probe(void) {
+int sync_destroy_probe(int check_kind) {
 #ifdef __BIONIC__
   int (*destroy)(unsigned) = sync_destroy_lifecycle;
 #else
@@ -114,18 +114,23 @@ int sync_destroy_probe(void) {
   if (!open_fixture || !find_fixture || !close_fixture) return 2;
   void *fixture = open_fixture("./libtls-fixture.so", RTLD_NOW);
   if (!fixture) return 2;
-  int (*destroy)(unsigned) = find_fixture(fixture, "sync_fixture_destroy");
+  int (*destroy)(unsigned) = find_fixture(fixture, check_kind ? "sync_fixture_kind" : "sync_fixture_destroy");
   if (!destroy) return 2;
 #endif
-  for (unsigned kind = 0; kind < 5; ++kind) {
+  for (unsigned kind = 0; kind < (check_kind ? 1u : 5u); ++kind) {
     printf("SYNC_DESTROY begin kind=%u\n", kind);
-    int error = destroy(kind);
+    int error;
+#ifdef __BIONIC__
+    error = check_kind ? sync_kind_lifecycle() : destroy(kind);
+#else
+    error = destroy(kind);
+#endif
     printf("SYNC_DESTROY kind=%u result=%d\n", kind, error);
     if (error) return 2;
   }
 #ifndef __BIONIC__
   if (close_fixture(fixture)) return 2;
 #endif
-  printf("SYNC_DESTROY PASS\n");
+  printf("%s PASS\n", check_kind ? "SYNC_KIND" : "SYNC_DESTROY");
   return 0;
 }

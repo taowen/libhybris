@@ -110,6 +110,15 @@ a rwlock, then explicitly reinitializes the same storage and exercises another
 valid lifecycle. Native and hybris execute the same bionic source. This does
 not cover active-object destruction, double destroy or shared synchronization.
 
+Rwlock kind attributes now translate bionic's reader/nonrecursive-writer
+values (0/1) to glibc's corresponding policies (0/2), and translate queries
+back. Values outside bionic's two-policy domain return EINVAL without changing
+the attribute. `rwlock-kind` compares native and hybris defaults, round trips,
+invalid values and ordinary lock lifecycle; it does not prove starvation or
+fairness behavior under sustained reader/writer contention. Runs
+`20260907T032015-6cdbdcb6` and `20260907T032015-9862e194` each complete
+65 PASS / 2 UNSUPPORTED after rebuilding, including validation and capture.
+
 Static condition-variable lookup and first allocation now use the same short
 host publication guard as mutexes/rwlocks. Signal, broadcast and all four wait
 wrappers share it, while actual waiting happens after the guard is released.

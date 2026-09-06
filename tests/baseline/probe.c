@@ -33,7 +33,9 @@ int main(int argc, char **argv) {
   else if (!strcmp(mode, "rwlock-init"))
     rc = lock_init_probe(1);
   else if (!strcmp(mode, "sync-destroy"))
-    rc = sync_destroy_probe();
+    rc = sync_destroy_probe(0);
+  else if (!strcmp(mode, "rwlock-kind"))
+    rc = sync_destroy_probe(1);
   else if (!strcmp(mode, "cond-init"))
     rc = cond_init_probe();
   else if (!strcmp(mode, "cond-clock"))

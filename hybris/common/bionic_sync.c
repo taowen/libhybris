@@ -760,7 +760,15 @@ int _hybris_hook_pthread_rwlockattr_setkind_np(pthread_rwlockattr_t *attr, int p
 
     TRACE_HOOK("attr %p pref %i", attr, pref);
 
-    return pthread_rwlockattr_setkind_np(realattr, pref);
+    /* Bionic has two values (0, 1); glibc inserts PREFER_WRITER_NP at 1. */
+    switch (pref) {
+    case 0:
+        return pthread_rwlockattr_setkind_np(realattr, PTHREAD_RWLOCK_PREFER_READER_NP);
+    case 1:
+        return pthread_rwlockattr_setkind_np(realattr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+    default:
+        return EINVAL;
+    }
 }
 
 int _hybris_hook_pthread_rwlockattr_getkind_np(const pthread_rwlockattr_t *attr, int *pref)
@@ -769,7 +777,21 @@ int _hybris_hook_pthread_rwlockattr_getkind_np(const pthread_rwlockattr_t *attr,
 
     TRACE_HOOK("attr %p pref %p", attr, pref);
 
-    return pthread_rwlockattr_getkind_np(realattr, pref);
+    int host_pref;
+    int error = pthread_rwlockattr_getkind_np(realattr, &host_pref);
+    if (error)
+        return error;
+    switch (host_pref) {
+    case PTHREAD_RWLOCK_PREFER_READER_NP:
+        *pref = 0;
+        return 0;
+    case PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP:
+        *pref = 1;
+        return 0;
+    default:
+        /* A host-only policy has no bionic representation. */
+        return EINVAL;
+    }
 }
 
 /*

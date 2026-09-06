@@ -1,4 +1,6 @@
 #include <pthread.h>
+#include <errno.h>
+#include <stdio.h>
 
 // Destroy valid static initializers before any lock/wait operation, then
 // explicitly reinitialize the same storage and exercise its normal lifecycle.
@@ -30,4 +32,39 @@ static int sync_destroy_lifecycle(unsigned kind) {
     if (!error) error = pthread_rwlock_unlock(&r);
     if (!error) error = pthread_rwlock_destroy(&r);
     return error;
+}
+
+
+// Bionic exposes only reader preference (0) and nonrecursive writer (1).
+static int sync_kind_lifecycle(void) {
+    pthread_rwlockattr_t attr;
+    int error = pthread_rwlockattr_init(&attr);
+    if (error) return error;
+    int kind = -1;
+    error = pthread_rwlockattr_getkind_np(&attr, &kind);
+    if (!error && kind != PTHREAD_RWLOCK_PREFER_READER_NP) error = EINVAL;
+    for (int requested = 0; !error && requested <= 1; ++requested) {
+        error = pthread_rwlockattr_setkind_np(&attr, requested);
+        if (!error) error = pthread_rwlockattr_getkind_np(&attr, &kind);
+        if (!error && kind != requested) error = EINVAL;
+        if (!error) {
+            pthread_rwlock_t lock;
+            error = pthread_rwlock_init(&lock, &attr);
+            if (!error) error = pthread_rwlock_rdlock(&lock);
+            if (!error) error = pthread_rwlock_unlock(&lock);
+            if (!error) error = pthread_rwlock_wrlock(&lock);
+            if (!error) error = pthread_rwlock_unlock(&lock);
+            if (!error) error = pthread_rwlock_destroy(&lock);
+        }
+    }
+    const int invalid[] = {-1, 2, 3, 2147483647};
+    for (unsigned i = 0; !error && i < sizeof(invalid)/sizeof(invalid[0]); ++i) {
+        int result = pthread_rwlockattr_setkind_np(&attr, invalid[i]);
+        printf("SYNC_KIND rejected=%d result=%d expected=%d\n", invalid[i], result, EINVAL);
+        if (result != EINVAL) error = EINVAL;
+        if (!error) error = pthread_rwlockattr_getkind_np(&attr, &kind);
+        if (!error && kind != PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP) error = EINVAL;
+    }
+    int cleanup = pthread_rwlockattr_destroy(&attr);
+    return error ? error : cleanup;
 }
