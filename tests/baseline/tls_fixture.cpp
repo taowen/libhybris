@@ -3,7 +3,9 @@
 #include <stddef.h>
 #include <time.h>
 #include <errno.h>
+#include <limits.h>
 
+extern "C" int pthread_cond_timedwait_relative_np(pthread_cond_t *, pthread_mutex_t *, const struct timespec *);
 extern "C" int pthread_cond_timedwait_monotonic_np(pthread_cond_t *, pthread_mutex_t *, const struct timespec *);
 extern "C" int pthread_cond_timedwait_monotonic(pthread_cond_t *, pthread_mutex_t *, const struct timespec *);
 
@@ -15,10 +17,19 @@ extern "C" int cond_fixture_timeout(unsigned variant, long long *elapsed) {
     deadline = start;
     deadline.tv_nsec += 100000000;
     if (deadline.tv_nsec >= 1000000000) { ++deadline.tv_sec; deadline.tv_nsec -= 1000000000; }
-    int error = pthread_mutex_lock(&mutex);
+    int error = pthread_cond_init(&cond, NULL);
+    if (error) return error;
+    error = pthread_mutex_lock(&mutex);
     if (error) return error;
     do {
-        error = variant ? pthread_cond_timedwait_monotonic_np(&cond, &mutex, &deadline)
+        if (variant >= 2) {
+            struct timespec relative = {0, 100000000};
+            if (variant == 3) relative.tv_nsec = 1000000000;
+            if (variant == 4) relative.tv_nsec = -1;
+            if (variant == 5) relative.tv_sec = LONG_MAX;
+            if (variant == 6) relative.tv_sec = -1;
+            error = pthread_cond_timedwait_relative_np(&cond, &mutex, &relative);
+        } else error = variant ? pthread_cond_timedwait_monotonic_np(&cond, &mutex, &deadline)
                         : pthread_cond_timedwait_monotonic(&cond, &mutex, &deadline);
     } while (!error); // Allow spurious wakeups, retaining the original deadline.
     clock_gettime(CLOCK_MONOTONIC, &end);

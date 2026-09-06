@@ -952,3 +952,29 @@ Fresh library/probe builds and runs `20260907T025449-9f0dad86` (29854870) and
 `20260907T025449-72b2c6b8` (KB2000) each complete **61 PASS / 2 UNSUPPORTED**,
 including VVL, SyncVal and capture/replay. Both aliases return ETIMEDOUT after
 about 100–102 ms on both devices. Common's 130 dynamic exports are unchanged.
+
+## Relative condition wait validation
+
+`cond-clock` also exercises pthread_cond_timedwait_relative_np through the
+bionic fixture: 100 ms must end with ETIMEDOUT after at least 90 ms, while
+nanoseconds equal to one billion, negative nanoseconds, negative seconds and
+an unrepresentable LONG_MAX-second deadline must return EINVAL. Spurious
+wakeups retry the relative duration; the no-signal workload does not assert a
+tight upper timing bound. Conditions are explicitly initialized so invalid
+inputs can be followed by legal destruction without requiring lazy allocation.
+
+Before the fix, `20260907T025708-f2f78e33` on 29854870 incorrectly returns
+ETIMEDOUT for one-billion nanoseconds after about one second, negative
+nanoseconds after about 1.3 ms, and LONG_MAX seconds immediately. The wrapper
+now validates the duration, uses checked addition for the absolute deadline,
+and calls the common clockwait bridge with CLOCK_MONOTONIC. This removes the
+duplicated translation path and dependence on a realtime absolute deadline.
+
+No wall-clock jump is injected, and shared conditions, cancellation, wakeup
+fairness and boundary arithmetic on 32-bit platforms remain unverified.
+
+Fresh library/probe builds and runs `20260907T025846-dffa5ff2` (29854870) and
+`20260907T025846-d4473ad5` (KB2000) each complete **61 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. Relative 100 ms waits complete in
+about 100–102 ms; all four invalid-duration cases return EINVAL (22). The 130
+common dynamic exports remain unchanged.

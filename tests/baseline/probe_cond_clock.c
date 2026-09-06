@@ -13,13 +13,13 @@ int cond_clock_probe(void) {
   int (*timeout)(unsigned, long long *) = sym_android(fixture, "cond_fixture_timeout");
   if (!timeout) return 2;
   int failed = 0;
-  for (unsigned variant = 0; variant < 2; ++variant) {
+  for (unsigned variant = 0; variant < 7; ++variant) {
     long long elapsed = 0;
     int error = timeout(variant, &elapsed);
     printf("COND_CLOCK variant=%u result=%d elapsed_ns=%lld\n", variant, error, elapsed);
     /* Wrongly treating uptime as epoch time returns immediately. No tight
      * upper bound: scheduling delays are not clock-semantic failures. */
-    if (error != ETIMEDOUT || elapsed < 90000000) failed = 1;
+    if (variant < 3 ? (error != ETIMEDOUT || elapsed < 90000000) : error != EINVAL) failed = 1;
   }
   if (close_android(fixture)) failed = 1;
   printf("COND_CLOCK %s\n", failed ? "FAIL" : "PASS");

@@ -24,6 +24,13 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+The relative condition wait validates seconds/nanoseconds and checked deadline
+addition, then uses CLOCK_MONOTONIC through the existing clockwait bridge.
+It no longer normalizes invalid nanoseconds into a successful wait or relies
+on a realtime absolute deadline. The clock probe covers normal 100 ms waiting
+and invalid/overflowing durations; wall-clock jumps and shared waits remain
+unverified. Reusing the clockwait path removes duplicate object translation.
+
 The two Android cond_timedwait_monotonic aliases now call the clockwait bridge
 with CLOCK_MONOTONIC, rather than interpreting uptime deadlines with the
 condition variable's realtime default. A bionic fixture calls both aliases

@@ -1041,43 +1041,23 @@ static int _hybris_hook_pthread_cond_timedwait(pthread_cond_t *cond,
 static int _hybris_hook_pthread_cond_timedwait_relative_np(pthread_cond_t *cond,
                 pthread_mutex_t *mutex, const struct timespec *reltime)
 {
-    /* Both cond and mutex can be statically initialized, check for both */
-    uintptr_t cvalue = hybris_read_sync_value(cond);
-    uintptr_t mvalue = hybris_read_sync_value(mutex);
+    if (!reltime || reltime->tv_sec < 0 || reltime->tv_nsec < 0 ||
+        reltime->tv_nsec >= 1000000000)
+        return EINVAL;
 
-    TRACE_HOOK("cond %p mutex %p reltime %p", cond, mutex, reltime);
-
-    if (hybris_check_android_shared_cond(cvalue) ||
-         hybris_check_android_shared_mutex(mvalue)) {
-        LOGD("Shared condition/mutex with Android, not waiting.");
-        return 0;
+    struct timespec deadline;
+    if (clock_gettime(CLOCK_MONOTONIC, &deadline))
+        return errno;
+    /* Reject unrepresentable deadlines without signed overflow. */
+    if (__builtin_add_overflow(deadline.tv_sec, reltime->tv_sec, &deadline.tv_sec))
+        return EINVAL;
+    deadline.tv_nsec += reltime->tv_nsec;
+    if (deadline.tv_nsec >= 1000000000) {
+        if (__builtin_add_overflow(deadline.tv_sec, (time_t)1, &deadline.tv_sec))
+            return EINVAL;
+        deadline.tv_nsec -= 1000000000;
     }
-
-    pthread_cond_t *realcond = (pthread_cond_t *) cvalue;
-    if( hybris_is_pointer_in_shm((void*)cvalue) )
-        realcond = (pthread_cond_t *)hybris_get_shmpointer((hybris_shm_pointer_t)cvalue);
-
-    if (cvalue <= ANDROID_TOP_ADDR_VALUE_COND) {
-        realcond = hybris_get_static_cond(cond);
-    }
-
-    pthread_mutex_t *realmutex = (pthread_mutex_t *) mvalue;
-    if (hybris_is_pointer_in_shm((void*)mvalue))
-        realmutex = (pthread_mutex_t *)hybris_get_shmpointer((hybris_shm_pointer_t)mvalue);
-
-    if (mvalue <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
-        realmutex = hybris_get_static_mutex(mutex);
-    }
-
-    struct timespec tv;
-    clock_gettime(CLOCK_REALTIME, &tv);
-    tv.tv_sec += reltime->tv_sec;
-    tv.tv_nsec += reltime->tv_nsec;
-    if (tv.tv_nsec >= 1000000000) {
-      tv.tv_sec++;
-      tv.tv_nsec -= 1000000000;
-    }
-    return pthread_cond_timedwait(realcond, realmutex, &tv);
+    return _hybris_hook_pthread_cond_clockwait(cond, mutex, CLOCK_MONOTONIC, &deadline);
 }
 
 int _hybris_hook_pthread_setname_np(pthread_t thread, const char *name)
