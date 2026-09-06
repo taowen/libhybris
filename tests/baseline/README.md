@@ -1058,3 +1058,20 @@ Rebuilt libraries/probes and completed runs `20260907T032439-4c9cf97d`
 2 UNSUPPORTED**, including validation/SyncVal and capture/replay. The 130
 common and 643 Vulkan defined exports remain unchanged. These counts do not
 close the shared-path coverage gap described above.
+
+
+ICD instance ownership regression: `icd-vk-init` enables the bounded
+`HYBRIS_ICD_INSTANCE_TRACE=1` diagnostic and validates 16 unique generations,
+matching create/destroy handles and no remaining records. Its evidence parser
+hash is recorded in device.json; `icd-vk-init-instances.json` records measured
+peak concurrency and reused raw handles. Other workloads keep tracing off.
+Rebuilt runs `20260907T033203-27daa0de` (29854870) and
+`20260907T033203-b19723b3` (KB2000) each completed **65 PASS / 2 UNSUPPORTED**,
+including validation/SyncVal and capture/replay. Both record 16 creations and
+16 destructions with zero records remaining. Check each evidence JSON for
+observed concurrency/reuse; absence of reuse does not prove reuse handling.
+The common 130, Vulkan 643 and ICD 3 defined export sets remain unchanged.
+This covers ICD instance records only, not frontend/device/resource state,
+custom allocation callback failure/reentrancy, trace truncation or malformed
+HAL behavior. Destroy records precede backend destruction and do not imply
+GPU completion or driver unloading.

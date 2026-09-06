@@ -11,6 +11,23 @@ is installed. Baseline run.py can stage a private manifest with --icd-hal and
 override the hardware module lookup selects the Vulkan HAL. The adapter and
 HAL remain resident. Full driver unloading is not implemented.
 
+The adapter owns an instance record containing its real HAL resolver,
+destruction entry and a process-lifetime unique generation. Records are
+allocated before HAL creation, published only on success, removed at destroy
+and freed afterward; callbacks and HAL calls run outside the list lock.
+Application allocation callbacks also cover the record when supplied.
+No dispatch header, pNext list or extension list is rewritten. Instance proc
+queries retain HAL scope/enable checks; GIPA and destruction stay in the
+adapter. Device/resource state and the replacement-libvulkan frontend are
+not covered by this table.
+
+`HYBRIS_ICD_INSTANCE_TRACE=1` emits create/destroy generation and raw HAL handle
+records to stderr. It is ignored in secure execution, disabled by default and
+capped at 256 records plus a truncation marker. The destroy event denotes
+removal from the adapter table before backend destruction, not GPU completion.
+`icd-vk-init` checks the 16 matched lifetimes from its four workers; this is not
+an arbitrary application resource trace or proof of full driver unloading.
+
 Interface version 5 is required. Instance version discovery uses the HAL query
 when available and otherwise Vulkan's 1.0 fallback. The physical-device resolver
 uses an exact registry-derived scope table, including aliases. That table is

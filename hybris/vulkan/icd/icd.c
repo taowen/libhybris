@@ -10,6 +10,7 @@
 #include <vulkan/vulkan.h>
 #include <hybris/common/dlfcn.h>
 #include "hwvulkan.h"
+#include "instance.h"
 #include <dlfcn.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -88,6 +89,13 @@ static int ready(void)
     return pthread_once(&hal_once, initialize_hal) == 0 && hal != NULL;
 }
 
+static VkResult VKAPI_CALL create_instance(const VkInstanceCreateInfo *info,
+    const VkAllocationCallbacks *allocator, VkInstance *instance)
+{
+    if (!ready()) return VK_ERROR_INITIALIZATION_FAILED;
+    return hybris_icd_create_instance(hal, info, allocator, instance);
+}
+
 static VkResult VKAPI_CALL enumerate_instance_version(uint32_t *version)
 {
     if (!ready())
@@ -126,7 +134,7 @@ vk_icdGetPhysicalDeviceProcAddr(VkInstance instance, const char *name)
         size_t mid = low + (high - low) / 2;
         int order = strcmp(name, physical_commands[mid]);
         if (!order)
-            return hal->GetInstanceProcAddr(instance, name);
+            return hybris_icd_instance_proc(instance, name);
         if (order < 0) high = mid;
         else low = mid + 1;
     }
@@ -147,10 +155,14 @@ vk_icdGetInstanceProcAddr(VkInstance instance, const char *name)
     if (!strcmp(name, "vkEnumerateInstanceVersion"))
         return (PFN_vkVoidFunction)enumerate_instance_version;
     if (!strcmp(name, "vkCreateInstance"))
-        return (PFN_vkVoidFunction)hal->CreateInstance;
+        return (PFN_vkVoidFunction)create_instance;
     if (!strcmp(name, "vkEnumerateInstanceExtensionProperties"))
         return (PFN_vkVoidFunction)hal->EnumerateInstanceExtensionProperties;
-    /* No pNext/extension edits, handle translation, global current-device
-     * state, or substitutions for vendor command implementations. */
-    return hal->GetInstanceProcAddr(instance, name);
+    /* Instance-local lookup preserves the HAL's command/extension scope.
+     * Global queries have no object state. */
+    PFN_vkVoidFunction backend = instance ? hybris_icd_instance_proc(instance, name)
+                                         : hal->GetInstanceProcAddr(instance, name);
+    if (backend && !strcmp(name, "vkGetInstanceProcAddr"))
+        return (PFN_vkVoidFunction)vk_icdGetInstanceProcAddr;
+    return backend;
 }

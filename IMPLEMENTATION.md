@@ -356,3 +356,12 @@ reference, across three cycles. Runs `20260907T013843-a5cf04e4` and
 `20260907T013844-4eb30921` pass 52 / UNSUPPORTED 2, including optional Vulkan
 tools. Per-access initialization overhead, signals/reentrancy, IE first-touch
 and static slot reclamation remain unverified. G03 is still partial.
+
+
+The optional standard-loader ICD now owns per-instance resolver/destructor
+records with unique generations and bounded opt-in lifecycle diagnostics.
+This establishes an instance ownership boundary without changing HAL handles
+or input chains. Device/resource generations, the replacement frontend's
+state and arbitrary draw/resource evidence remain open. Allocator failure,
+custom-callback reentrancy and malformed HAL behavior still need dedicated
+coverage beyond the existing concurrent lifecycle workload.
