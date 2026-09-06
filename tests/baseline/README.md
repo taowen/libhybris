@@ -927,3 +927,28 @@ Fresh probe builds and runs `20260907T024950-483553de` (29854870) and
 `20260907T024950-5322ce95` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
 including VVL, SyncVal and capture/replay. Native and hybris both pass the
 expanded EGL lifecycle workload on each device. Production code is unchanged.
+
+## Monotonic condition-variable aliases
+
+The hybris-only `cond-clock` workload calls actual bionic imports of
+pthread_cond_timedwait_monotonic and pthread_cond_timedwait_monotonic_np from
+the fixture DSO. Each uses a fresh default-clock condition variable and a
+CLOCK_MONOTONIC deadline 100 ms ahead, retaining that deadline across spurious
+wakeups. It requires ETIMEDOUT and at least 90 ms elapsed, then unlocks and
+destroys the objects. The existing process watchdog bounds excessive delays;
+there is no tight upper timing assertion sensitive to host scheduling.
+
+Before the fix, `20260907T025314-ab535531` on 29854870 returns ETIMEDOUT in
+64,583 ns and 38,177 ns respectively: the aliases went to ordinary timedwait,
+which treated monotonic timestamps as expired realtime deadlines. Both now use
+the clockwait bridge with CLOCK_MONOTONIC explicitly. Fixture declarations
+retain these legacy imports even where the current NDK hides their prototypes.
+
+This verifies process-private absolute timeout behavior for the two aliases.
+It does not validate wall-clock changes, relative waits, shared conditions,
+cancellation, wakeup fairness or all condition-variable attribute combinations.
+
+Fresh library/probe builds and runs `20260907T025449-9f0dad86` (29854870) and
+`20260907T025449-72b2c6b8` (KB2000) each complete **61 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. Both aliases return ETIMEDOUT after
+about 100–102 ms on both devices. Common's 130 dynamic exports are unchanged.

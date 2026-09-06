@@ -2,6 +2,32 @@
 #include <pthread.h>
 #include <stddef.h>
 #include <time.h>
+#include <errno.h>
+
+extern "C" int pthread_cond_timedwait_monotonic_np(pthread_cond_t *, pthread_mutex_t *, const struct timespec *);
+extern "C" int pthread_cond_timedwait_monotonic(pthread_cond_t *, pthread_mutex_t *, const struct timespec *);
+
+extern "C" int cond_fixture_timeout(unsigned variant, long long *elapsed) {
+    pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    struct timespec start, end, deadline;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    deadline = start;
+    deadline.tv_nsec += 100000000;
+    if (deadline.tv_nsec >= 1000000000) { ++deadline.tv_sec; deadline.tv_nsec -= 1000000000; }
+    int error = pthread_mutex_lock(&mutex);
+    if (error) return error;
+    do {
+        error = variant ? pthread_cond_timedwait_monotonic_np(&cond, &mutex, &deadline)
+                        : pthread_cond_timedwait_monotonic(&cond, &mutex, &deadline);
+    } while (!error); // Allow spurious wakeups, retaining the original deadline.
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    *elapsed = (end.tv_sec-start.tv_sec)*1000000000LL + end.tv_nsec-start.tv_nsec;
+    int unlock = pthread_mutex_unlock(&mutex);
+    int destroy_cond = pthread_cond_destroy(&cond);
+    int destroy_mutex = pthread_mutex_destroy(&mutex);
+    return unlock ? unlock : destroy_cond ? destroy_cond : destroy_mutex ? destroy_mutex : error;
+}
 struct Local {
     int value = 73;
     void (*callback)(void *, int) = nullptr;

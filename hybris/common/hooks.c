@@ -996,6 +996,14 @@ static int _hybris_hook_pthread_cond_clockwait(pthread_cond_t *cond, pthread_mut
     return pthread_cond_clockwait(realcond, realmutex, clock_id, abstime);
 }
 
+static int _hybris_hook_pthread_cond_timedwait_monotonic(pthread_cond_t *cond,
+                pthread_mutex_t *mutex, const struct timespec *abstime)
+{
+    /* These Android aliases always use an absolute monotonic deadline,
+     * independent of the condition variable's default realtime clock. */
+    return _hybris_hook_pthread_cond_clockwait(cond, mutex, CLOCK_MONOTONIC, abstime);
+}
+
 static int _hybris_hook_pthread_cond_timedwait(pthread_cond_t *cond,
                 pthread_mutex_t *mutex, const struct timespec *abstime)
 {
@@ -3032,8 +3040,8 @@ static struct _hook hooks_common[] = {
     HOOK_INDIRECT(pthread_cond_wait),
     HOOK_INDIRECT(pthread_cond_clockwait),
     HOOK_INDIRECT(pthread_cond_timedwait),
-    HOOK_TO(pthread_cond_timedwait_monotonic, _hybris_hook_pthread_cond_timedwait),
-    HOOK_TO(pthread_cond_timedwait_monotonic_np, _hybris_hook_pthread_cond_timedwait),
+    HOOK_TO(pthread_cond_timedwait_monotonic, _hybris_hook_pthread_cond_timedwait_monotonic),
+    HOOK_TO(pthread_cond_timedwait_monotonic_np, _hybris_hook_pthread_cond_timedwait_monotonic),
     HOOK_INDIRECT(pthread_cond_timedwait_relative_np),
     HOOK_DIRECT_NO_DEBUG(pthread_key_delete),
     HOOK_DIRECT_NO_DEBUG(pthread_getname_np),

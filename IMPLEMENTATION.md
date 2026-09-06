@@ -24,6 +24,13 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+The two Android cond_timedwait_monotonic aliases now call the clockwait bridge
+with CLOCK_MONOTONIC, rather than interpreting uptime deadlines with the
+condition variable's realtime default. A bionic fixture calls both aliases
+with 100 ms deadlines and checks ETIMEDOUT after a non-immediate interval.
+Shared conditions, clock jumps, relative deadlines and cancellation remain
+outside this process-private timeout check.
+
 The EGL lifecycle workload now draws with distinct blue/yellow fragment
 programs in the isolated contexts after each clear. Current program and
 vertex-attribute state persist across switches, thread migration and concurrent
