@@ -500,3 +500,32 @@ does not prove context sharing, simultaneous rendering, shader state migration,
 actual Android TLS destructor execution, handle generation management, FD
 leak freedom or full GLES2 conformance. Failure paths terminate the isolated
 probe process rather than attempting recovery of a failed EGL context.
+
+
+## Widget draw evidence
+
+The optional capture case now requests the indexed draw's descriptors and raw
+color attachment before/after the draw, in addition to the transfer output.
+`draw_evidence.py` accepts only the fixed single-draw fixture. It checks actual
+capture command ordering, updated set versus bound set, vertex/fragment UBO
+buffer ID/offset/range, all 272 UBO bytes against the fixture input, the draw's
+image ID versus the transfer source and all 1024 attachment bytes against the
+uncaptured image. The before-image hashes must match between the two bindings;
+after-image hashes must differ. Pipeline/layout/set/buffer/image IDs and
+resource hashes are included in `comparison.json` with `first_divergent_draw`.
+
+Runs `20260907T011825-d445bf4a` (29854870) and `20260907T011826-0c3dc4d9` (KB2000)
+each completed **48 PASS / 2 UNSUPPORTED**, with capture enabled and VVL disabled.
+Both identify draw block 60 in submit 66: set 24 uses buffer 5 for the correct
+binding and buffer 6 for the injected binding; range is 272 and attachment is
+image 11. The image is identical before draw and diverges after draw; the
+attachment and final copy match exactly for each binding. These IDs are local
+to each capture, not persistent runtime handles or generation IDs.
+
+This extends fixed-fixture evidence only. It is not a general draw-state
+tracker, arbitrary first-failure search, shader reflection validator, bounded
+application capture or WSI/present lineage. Index buffer dumping is requested
+from the tool but is not a verified output of this fixture. No new capture
+format or replay engine is introduced. The preliminary checker run caught a
+local begin/draw tuple-order bug; only the final runs above pass the completed
+association checks. Older capture passes alone do not prove this new gate.

@@ -172,3 +172,13 @@ three destroy/recreate cycles. Native and hybris pass on both devices in
 2 UNSUPPORTED each; optional Vulkan tools not selected). Shared contexts,
 parallel rendering, TLS destructor observation and generation tracking remain
 open. The workload is an independent probe, with no production ABI changes.
+
+
+Draw evidence batch: the fixed capture workload now checks draw-time UBO
+content (272 bytes), descriptor set/buffer/range associations, attachment
+before/after and attachment-to-copy identity. Both device runs
+`20260907T011825-d445bf4a` and `20260907T011826-0c3dc4d9` complete 48 PASS /
+2 UNSUPPORTED with capture, locating the injected fixture's pixel divergence
+at draw 60, submit 66. This is one draw with capture-local IDs, not runtime
+generation tracking or arbitrary application failure localization. G06/G12
+remain partial/open at their wider scope.

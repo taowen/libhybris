@@ -4,6 +4,7 @@ import hashlib
 import shlex
 import shutil
 import subprocess
+from draw_evidence import check_draw
 
 
 def stage_tools(install, stage, metadata, sha256):
@@ -78,16 +79,26 @@ def run_capture(shell, adb, remote, out, command, metadata, kill_remote):
         pull(folder + '/calls.jsonl', local / 'calls.jsonl')
         calls = [json.loads(line) for line in (local / 'calls.jsonl').read_text().splitlines()]
         begins, copies, submits = [], [], []
+        draws, passes = [], []
         for call in calls:
             name = call.get('function', {}).get('name')
             if name == 'vkBeginCommandBuffer': begins.append(call['index'])
             if name == 'vkCmdCopyImageToBuffer': copies.append(call['index'])
             if name == 'vkQueueSubmit': submits.append(call['index'])
+            if name == 'vkCmdDrawIndexed': draws.append(call['index'])
+            if name in ('vkCmdBeginRenderPass', 'vkCmdEndRenderPass'): passes.append(call['index'])
         if not len(begins) == len(copies) == len(submits) == 1:
             raise ValueError('capture does not contain the expected widget submission')
         if not begins[0] < copies[0] < submits[0]:
             raise ValueError('unexpected fixture command ordering')
         request = {'BeginCommandBuffer': begins, 'Transfer': [[copies[0]]], 'QueueSubmit': submits}
+        if len(draws) != 1 or len(passes) != 2 or not begins[0] < passes[0] < draws[0] < passes[1] < copies[0]:
+            raise ValueError('unexpected widget draw/render-pass structure')
+        request.update({'Draw': [draws], 'RenderPass': [[passes]],
+                        'DumpResourcesOptions': {'DumpBeforeCommand': True,
+                                                 'DumpAllDescriptors': True,
+                                                 'DumpRawImages': True,
+                                                 'DumpVertexIndexBuffer': True}})
         (local / 'dump.json').write_text(json.dumps(request, indent=2) + '\n')
         subprocess.run(adb + ['push', str(local / 'dump.json'), remote + '/' + folder + '/dump.json'],
                        check=True, stdout=subprocess.DEVNULL, timeout=35)
@@ -119,10 +130,17 @@ def run_capture(shell, adb, remote, out, command, metadata, kill_remote):
         recorded = (local / 'captured' / name).read_bytes()
         if len(expected) != 1024 or recorded != expected or dumped.read_bytes() != expected:
             raise ValueError('full-image capture/replay mismatch for ' + binding)
+        draw_evidence = check_draw(calls, json.loads(reports[0].read_text()), local, evidence,
+                                   binding, (begins[0], draws[0], submits[0]), expected)
         comparisons.append({'binding': binding, 'copy_index': copies[0],
+                            'draw_evidence': draw_evidence,
                             'submit_index': submits[0], 'replay_file': regions[0]['file'],
                             'rgba_sha256': hashlib.sha256(expected).hexdigest()})
+    good, bad = (item['draw_evidence'] for item in comparisons)
+    if good['before_sha256'] != bad['before_sha256'] or good['after_sha256'] == bad['after_sha256']:
+        raise ValueError('injected binding did not first diverge at the draw attachment')
     (evidence / 'comparison.json').write_text(json.dumps({
+        'first_divergent_draw': bad['draw_index'],
         'status': 'PASS', 'images': comparisons, 'bytes_per_image': 1024,
         'comparison': 'reference == captured == replay; exact RGBA8 bytes',
         'scope': 'two fixed headless widget submissions; no WSI/present'}, indent=2) + '\n')
