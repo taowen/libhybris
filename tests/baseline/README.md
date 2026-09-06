@@ -1467,3 +1467,20 @@ Final rebuilt runs `20260907T050734-e0b8a4ba` (29854870) and
 `20260907T050734-8e590b0e` (KB2000) each report 92 PASS, 2 UNSUPPORTED,
 including concurrent initialization, VVL/SyncVal and both capture gates.
 Common's 130 defined dynamic exports are unchanged.
+
+
+Hook callback publication uses an atomic pointer with one snapshot per query;
+missing-symbol diagnostic IDs use atomic decrement and the optional unhooked
+logging flag uses pthread_once. These are code-review fixes, with existing
+concurrent initialization and GPU runs used for regression. The hidden lookup
+prevents the direct standalone lookup probe used in the earlier attempt; no
+isolated callback-replacement or missing-symbol race reproduction is claimed.
+The setter does not synchronize the lifetime of a callback already selected
+by another thread; this is now documented in the public header. Concurrent
+environment mutation, SDK configuration and trace internals remain outside
+this batch.
+
+Rebuilt runs `20260907T051103-85f6e8df` (29854870) and
+`20260907T051103-d3f11c87` (KB2000) each report 92 PASS, 2 UNSUPPORTED,
+including concurrent init/lifecycle, VVL/SyncVal and both capture gates.
+Common's 130 defined dynamic exports remain unchanged.

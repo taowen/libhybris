@@ -521,3 +521,11 @@ Existing concurrent linker initialization and GPU cases provide regression
 coverage, not an isolated first-sort race reproduction. The internal lookup
 is not exported. Mutable lookup configuration and diagnostics are outside
 this change.
+
+
+Hook callback publication now uses release/acquire atomics and each lookup
+keeps one local callback snapshot. Missing pthread-hook diagnostic IDs use
+atomic decrement, and the unhooked-log option is initialized with pthread_once.
+Replacing a callback does not wait for an in-flight invocation; code/context
+lifetime remains caller-owned. This removes these specific shared-state races
+without claiming global lookup/configuration thread safety.

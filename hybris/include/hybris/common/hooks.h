@@ -27,6 +27,8 @@ extern "C" {
 
 typedef void* (*hybris_hook_cb)(const char *symbol_name, const char *requester);
 
+/* Replacement is atomic. A lookup already in flight may call the previous
+ * callback; the caller must keep its code and context alive until quiescent. */
 void hybris_set_hook_callback(hybris_hook_cb callback);
 
 #ifdef __cplusplus

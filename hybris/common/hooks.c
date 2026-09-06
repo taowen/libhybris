@@ -1915,7 +1915,7 @@ static int hook_cmp(const void *a, const void *b)
 
 void hybris_set_hook_callback(hybris_hook_cb callback)
 {
-    hook_callback = callback;
+    __atomic_store_n(&hook_callback, callback, __ATOMIC_RELEASE);
 }
 
 #define HOOKS_SIZE(hooks) \
@@ -1929,6 +1929,13 @@ int strendswith(const char *str, const char *suffix, int lensuf)
 }
 
 static pthread_once_t hook_sort_once = PTHREAD_ONCE_INIT;
+static pthread_once_t unhooked_log_once = PTHREAD_ONCE_INIT;
+static int do_print_unhooked;
+
+static void initialize_unhooked_log(void)
+{
+    do_print_unhooked = !getenv("HYBRIS_DONT_PRINT_SYMBOLS_WITHOUT_HOOK");
+}
 
 static void sort_hook_tables(void)
 {
@@ -1942,16 +1949,16 @@ static void sort_hook_tables(void)
 void* hybris_get_hooked_symbol(const char *sym, const char *requester)
 {
     static intptr_t counter = -1;
-    static int do_print_unhooked = -1;
     void *found = NULL;
     struct _hook key;
     int sdk_version = -1;
 
     /* First check if we have a callback registered which could
      * give us a context specific hook implementation */
-    if (hook_callback)
+    hybris_hook_cb callback = __atomic_load_n(&hook_callback, __ATOMIC_ACQUIRE);
+    if (callback)
     {
-        found = hook_callback(sym, requester);
+        found = callback(sym, requester);
         if (found)
             return (void*) found;
     }
@@ -2004,17 +2011,15 @@ void* hybris_get_hooked_symbol(const char *sym, const char *requester)
         if (strcmp(sym, "pthread_sigmask") == 0)
            return NULL;
         /* not safe */
-        counter--;
+        intptr_t missing_id = __atomic_sub_fetch(&counter, 1, __ATOMIC_RELAXED);
         // If you're experiencing a crash later on check the address of the
         // function pointer being call. If it matches the printed counter
         // value here then you can easily find out which symbol is missing.
-        LOGD("Missing hook for pthread symbol %s (counter %" PRIiPTR ")\n", sym, counter);
-        return (void *) counter;
+        LOGD("Missing hook for pthread symbol %s (counter %" PRIiPTR ")\n", sym, missing_id);
+        return (void *) missing_id;
     }
 
-    if (do_print_unhooked == -1) {
-        do_print_unhooked = !getenv("HYBRIS_DONT_PRINT_SYMBOLS_WITHOUT_HOOK");
-    }
+    pthread_once(&unhooked_log_once, initialize_unhooked_log);
 
     if (do_print_unhooked) {
         LOGD("Could not find a hook for symbol %s", sym);
