@@ -17,6 +17,7 @@ int caps2_probe(void) {
   V(vkEnumeratePhysicalDevices);
   V(vkDestroyInstance);
   V(vkGetPhysicalDeviceProperties);
+  V(vkGetPhysicalDeviceProperties2);
   V(vkGetPhysicalDeviceFeatures);
   V(vkGetPhysicalDeviceFeatures2);
   V(vkGetPhysicalDeviceQueueFamilyProperties);
@@ -31,6 +32,7 @@ int caps2_probe(void) {
   if (props.apiVersion < VK_API_VERSION_1_1) {
     p_vkDestroyInstance(instance, NULL); return 3;
   }
+  if (properties2_check(p_vkGetPhysicalDeviceProperties2, pd, &props)) return 2;
   VkPhysicalDeviceShaderDrawParametersFeatures draw = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES};
   VkPhysicalDeviceSamplerYcbcrConversionFeatures ycbcr = {

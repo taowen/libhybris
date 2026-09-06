@@ -283,8 +283,8 @@ try:
                 _, key, value = line.split()
                 values[key] = json.loads(value)
         if values:
-            if mode == 'caps':
-                capabilities[backend] = {'values': values, 'probe_exit_code': code}
+            if mode in ('caps', 'caps2'):
+                capabilities.setdefault(mode, {})[backend] = {'values': values, 'probe_exit_code': code}
             (a.out / (name + '-values.json')).write_text(json.dumps(values, indent=2) + '\n')
         registry_entries = []
         for line in decoded.splitlines():
@@ -347,10 +347,12 @@ try:
         print('icd-capture-replay', status, 'exit=' + str(code), flush=True)
 finally:
     try:
-        if 'native' in capabilities:
-            native = capabilities['native']
+        for mode, observations in capabilities.items():
+            if 'native' not in observations:
+                continue
+            native = observations['native']
             differences = {}
-            for backend, observation in capabilities.items():
+            for backend, observation in observations.items():
                 if backend == 'native':
                     continue
                 effective = observation['values']
@@ -359,9 +361,10 @@ finally:
                     'differences': {key: {'native': native['values'].get(key), 'effective': effective.get(key)}
                                     for key in sorted(native['values'].keys() | effective.keys())
                                     if native['values'].get(key) != effective.get(key)}}
-            (a.out / 'capability-differences.json').write_text(json.dumps({
-                'scope': 'first enumerated physical device; core features/limits/sparse, device extensions and ten format queries',
-                'image_query': '2D, optimal, sampled|transfer-dst, flags=0',
+            (a.out / ('capability-differences.json' if mode == 'caps' else 'capability2-differences.json')).write_text(json.dumps({
+                'scope': ('first enumerated physical device; core features/limits/sparse, device extensions and ten format queries'
+                          if mode == 'caps' else 'first physical device; features2 and properties2 core 1.1 chains'),
+                'image_query': '2D, optimal, sampled|transfer-dst, flags=0' if mode == 'caps' else None,
                 'note': 'Query differences are observations, not proof of rendering semantics or a workaround reason.',
                 'comparisons': differences}, indent=2) + '\n')
         # Hash Android files named by the snapshots. These are path-content

@@ -24,6 +24,13 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+`caps2` now compares six core 1.1 property structures as a chain and as
+individual queries: ID, subgroup, point clipping, multiview, protected memory
+and maintenance3. Core properties compare named fields against the legacy
+query; LUID fields compare only when valid. The runner preserves features2/
+properties2 backend differences separately in capability2-differences.json.
+These queries do not prove shader behavior or supported resource sizes.
+
 Swapchain creation now resolves the real function through the current device's
 GDPA before preparing WSI. Wayland surface creation/destruction resolves through
 the current instance's GIPA instead of caching the first instance's pointer;

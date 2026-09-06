@@ -819,3 +819,27 @@ Fresh library/probe builds and runs `20260907T023048-a47b0dd0` (29854870) and
 `20260907T023048-bac54a9c` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
 including VVL, SyncVal and capture/replay. The negative case returns -7 on both
 devices. Vulkan's 643 dynamic exports remain unchanged.
+
+## Core 1.1 properties2 chains
+
+`caps2` also queries ID, subgroup, point-clipping, multiview, protected-memory
+and maintenance3 properties together, then each separately. It compares named
+fields, UUID bytes and valid LUID fields between the two forms. The core
+properties returned by properties2 must match the legacy query: five scalar
+identity fields, device name, pipeline cache UUID and 119 limits/sparse fields.
+The latter comparisons are generated from the existing pinned vk.xml rather
+than comparing structure padding. Invalid LUID/node-mask contents are ignored.
+
+The runner writes `capability2-differences.json` independently of the original
+capability comparison. On these devices caps2 saves 198 values: the previous
+66 feature values plus 119 core limit/sparse values and 13 property-chain
+values. The legacy identity comparison is an internal assertion, not an extra
+set of CAP_VALUE records.
+
+Fresh probe builds and runs `20260907T023635-4bd7451e` (29854870) and
+`20260907T023635-1e550e61` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. Native, hybris and ICD pass the
+expanded caps2 workload, and all 198 recorded values agree within each device.
+Production code is unchanged in this batch. These observations do not prove
+subgroup operations, multiview rendering, protected allocations, maximum-sized
+resource creation, all extension property chains or full Vulkan 1.1 semantics.
