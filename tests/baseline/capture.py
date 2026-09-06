@@ -5,6 +5,7 @@ import shlex
 import shutil
 import subprocess
 from draw_evidence import check_draw
+from shader_evidence import check_pipeline
 
 
 def stage_tools(install, stage, metadata, sha256):
@@ -76,7 +77,7 @@ def run_capture(shell, adb, remote, out, command, metadata, kill_remote, dynamic
             'GFXRECON_CAPTURE_FILE=$PWD/' + folder + '/widget.gfxr '
             'GFXRECON_CAPTURE_FILE_TIMESTAMP=false ' + captured)
         run('convert-' + binding, tool_env + tool_launch + './capture-tools/gfxrecon-convert '
-            '--format jsonl --output ' + folder + '/calls.jsonl ' + folder + '/widget.gfxr')
+            '--include-binaries --format jsonl --output ' + folder + '/calls.jsonl ' + folder + '/widget.gfxr')
         pull(folder + '/calls.jsonl', local / 'calls.jsonl')
         calls = [json.loads(line) for line in (local / 'calls.jsonl').read_text().splitlines()]
         begins, copies, submits = [], [], []
@@ -133,8 +134,11 @@ def run_capture(shell, adb, remote, out, command, metadata, kill_remote, dynamic
             raise ValueError('full-image capture/replay mismatch for ' + binding)
         draw_evidence = check_draw(calls, json.loads(reports[0].read_text()), local, evidence,
                                    binding, (begins[0], draws[0], submits[0]), expected, dynamic=dynamic)
+        pipeline_evidence = check_pipeline(calls, local, out / 'shader-reference',
+                                           draw_evidence['pipeline'], draw_evidence['layout'],
+                                           draw_evidence['descriptor_type'])
         comparisons.append({'binding': binding, 'copy_index': copies[0],
-                            'draw_evidence': draw_evidence,
+                            'draw_evidence': draw_evidence, 'pipeline_evidence': pipeline_evidence,
                             'submit_index': submits[0], 'replay_file': regions[0]['file'],
                             'rgba_sha256': hashlib.sha256(expected).hexdigest()})
     good, bad = (item['draw_evidence'] for item in comparisons)

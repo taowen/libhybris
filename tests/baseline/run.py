@@ -13,6 +13,7 @@ import sys
 import time
 import uuid
 from capture import stage_tools, run_capture
+from shader_evidence import stage_shader_reference
 from instance_evidence import instance_evidence
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -246,6 +247,7 @@ if a.icd_hal:
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)
+    stage_shader_reference(a.bundle, a.out, metadata)
 
 results = []
 capabilities = {}

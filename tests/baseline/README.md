@@ -1311,3 +1311,29 @@ Offline checks against the first run's evidence changed a bind offset by 64
 and separately replaced the dump offset with the descriptor base alone;
 both manipulations were rejected for both bindings. The originals were not
 modified (`dynamic-offset-negative-check.log` records the checks).
+
+
+Capture conversion now includes shader binaries. `shader_evidence.py` checks
+that the bound graphics pipeline refers to the recorded successful creation,
+its pipeline/set layout matches the bound descriptor set allocation, and its
+render pass and two shader modules match the draw. Captured vertex/fragment
+SPIR-V must exactly match the embedded arrays from the probe build's source
+snapshot (whose hashes are checked against `probe-manifest.json`). The run
+retains this reference under `shader-reference/`, validates captured modules
+with host `spirv-val --target-env vulkan1.0`, and writes `spirv-dis` output.
+Each binding's `pipeline.json` links capture module IDs, entry points, code
+sizes, SHA-256, binaries, disassembly and interface decoration lines to its
+pipeline/layout. Both capture variants require host `spirv-val` and
+`spirv-dis`; their paths/versions are recorded in device metadata.
+These are API-input modules, not driver-transformed shaders. Captured
+pipelineCache=0 is reported as such, not treated as a driver cache key.
+The association remains limited to this fixed single-pipeline fixture.
+
+Rebuilt runs `20260907T043031-8348f666` (29854870) and
+`20260907T043031-d81a25f9` (KB2000) each report 88 PASS, 2 UNSUPPORTED.
+All ordinary/dynamic good/alternate capture variants validate the same
+1832-byte vertex and 1092-byte fragment binaries against the build snapshot,
+with matching pipeline/layout/module associations. VVL/SyncVal remains clean.
+Offline mutations of the first run's pipeline layout and vertex module
+(replaced with the fragment module) are rejected for all four captures;
+`shader-negative-check.log` records these checks without changing originals.

@@ -462,3 +462,11 @@ case. Its evidence checker matches the dump's effective offset to descriptor
 base plus bound dynamic offset and verifies complete UBO bytes, attachments
 and final copy pixels. This extends fixed-fixture diagnostics; general draw
 state reconstruction, template histories and runtime generations remain open.
+
+
+Captured widget pipeline evidence now includes actual API-input shader
+binaries, validated against the probe build snapshot, plus SPIR-V validation,
+disassembly/decorations and pipeline/layout/module associations. A dedicated
+shader_evidence module keeps those checks separate from draw-resource checks.
+Driver-internal shader transforms/cache keys and general pipeline histories
+remain unobserved.
