@@ -32,6 +32,11 @@ python3 tests/baseline/run.py --serial 29854870 \
   --manifest /path/to/manifest.json
 ```
 
+`val` needs `libVkLayer_khronos_validation.so` (Android arm64). The runner
+looks at `--vk-layer`, `VK_LAYER_SO`, the parent ardesk fetch cache, then
+`tools/fetch-vk-validation-layer.sh`. Production devices cannot use
+`/data/local/debug/vulkan`; the probe chains the layer itself.
+
 The runner uses a unique `/data/local/tmp/libhybris-baseline-<run-id>` directory,
 verifies the supplied manifest against all staged ELF files (including SONAME
 aliases), rejects unknown platform plugins, and kills its recorded probe PID
@@ -55,6 +60,26 @@ the runner returns nonzero for FAIL/TIMEOUT/CRASH.
   Ordinary proc queries preserve backend resolution; only WSI/frontend commands
   substitute local wrappers. Equal function addresses are not required.
   This is not yet a generated per-device compatibility dispatch layer.
+- Life: two devices from one instance, destroy/recreate, second `dlopen`,
+  and two threads creating/destroying devices and fences. This is not a
+  generation-tagged object table.
+- Caps: print limits and advertised features; reject enabling an
+  unadvertised feature or unknown extension without stripping `pNext`.
+  Passthrough only: native and effective capabilities are the same.
+- UBO: 272-byte widget-shaped std140 block (parameters@0, MVP@192,
+  checker@256, srgb@268), 12 vertices / 18 indices, `gl_VertexIndex`.
+  The fragment shader encodes those fields into the pixel. A second
+  pass injects the wrong UBO binding and must fail at draw-readback.
+  The injected UBO keeps an identity MVP so the triangle still covers
+  the mid pixel; only fragment-encoded fields change.
+- Val: load Khronos validation by an explicit layer chain (this
+  production device has no `/data/local/debug/vulkan`). A legal
+  create/destroy must report zero ERROR messages; a zero-size buffer
+  must be caught. Native bionic can `dlopen` the Android VVL.
+  glibc+hybris cannot: host `dlopen` misses `libdl.so`, and
+  `android_dlopen` misses `libvideoinfo.so`. That is recorded as
+  UNSUPPORTED, not a silent pass. This is not ICD JSON /
+  `VK_LAYER_PATH` / capture.
 - EGL/GLES: pbuffer contexts requesting ES 2 and ES 3; clear and read back;
   compile/link a simple shader pair, draw a triangle using a VBO, verify a pixel.
   Drivers may return a higher compatible context version.
@@ -78,6 +103,10 @@ from `1599593`; exact binaries and dirty-source status are recorded per run.
 |---|---|---|---|
 | Vulkan GPU fill + fence + readback | PASS | PASS | PASS |
 | Dispatch (link/dlsym/GIPA/GDPA) | PASS | PASS | PASS |
+| Life (2 devices, recreate, 2 threads) | PASS | PASS | — |
+| Caps (refuse unadvertised, passthrough) | PASS | PASS | — |
+| UBO 272B + injected wrong binding | PASS | PASS | — |
+| Validation explicit layer chain | PASS | unsupported (bionic VVL) | — |
 | GLES context request 2, clear + shader draw + readback | PASS | PASS | — |
 | GLES context request 3, clear + shader draw + readback | PASS | PASS | — |
 | Native desktop GL context | unsupported | unsupported | — |
@@ -89,6 +118,17 @@ geometry/tessellation=true, shaderFloat64=false, shaderInt64=false.
 These are capability queries, not tests of those features. Neither native nor
 hybris advertises desktop OpenGL through EGL.
 
+UBO mid-pixel on `20260906T220523-143b92fe`: correct binding
+`255,255,0,255`; injected wrong binding `0,255,255,0` with first-fail
+stage `draw-readback`. Caps print `maxPush=128`, `minUboAlign=64`,
+`dynamic_rendering=0`, `synchronization2=0`; unadvertised
+`shaderFloat64` and a fake extension are refused (`-8` / `-7`).
+Native `val` on `20260906T222654-ba6c51f0`: legal instance/device
+produced 0 ERROR; injected `vkCreateBuffer(size=0)` reported
+`VUID-VkBufferCreateInfo-size-00912`. hybris `val` returned
+UNSUPPORTED (`libdl.so` via glibc `dlopen`, `libvideoinfo.so` via
+`android_dlopen`).
+
 The 2026-09-06 rerun used `tools/build-aarch64.sh` from this checkout. Results
 are under `build/results/<run-id>/` with `manifest.json` ELF hashes. Rebuild
 the library when measuring a different source revision; a dirty working tree
@@ -98,5 +138,6 @@ is recorded as `source_dirty` in the manifest.
 
 The manifest verification was checked against modified, missing, extra and
 redirected SONAME ELF files. The 2026-09-06 review rerun on 29854870 passed
-10 checks with 2 expected desktop-GL unsupported results. No new GPU feature
-or window-system compatibility is implied by these results.
+17 checks with 3 expected unsupported results (desktop GL ×2, hybris
+validation layer load). No new GPU feature or window-system
+compatibility is implied by these results.

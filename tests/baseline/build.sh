@@ -47,13 +47,13 @@ if [[ -z "${GLIBC_CC:-}" ]]; then
             --volume "$(cd "$BUNDLE" && pwd):/out:Z" \
             --volume "$HOST_HYBRIS:/hybris:Z" \
             --workdir /src "$BUILDER_IMAGE" \
-            aarch64-linux-gnu-gcc -O2 -Wall -Wextra $cflags \
-            probe.c -ldl ${libs//$HYBRIS_LIB//hybris} -o "/out/$(basename "$dest")"
+            aarch64-linux-gnu-gcc -O2 -Wall -Wextra -pthread $cflags \
+            probe.c -ldl -lpthread ${libs//$HYBRIS_LIB//hybris} -o "/out/$(basename "$dest")"
     }
 else
     compile_glibc() {
         local cflags="$1" libs="$2" dest="$3"
-        "$GLIBC_CC" -O2 -Wall -Wextra $cflags probe.c -ldl $libs -o "$dest"
+        "$GLIBC_CC" -O2 -Wall -Wextra -pthread $cflags probe.c -ldl -lpthread $libs -o "$dest"
     }
 fi
 
@@ -61,5 +61,5 @@ compile_glibc "" "" "$BUNDLE/probe-glibc"
 compile_glibc "-DHYBRIS_PROBE_LINKED" \
     "-L$HYBRIS_LIB -Wl,-rpath-link,$HYBRIS_LIB -lvulkan" \
     "$BUNDLE/probe-glibc-linked"
-"$BIONIC_CC" -O2 -Wall -Wextra probe.c -ldl -o "$BUNDLE/probe-bionic"
+"$BIONIC_CC" -O2 -Wall -Wextra -pthread probe.c -ldl -o "$BUNDLE/probe-bionic"
 echo "$BUNDLE"

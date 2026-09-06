@@ -151,10 +151,10 @@ P0 = 兼容增强前的基础；P1 = 直接影响目标应用；P2 = 基础可�
 |---|---|---|
 | G01 / P0 | 自主构建与产物来源：现有 probe 自主运行，但库构建仍借父项目；旧 staging 残留 | 独立 checkout 构建脚本，固定 headers/compiler/deps；运行 manifest 含实际 ELF hash/build-id、driver、设备、env、quirk 配置；干净安装无旧平台库。**已落地** `tools/build-aarch64.sh` + `tools/manifest.py` + runner 唯一 run-id；仍依赖父项目 builder 镜像或 `BUILDER_IMAGE`，android-headers 仍在仓库外 |
 | G02 / P0 | 全入口 dispatch、core/KHR alias、每 instance/device 的真实函数表；避免包装绕过/递归/NULL branch | 从 vk.xml 固定版本生成覆盖表；同一测试经 link/dlsym/GIPA/GDPA；BeginRendering/KHR、Submit2/KHR 等按启用能力测试；未支持符号符合规范，不假成功。**部分落地**：普通 GIPA/GDPA 查询保留 backend 对 instance/device 的解析结果，只替换必要前端/WSI 包装；新增作用域/未启用扩展的负例测试，未解析的直接导出调用有错误信息。尚无 vk.xml 生成覆盖表，也无完整 per-instance/device 兼容状态表 |
-| G03 / P0 | 多线程/多 context/多 device 与对象生命周期 | 并行 create/destroy、二次 init/dlopen、回调、线程 TLS、handle 重用有回归；对象 state 按 generation 识别，不能用进程全局单一 current device |
-| G04 / P0 | 标准 loader/layer/tool 接入 | 一个已知非法小测试被 validation 捕获；一个合法小测试零新增错误；完成一帧 capture/replay 且像素匹配，再扩大到应用 |
-| G05 / P0 | 能力宣告与模拟实现脱节 | features/features2、properties/limits、extensions、format/image-format query 与 CreateDevice enable 路径一致；保留原始/有效能力差异及原因；不通过删整个 pNext 重试 |
-| G06 / P0 | 缺少 draw→资源→image 诊断链 | 用 Mali-shaped UBO 测试导出绑定/布局/内容/attachment 证据；人工注入错误 binding 后能定位首个错误 draw |
+| G03 / P0 | 多线程/多 context/多 device 与对象生命周期 | 并行 create/destroy、二次 init/dlopen、回调、线程 TLS、handle 重用有回归；对象 state 按 generation 识别，不能用进程全局单一 current device。**部分落地**：baseline `life` 覆盖双 device、destroy/recreate、二次 dlopen、两线程 create/destroy；尚无 generation 对象表，也无 GLES 多 context |
+| G04 / P0 | 标准 loader/layer/tool 接入 | 一个已知非法小测试被 validation 捕获；一个合法小测试零新增错误；完成一帧 capture/replay 且像素匹配，再扩大到应用。**部分落地**：`20260906T222654-ba6c51f0` 上 native 显式 chain 合法路径 0 ERROR，零长度 buffer 报 `VUID-VkBufferCreateInfo-size-00912`。生产机没有 `/data/local/debug/vulkan`，`VK_LAYER_PATH` 不是 Android loader 发现路径。hybris 不能加载 Android 版 VVL（glibc `dlopen` 缺 `libdl.so`，`android_dlopen` 缺 `libvideoinfo.so`）。尚无 glibc VVL、ICD JSON、标准 loader 隐式层、capture/replay |
+| G05 / P0 | 能力宣告与模拟实现脱节 | features/features2、properties/limits、extensions、format/image-format query 与 CreateDevice enable 路径一致；保留原始/有效能力差异及原因；不通过删整个 pNext 重试。**部分落地**：baseline `caps` 拒绝未广告 feature / 未知扩展；passthrough 下 native=effective。尚无 features2 全链和兼容层差集记录 |
+| G06 / P0 | 缺少 draw→资源→image 诊断链 | 用 Mali-shaped UBO 测试导出绑定/布局/内容/attachment 证据；人工注入错误 binding 后能定位首个错误 draw。**部分落地**：`20260906T220523-143b92fe` 上 native/hybris 正确路径像素 `255,255,0,255`，错 binding 保留单位矩阵后像素 `0,255,255,0`，首个失败阶段 `draw-readback`。尚无 descriptor generation / FBO 合成分叉 |
 | G07 / P1 | Vulkan 格式兼容：BC、scaled vertex、swizzle/sRGB 等 | 每个已支持格式有 golden/reference 像素；格式查询、创建、view、copy、readback、mip/layer/subregion 一致；单独覆盖 BC6H/BC7，未实现则不广告 |
 | G08 / P1 | SPIR-V 转换缺少语义保证 | 转换前后 spirv-val、反射 diff、源码/二进制 hash、pipeline specialization key；clip/cull 真使用时正确模拟或拒绝，不能简单删除改变画面 |
 | G09 / P1 | 同步/内存模型模拟不完整 | non-coherent atom 对齐与 flush/invalidate、staging 多次写入、submit 重用、queue 间信号、wait-before-signal、销毁时仍在飞行测试；没有全局 wait-idle 才能运行的默认实现 |
@@ -239,7 +239,8 @@ descriptor 需在实际使用时重建有效状态：普通 set、copy/update te
 
 - 已区分 EGL_CLIENT_APIS 不支持桌面 GL 与 EGL 调用失败；仍需要更完整的 context/profile 特性测试。
 - ES3 专用功能、Vulkan shader/texture、多线程尚未测；基础三角形不足以代表 API feature level。
-- 标准 validation/capture 接入（G04）和 draw→image 诊断链（G06）未做。
+- 标准 validation/capture 接入（G04）尚未完成；native `val` 证明显式 chain 能捕获非法 API，hybris 仍缺可加载的 layer（bionic VVL 依赖树不完整，也没有 glibc VVL）。不是 ICD/loader 隐式层或 capture。
+- G03/G05/G06 只有 headless probe，没有 generation 对象表或完整证据包。
 
 ## 8. 建议实施顺序与完成门槛
 

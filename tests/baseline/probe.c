@@ -5,11 +5,20 @@
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include <dlfcn.h>
+#include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <vulkan/vulkan.h>
+
+#ifndef VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT
+#define VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT 1000128004
+#endif
+
+#include "shaders/widget.vert.inc"
+#include "shaders/widget.frag.inc"
 
 __attribute__((constructor))
 static void probe_watchdog(void) {
@@ -39,6 +48,33 @@ static void *sym(void *h, const char *n) {
     if (r != VK_SUCCESS)                                                       \
       return 2;                                                                \
   } while (0)
+
+static int find_mem(const VkPhysicalDeviceMemoryProperties *mp, uint32_t bits,
+                    VkMemoryPropertyFlags need) {
+  for (uint32_t i = 0; i < mp->memoryTypeCount; i++)
+    if ((bits & (1u << i)) &&
+        (mp->memoryTypes[i].propertyFlags & need) == need)
+      return (int)i;
+  return -1;
+}
+
+static int pick_queue(PFN_vkGetPhysicalDeviceQueueFamilyProperties qf,
+                      VkPhysicalDevice pd, uint32_t *qi) {
+  uint32_t count = 0;
+  qf(pd, &count, NULL);
+  VkQueueFamilyProperties *q = calloc(count, sizeof(*q));
+  qf(pd, &count, q);
+  uint32_t i = 0;
+  while (i < count &&
+         !(q[i].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)))
+    i++;
+  free(q);
+  if (i == count)
+    return 0;
+  *qi = i;
+  return 1;
+}
+
 static int eglprobe(int version) {
   void *e = dlopen(getenv("PROBE_EGL") ?: "libEGL.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!e) {
@@ -553,6 +589,1214 @@ static int dispatch_probe(void) {
   return 0;
 }
 
+struct life_ctx {
+  PFN_vkGetInstanceProcAddr gip;
+  VkInstance instance;
+  VkPhysicalDevice pd;
+  uint32_t qi;
+  int rc;
+};
+
+static void *life_worker(void *arg) {
+  struct life_ctx *c = arg;
+  PFN_vkCreateDevice create_dev =
+      (PFN_vkCreateDevice)c->gip(c->instance, "vkCreateDevice");
+  PFN_vkDestroyDevice destroy_dev =
+      (PFN_vkDestroyDevice)c->gip(c->instance, "vkDestroyDevice");
+  PFN_vkGetDeviceQueue getq =
+      (PFN_vkGetDeviceQueue)c->gip(c->instance, "vkGetDeviceQueue");
+  PFN_vkCreateFence create_fence =
+      (PFN_vkCreateFence)c->gip(c->instance, "vkCreateFence");
+  PFN_vkDestroyFence destroy_fence =
+      (PFN_vkDestroyFence)c->gip(c->instance, "vkDestroyFence");
+  if (!create_dev || !destroy_dev || !getq || !create_fence || !destroy_fence) {
+    c->rc = 2;
+    return NULL;
+  }
+  for (int i = 0; i < 8; i++) {
+    float priority = 1;
+    VkDeviceQueueCreateInfo qc = {.sType =
+                                      VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                  .queueFamilyIndex = c->qi,
+                                  .queueCount = 1,
+                                  .pQueuePriorities = &priority};
+    VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                             .queueCreateInfoCount = 1,
+                             .pQueueCreateInfos = &qc};
+    VkDevice device;
+    if (create_dev(c->pd, &dc, NULL, &device) != VK_SUCCESS) {
+      c->rc = 2;
+      return NULL;
+    }
+    VkQueue queue;
+    getq(device, c->qi, 0, &queue);
+    VkFence fence;
+    VkFenceCreateInfo fc = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    if (create_fence(device, &fc, NULL, &fence) != VK_SUCCESS) {
+      destroy_dev(device, NULL);
+      c->rc = 2;
+      return NULL;
+    }
+    destroy_fence(device, fence, NULL);
+    destroy_dev(device, NULL);
+  }
+  c->rc = 0;
+  return NULL;
+}
+
+static int life_probe(void) {
+  void *h =
+      dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!h) {
+    printf("Vulkan dlopen: %s\n", dlerror());
+    return 2;
+  }
+  PFN_vkGetInstanceProcAddr gip = sym(h, "vkGetInstanceProcAddr");
+  VkInstance instance = VK_NULL_HANDLE;
+  V(vkCreateInstance);
+  VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+                           .pApplicationName = "hybris-life",
+                           .apiVersion = VK_API_VERSION_1_0};
+  VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                             .pApplicationInfo = &app};
+  CHECK(p_vkCreateInstance(&ci, NULL, &instance));
+  V(vkDestroyInstance);
+  V(vkEnumeratePhysicalDevices);
+  V(vkGetPhysicalDeviceQueueFamilyProperties);
+  V(vkCreateDevice);
+  V(vkDestroyDevice);
+  uint32_t count = 0;
+  CHECK(p_vkEnumeratePhysicalDevices(instance, &count, NULL));
+  if (!count)
+    return 2;
+  VkPhysicalDevice devices[4];
+  if (count > 4)
+    count = 4;
+  CHECK(p_vkEnumeratePhysicalDevices(instance, &count, devices));
+  uint32_t qi = 0;
+  if (!pick_queue(p_vkGetPhysicalDeviceQueueFamilyProperties, devices[0], &qi))
+    return 2;
+  /* Second init / dlopen of the same library must not replace the live
+   * instance table with a process-global current device. */
+  void *again =
+      dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!again) {
+    printf("second dlopen failed: %s\n", dlerror());
+    return 2;
+  }
+  PFN_vkGetInstanceProcAddr gip2 = dlsym(again, "vkGetInstanceProcAddr");
+  PFN_vkDestroyInstance destroy2 =
+      (PFN_vkDestroyInstance)gip2(instance, "vkDestroyInstance");
+  if (!destroy2) {
+    printf("second dlopen lost instance dispatch\n");
+    return 2;
+  }
+  float priority = 1;
+  VkDeviceQueueCreateInfo qc = {.sType =
+                                    VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                .queueFamilyIndex = qi,
+                                .queueCount = 1,
+                                .pQueuePriorities = &priority};
+  VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                           .queueCreateInfoCount = 1,
+                           .pQueueCreateInfos = &qc};
+  VkDevice a, b;
+  CHECK(p_vkCreateDevice(devices[0], &dc, NULL, &a));
+  CHECK(p_vkCreateDevice(devices[0], &dc, NULL, &b));
+  if (a == b) {
+    printf("two CreateDevice calls returned the same handle\n");
+    return 2;
+  }
+  printf("DEVICES a=%p b=%p\n", (void *)a, (void *)b);
+  p_vkDestroyDevice(a, NULL);
+  p_vkDestroyDevice(b, NULL);
+  /* Recreate after destroy: a reused handle must not carry old state. */
+  VkDevice c;
+  CHECK(p_vkCreateDevice(devices[0], &dc, NULL, &c));
+  p_vkDestroyDevice(c, NULL);
+  struct life_ctx workers[2] = {
+      {.gip = gip, .instance = instance, .pd = devices[0], .qi = qi, .rc = 1},
+      {.gip = gip, .instance = instance, .pd = devices[0], .qi = qi, .rc = 1},
+  };
+  pthread_t t[2];
+  pthread_create(&t[0], NULL, life_worker, &workers[0]);
+  pthread_create(&t[1], NULL, life_worker, &workers[1]);
+  pthread_join(t[0], NULL);
+  pthread_join(t[1], NULL);
+  if (workers[0].rc || workers[1].rc) {
+    printf("LIFE thread rc=%d %d\n", workers[0].rc, workers[1].rc);
+    return 2;
+  }
+  p_vkDestroyInstance(instance, NULL);
+  /* Recreate instance after destroy; TLS / constructor leftover must not
+   * prevent a second init. */
+  VkInstance second = VK_NULL_HANDLE;
+  CHECK(p_vkCreateInstance(&ci, NULL, &second));
+  p_vkDestroyInstance(second, NULL);
+  printf("LIFE PASS\n");
+  return 0;
+}
+
+static int caps_probe(void) {
+  void *h =
+      dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!h) {
+    printf("Vulkan dlopen: %s\n", dlerror());
+    return 2;
+  }
+  PFN_vkGetInstanceProcAddr gip = sym(h, "vkGetInstanceProcAddr");
+  VkInstance instance = VK_NULL_HANDLE;
+  V(vkCreateInstance);
+  VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+                           .pApplicationName = "hybris-caps",
+                           .apiVersion = VK_API_VERSION_1_0};
+  VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                             .pApplicationInfo = &app};
+  CHECK(p_vkCreateInstance(&ci, NULL, &instance));
+  V(vkDestroyInstance);
+  V(vkEnumeratePhysicalDevices);
+  V(vkGetPhysicalDeviceFeatures);
+  V(vkGetPhysicalDeviceProperties);
+  V(vkGetPhysicalDeviceQueueFamilyProperties);
+  V(vkGetPhysicalDeviceFormatProperties);
+  V(vkEnumerateDeviceExtensionProperties);
+  V(vkCreateDevice);
+  V(vkDestroyDevice);
+  V(vkGetDeviceProcAddr);
+  uint32_t count = 0;
+  CHECK(p_vkEnumeratePhysicalDevices(instance, &count, NULL));
+  VkPhysicalDevice devices[4];
+  if (count > 4)
+    count = 4;
+  CHECK(p_vkEnumeratePhysicalDevices(instance, &count, devices));
+  VkPhysicalDevice pd = devices[0];
+  VkPhysicalDeviceProperties props;
+  VkPhysicalDeviceFeatures features;
+  p_vkGetPhysicalDeviceProperties(pd, &props);
+  p_vkGetPhysicalDeviceFeatures(pd, &features);
+  printf("CAPS gpu=%s api=%u.%u.%u maxPush=%u minUboAlign=%u BC=%u\n",
+         props.deviceName, VK_VERSION_MAJOR(props.apiVersion),
+         VK_VERSION_MINOR(props.apiVersion), VK_VERSION_PATCH(props.apiVersion),
+         props.limits.maxPushConstantsSize,
+         (unsigned)props.limits.minUniformBufferOffsetAlignment,
+         features.textureCompressionBC);
+  uint32_t ext_count = 0;
+  CHECK(p_vkEnumerateDeviceExtensionProperties(pd, NULL, &ext_count, NULL));
+  VkExtensionProperties *ext = calloc(ext_count, sizeof(*ext));
+  CHECK(p_vkEnumerateDeviceExtensionProperties(pd, NULL, &ext_count, ext));
+  int has_dyn = 0, has_sync2 = 0;
+  for (uint32_t i = 0; i < ext_count; i++) {
+    if (!strcmp(ext[i].extensionName, "VK_KHR_dynamic_rendering"))
+      has_dyn = 1;
+    if (!strcmp(ext[i].extensionName, "VK_KHR_synchronization2"))
+      has_sync2 = 1;
+  }
+  printf("CAPS ext dynamic_rendering=%d synchronization2=%d count=%u\n",
+         has_dyn, has_sync2, ext_count);
+  free(ext);
+  VkFormatProperties fmt;
+  p_vkGetPhysicalDeviceFormatProperties(pd, VK_FORMAT_R8G8B8A8_UNORM, &fmt);
+  printf("CAPS R8G8B8A8_UNORM linear=0x%x optimal=0x%x buffer=0x%x\n",
+         fmt.linearTilingFeatures, fmt.optimalTilingFeatures,
+         fmt.bufferFeatures);
+  uint32_t qi = 0;
+  if (!pick_queue(p_vkGetPhysicalDeviceQueueFamilyProperties, pd, &qi))
+    return 2;
+  float priority = 1;
+  VkDeviceQueueCreateInfo qc = {.sType =
+                                    VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                .queueFamilyIndex = qi,
+                                .queueCount = 1,
+                                .pQueuePriorities = &priority};
+  /* Refuse a feature the query said is false. Do not strip pNext and retry. */
+  if (!features.shaderFloat64) {
+    VkPhysicalDeviceFeatures want = features;
+    want.shaderFloat64 = VK_TRUE;
+    VkDeviceCreateInfo bad = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                              .queueCreateInfoCount = 1,
+                              .pQueueCreateInfos = &qc,
+                              .pEnabledFeatures = &want};
+    VkDevice rejected = VK_NULL_HANDLE;
+    VkResult br = p_vkCreateDevice(pd, &bad, NULL, &rejected);
+    printf("CAPS enable-unadvertised-float64 = %d\n", br);
+    if (br == VK_SUCCESS) {
+      printf("CAPS advertised shaderFloat64=0 but CreateDevice accepted it\n");
+      p_vkDestroyDevice(rejected, NULL);
+      return 2;
+    }
+  }
+  const char *ghost = "VK_KHR_hybris_not_a_real_extension";
+  VkDeviceCreateInfo ghost_ci = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                                 .queueCreateInfoCount = 1,
+                                 .pQueueCreateInfos = &qc,
+                                 .enabledExtensionCount = 1,
+                                 .ppEnabledExtensionNames = &ghost};
+  VkDevice ghost_dev = VK_NULL_HANDLE;
+  VkResult gr = p_vkCreateDevice(pd, &ghost_ci, NULL, &ghost_dev);
+  printf("CAPS enable-unknown-extension = %d\n", gr);
+  if (gr == VK_SUCCESS) {
+    printf("CAPS unknown extension was accepted\n");
+    p_vkDestroyDevice(ghost_dev, NULL);
+    return 2;
+  }
+  VkDeviceCreateInfo ok_ci = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                              .queueCreateInfoCount = 1,
+                              .pQueueCreateInfos = &qc,
+                              .pEnabledFeatures = &features};
+  VkDevice device;
+  CHECK(p_vkCreateDevice(pd, &ok_ci, NULL, &device));
+  PFN_vkGetDeviceProcAddr gdp =
+      (PFN_vkGetDeviceProcAddr)gip(instance, "vkGetDeviceProcAddr");
+  if (has_dyn && gdp(device, "vkCmdBeginRenderingKHR") == NULL)
+    printf("CAPS dynamic_rendering advertised but GDPA null (passthrough)\n");
+  if (!has_dyn && gdp(device, "vkCmdBeginRenderingKHR") != NULL) {
+    printf("CAPS dynamic_rendering not enumerated but GDPA present\n");
+    p_vkDestroyDevice(device, NULL);
+    return 2;
+  }
+  p_vkDestroyDevice(device, NULL);
+  p_vkDestroyInstance(instance, NULL);
+  printf("CAPS PASS native=%u effective=%u (passthrough; no compat rewrite)\n",
+         1, 1);
+  return 0;
+}
+
+enum {
+  kWidgetUboBytes = 272,
+  kWidgetIndexCount = 18,
+  kWidgetImage = 16
+};
+
+struct widget_ubo {
+  float parameters[12][4];
+  float mvp[16];
+  float checker[3];
+  int srgbTarget;
+};
+
+static int ubo_draw(int inject_wrong_binding) {
+  void *h =
+      dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!h) {
+    printf("Vulkan dlopen: %s\n", dlerror());
+    return 2;
+  }
+  PFN_vkGetInstanceProcAddr gip = sym(h, "vkGetInstanceProcAddr");
+  VkInstance instance = VK_NULL_HANDLE;
+  V(vkCreateInstance);
+  VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+                           .pApplicationName = "hybris-ubo",
+                           .apiVersion = VK_API_VERSION_1_0};
+  VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                             .pApplicationInfo = &app};
+  CHECK(p_vkCreateInstance(&ci, NULL, &instance));
+  V(vkDestroyInstance);
+  V(vkEnumeratePhysicalDevices);
+  V(vkGetPhysicalDeviceMemoryProperties);
+  V(vkGetPhysicalDeviceQueueFamilyProperties);
+  V(vkCreateDevice);
+  V(vkDestroyDevice);
+  V(vkGetDeviceQueue);
+  V(vkCreateBuffer);
+  V(vkDestroyBuffer);
+  V(vkGetBufferMemoryRequirements);
+  V(vkAllocateMemory);
+  V(vkFreeMemory);
+  V(vkBindBufferMemory);
+  V(vkMapMemory);
+  V(vkUnmapMemory);
+  V(vkCreateImage);
+  V(vkDestroyImage);
+  V(vkGetImageMemoryRequirements);
+  V(vkBindImageMemory);
+  V(vkCreateImageView);
+  V(vkDestroyImageView);
+  V(vkCreateShaderModule);
+  V(vkDestroyShaderModule);
+  V(vkCreateDescriptorSetLayout);
+  V(vkDestroyDescriptorSetLayout);
+  V(vkCreatePipelineLayout);
+  V(vkDestroyPipelineLayout);
+  V(vkCreateRenderPass);
+  V(vkDestroyRenderPass);
+  V(vkCreateFramebuffer);
+  V(vkDestroyFramebuffer);
+  V(vkCreateGraphicsPipelines);
+  V(vkDestroyPipeline);
+  V(vkCreateDescriptorPool);
+  V(vkDestroyDescriptorPool);
+  V(vkAllocateDescriptorSets);
+  V(vkUpdateDescriptorSets);
+  V(vkCreateCommandPool);
+  V(vkDestroyCommandPool);
+  V(vkAllocateCommandBuffers);
+  V(vkBeginCommandBuffer);
+  V(vkEndCommandBuffer);
+  V(vkCmdBeginRenderPass);
+  V(vkCmdEndRenderPass);
+  V(vkCmdBindPipeline);
+  V(vkCmdBindDescriptorSets);
+  V(vkCmdBindIndexBuffer);
+  V(vkCmdDrawIndexed);
+  V(vkCmdCopyImageToBuffer);
+  V(vkCmdPipelineBarrier);
+  V(vkCreateFence);
+  V(vkDestroyFence);
+  V(vkQueueSubmit);
+  V(vkWaitForFences);
+  uint32_t count = 0;
+  CHECK(p_vkEnumeratePhysicalDevices(instance, &count, NULL));
+  VkPhysicalDevice devices[4];
+  if (count > 4)
+    count = 4;
+  CHECK(p_vkEnumeratePhysicalDevices(instance, &count, devices));
+  VkPhysicalDevice pd = devices[0];
+  uint32_t qi = 0;
+  if (!pick_queue(p_vkGetPhysicalDeviceQueueFamilyProperties, pd, &qi))
+    return 2;
+  float priority = 1;
+  VkDeviceQueueCreateInfo qc = {.sType =
+                                    VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                .queueFamilyIndex = qi,
+                                .queueCount = 1,
+                                .pQueuePriorities = &priority};
+  VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                           .queueCreateInfoCount = 1,
+                           .pQueueCreateInfos = &qc};
+  VkDevice device;
+  CHECK(p_vkCreateDevice(pd, &dc, NULL, &device));
+  VkQueue queue;
+  p_vkGetDeviceQueue(device, qi, 0, &queue);
+  VkPhysicalDeviceMemoryProperties mp;
+  p_vkGetPhysicalDeviceMemoryProperties(pd, &mp);
+
+  struct widget_ubo good = {0};
+  struct widget_ubo bad = {0};
+  good.parameters[0][0] = 1.0f;
+  good.mvp[0] = 1.0f;
+  good.mvp[5] = 1.0f;
+  good.mvp[10] = 1.0f;
+  good.mvp[15] = 1.0f;
+  good.checker[0] = 0.0f;
+  good.srgbTarget = 1;
+  /* Keep identity MVP so the triangle still covers the readback pixel.
+   * Only fragment-encoded fields differ. */
+  bad.parameters[0][0] = 0.0f;
+  bad.mvp[0] = 1.0f;
+  bad.mvp[5] = 1.0f;
+  bad.mvp[10] = 1.0f;
+  bad.mvp[15] = 1.0f;
+  bad.checker[0] = 1.0f;
+  bad.srgbTarget = 0;
+  if (sizeof(good) != kWidgetUboBytes) {
+    printf("UBO sizeof=%zu expected=%d\n", sizeof(good), kWidgetUboBytes);
+    return 2;
+  }
+  printf("UBO layout parameters@0 mvp@192 checker@256 srgb@268 size=%zu\n",
+         sizeof(good));
+
+  VkBufferCreateInfo ubo_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                               .size = kWidgetUboBytes,
+                               .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
+  VkBuffer ubo_good, ubo_bad;
+  CHECK(p_vkCreateBuffer(device, &ubo_ci, NULL, &ubo_good));
+  CHECK(p_vkCreateBuffer(device, &ubo_ci, NULL, &ubo_bad));
+  VkMemoryRequirements ubo_mr;
+  p_vkGetBufferMemoryRequirements(device, ubo_good, &ubo_mr);
+  int umi = find_mem(&mp, ubo_mr.memoryTypeBits,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  if (umi < 0)
+    return 3;
+  VkMemoryAllocateInfo uma = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                              .allocationSize = ubo_mr.size,
+                              .memoryTypeIndex = (uint32_t)umi};
+  VkDeviceMemory umem_good, umem_bad;
+  CHECK(p_vkAllocateMemory(device, &uma, NULL, &umem_good));
+  CHECK(p_vkAllocateMemory(device, &uma, NULL, &umem_bad));
+  CHECK(p_vkBindBufferMemory(device, ubo_good, umem_good, 0));
+  CHECK(p_vkBindBufferMemory(device, ubo_bad, umem_bad, 0));
+  void *mapped;
+  CHECK(p_vkMapMemory(device, umem_good, 0, kWidgetUboBytes, 0, &mapped));
+  memcpy(mapped, &good, sizeof(good));
+  p_vkUnmapMemory(device, umem_good);
+  CHECK(p_vkMapMemory(device, umem_bad, 0, kWidgetUboBytes, 0, &mapped));
+  memcpy(mapped, &bad, sizeof(bad));
+  p_vkUnmapMemory(device, umem_bad);
+
+  uint16_t indices[kWidgetIndexCount] = {0, 1, 2, 0, 2, 3, 4, 5, 6,
+                                         4, 6, 7, 8, 9, 10, 8, 10, 11};
+  VkBufferCreateInfo ib_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                              .size = sizeof(indices),
+                              .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT};
+  VkBuffer ibo;
+  CHECK(p_vkCreateBuffer(device, &ib_ci, NULL, &ibo));
+  VkMemoryRequirements ib_mr;
+  p_vkGetBufferMemoryRequirements(device, ibo, &ib_mr);
+  int imi = find_mem(&mp, ib_mr.memoryTypeBits,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  VkMemoryAllocateInfo ima = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                              .allocationSize = ib_mr.size,
+                              .memoryTypeIndex = (uint32_t)imi};
+  VkDeviceMemory imem;
+  CHECK(p_vkAllocateMemory(device, &ima, NULL, &imem));
+  CHECK(p_vkBindBufferMemory(device, ibo, imem, 0));
+  CHECK(p_vkMapMemory(device, imem, 0, sizeof(indices), 0, &mapped));
+  memcpy(mapped, indices, sizeof(indices));
+  p_vkUnmapMemory(device, imem);
+
+  VkImageCreateInfo img_ci = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType = VK_IMAGE_TYPE_2D,
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .extent = {kWidgetImage, kWidgetImage, 1},
+      .mipLevels = 1,
+      .arrayLayers = 1,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+               VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+  VkImage image;
+  CHECK(p_vkCreateImage(device, &img_ci, NULL, &image));
+  VkMemoryRequirements img_mr;
+  p_vkGetImageMemoryRequirements(device, image, &img_mr);
+  int img_mi = find_mem(&mp, img_mr.memoryTypeBits,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  if (img_mi < 0)
+    img_mi = find_mem(&mp, img_mr.memoryTypeBits, 0);
+  VkMemoryAllocateInfo img_ma = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                                 .allocationSize = img_mr.size,
+                                 .memoryTypeIndex = (uint32_t)img_mi};
+  VkDeviceMemory img_mem;
+  CHECK(p_vkAllocateMemory(device, &img_ma, NULL, &img_mem));
+  CHECK(p_vkBindImageMemory(device, image, img_mem, 0));
+  VkImageViewCreateInfo view_ci = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = image,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+  VkImageView view;
+  CHECK(p_vkCreateImageView(device, &view_ci, NULL, &view));
+
+  VkBufferCreateInfo rb_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                              .size = kWidgetImage * kWidgetImage * 4,
+                              .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+  VkBuffer readback;
+  CHECK(p_vkCreateBuffer(device, &rb_ci, NULL, &readback));
+  VkMemoryRequirements rb_mr;
+  p_vkGetBufferMemoryRequirements(device, readback, &rb_mr);
+  int rmi = find_mem(&mp, rb_mr.memoryTypeBits,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  VkMemoryAllocateInfo rma = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                              .allocationSize = rb_mr.size,
+                              .memoryTypeIndex = (uint32_t)rmi};
+  VkDeviceMemory rmem;
+  CHECK(p_vkAllocateMemory(device, &rma, NULL, &rmem));
+  CHECK(p_vkBindBufferMemory(device, readback, rmem, 0));
+
+  VkShaderModuleCreateInfo vs_ci = {.sType =
+                                        VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                    .codeSize = kWidgetVertSpv_word_count * 4,
+                                    .pCode = kWidgetVertSpv};
+  VkShaderModuleCreateInfo fs_ci = {.sType =
+                                        VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                    .codeSize = kWidgetFragSpv_word_count * 4,
+                                    .pCode = kWidgetFragSpv};
+  VkShaderModule vs, fs;
+  CHECK(p_vkCreateShaderModule(device, &vs_ci, NULL, &vs));
+  CHECK(p_vkCreateShaderModule(device, &fs_ci, NULL, &fs));
+  VkDescriptorSetLayoutBinding bind = {
+      .binding = 0,
+      .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .descriptorCount = 1,
+      .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT};
+  VkDescriptorSetLayoutCreateInfo sl_ci = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .bindingCount = 1,
+      .pBindings = &bind};
+  VkDescriptorSetLayout set_layout;
+  CHECK(p_vkCreateDescriptorSetLayout(device, &sl_ci, NULL, &set_layout));
+  VkPipelineLayoutCreateInfo pl_ci = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .setLayoutCount = 1,
+      .pSetLayouts = &set_layout};
+  VkPipelineLayout pipeline_layout;
+  CHECK(p_vkCreatePipelineLayout(device, &pl_ci, NULL, &pipeline_layout));
+  VkAttachmentDescription att = {.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                 .samples = VK_SAMPLE_COUNT_1_BIT,
+                                 .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                 .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                                 .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                 .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                 .finalLayout =
+                                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL};
+  VkAttachmentReference color_ref = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+  VkSubpassDescription sub = {.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              .colorAttachmentCount = 1,
+                              .pColorAttachments = &color_ref};
+  VkRenderPassCreateInfo rp_ci = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+                                  .attachmentCount = 1,
+                                  .pAttachments = &att,
+                                  .subpassCount = 1,
+                                  .pSubpasses = &sub};
+  VkRenderPass rp;
+  CHECK(p_vkCreateRenderPass(device, &rp_ci, NULL, &rp));
+  VkFramebufferCreateInfo fb_ci = {.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                                   .renderPass = rp,
+                                   .attachmentCount = 1,
+                                   .pAttachments = &view,
+                                   .width = kWidgetImage,
+                                   .height = kWidgetImage,
+                                   .layers = 1};
+  VkFramebuffer fb;
+  CHECK(p_vkCreateFramebuffer(device, &fb_ci, NULL, &fb));
+  VkPipelineShaderStageCreateInfo stages[2] = {
+      {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+       .stage = VK_SHADER_STAGE_VERTEX_BIT,
+       .module = vs,
+       .pName = "main"},
+      {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+       .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+       .module = fs,
+       .pName = "main"}};
+  VkPipelineVertexInputStateCreateInfo vi = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+  VkPipelineInputAssemblyStateCreateInfo ia = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+  VkViewport vp = {0, 0, (float)kWidgetImage, (float)kWidgetImage, 0, 1};
+  VkRect2D sc = {{0, 0}, {kWidgetImage, kWidgetImage}};
+  VkPipelineViewportStateCreateInfo vps = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+      .viewportCount = 1,
+      .pViewports = &vp,
+      .scissorCount = 1,
+      .pScissors = &sc};
+  VkPipelineRasterizationStateCreateInfo rs = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+      .polygonMode = VK_POLYGON_MODE_FILL,
+      .cullMode = VK_CULL_MODE_NONE,
+      .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+      .lineWidth = 1};
+  VkPipelineMultisampleStateCreateInfo ms = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+  VkPipelineColorBlendAttachmentState cba = {.colorWriteMask = 0xf};
+  VkPipelineColorBlendStateCreateInfo blend = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+      .attachmentCount = 1,
+      .pAttachments = &cba};
+  VkGraphicsPipelineCreateInfo gp = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+      .stageCount = 2,
+      .pStages = stages,
+      .pVertexInputState = &vi,
+      .pInputAssemblyState = &ia,
+      .pViewportState = &vps,
+      .pRasterizationState = &rs,
+      .pMultisampleState = &ms,
+      .pColorBlendState = &blend,
+      .layout = pipeline_layout,
+      .renderPass = rp};
+  VkPipeline pipeline;
+  CHECK(p_vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gp, NULL,
+                                    &pipeline));
+  VkDescriptorPoolSize pool_size = {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1};
+  VkDescriptorPoolCreateInfo pool_ci = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .maxSets = 1,
+      .poolSizeCount = 1,
+      .pPoolSizes = &pool_size};
+  VkDescriptorPool pool;
+  CHECK(p_vkCreateDescriptorPool(device, &pool_ci, NULL, &pool));
+  VkDescriptorSetAllocateInfo sa = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = pool,
+      .descriptorSetCount = 1,
+      .pSetLayouts = &set_layout};
+  VkDescriptorSet set;
+  CHECK(p_vkAllocateDescriptorSets(device, &sa, &set));
+  VkDescriptorBufferInfo dbi = {.buffer = inject_wrong_binding ? ubo_bad
+                                                               : ubo_good,
+                                .offset = 0,
+                                .range = kWidgetUboBytes};
+  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                .dstSet = set,
+                                .dstBinding = 0,
+                                .descriptorCount = 1,
+                                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                .pBufferInfo = &dbi};
+  p_vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
+  printf("DRAW set=%p layout=%p pipeline=%p buffer=%p range=%u inject=%d\n",
+         (void *)set, (void *)pipeline_layout, (void *)pipeline,
+         (void *)dbi.buffer, kWidgetUboBytes, inject_wrong_binding);
+
+  VkCommandPoolCreateInfo cpc = {.sType =
+                                     VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                                 .queueFamilyIndex = qi};
+  VkCommandPool cpool;
+  CHECK(p_vkCreateCommandPool(device, &cpc, NULL, &cpool));
+  VkCommandBufferAllocateInfo cba_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = cpool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = 1};
+  VkCommandBuffer cb;
+  CHECK(p_vkAllocateCommandBuffers(device, &cba_info, &cb));
+  VkCommandBufferBeginInfo begin = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+  CHECK(p_vkBeginCommandBuffer(cb, &begin));
+  VkClearValue clear = {.color = {{0, 0, 0, 0}}};
+  VkRenderPassBeginInfo rpbi = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                                .renderPass = rp,
+                                .framebuffer = fb,
+                                .renderArea = {{0, 0}, {kWidgetImage, kWidgetImage}},
+                                .clearValueCount = 1,
+                                .pClearValues = &clear};
+  p_vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+  p_vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+  p_vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout,
+                            0, 1, &set, 0, NULL);
+  p_vkCmdBindIndexBuffer(cb, ibo, 0, VK_INDEX_TYPE_UINT16);
+  p_vkCmdDrawIndexed(cb, kWidgetIndexCount, 1, 0, 0, 0);
+  p_vkCmdEndRenderPass(cb);
+  VkBufferImageCopy copy = {
+      .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+      .imageExtent = {kWidgetImage, kWidgetImage, 1}};
+  p_vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           readback, 1, &copy);
+  CHECK(p_vkEndCommandBuffer(cb));
+  VkFence fence;
+  VkFenceCreateInfo fc = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+  CHECK(p_vkCreateFence(device, &fc, NULL, &fence));
+  VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                     .commandBufferCount = 1,
+                     .pCommandBuffers = &cb};
+  CHECK(p_vkQueueSubmit(queue, 1, &si, fence));
+  CHECK(p_vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+  uint8_t *pixels = NULL;
+  CHECK(p_vkMapMemory(device, rmem, 0, kWidgetImage * kWidgetImage * 4, 0,
+                      (void **)&pixels));
+  uint8_t *mid = pixels + (8 * kWidgetImage + 8) * 4;
+  printf("PIXEL mid rgba=%u,%u,%u,%u inject=%d\n", mid[0], mid[1], mid[2],
+         mid[3], inject_wrong_binding);
+  int match_good = mid[0] > 200 && mid[1] > 200 && mid[2] < 16 && mid[3] > 200;
+  int match_bad = mid[0] < 16 && mid[1] > 200 && mid[2] > 200 && mid[3] < 16;
+  p_vkUnmapMemory(device, rmem);
+  p_vkDestroyFence(device, fence, NULL);
+  p_vkDestroyCommandPool(device, cpool, NULL);
+  p_vkDestroyPipeline(device, pipeline, NULL);
+  p_vkDestroyFramebuffer(device, fb, NULL);
+  p_vkDestroyRenderPass(device, rp, NULL);
+  p_vkDestroyPipelineLayout(device, pipeline_layout, NULL);
+  p_vkDestroyDescriptorPool(device, pool, NULL);
+  p_vkDestroyDescriptorSetLayout(device, set_layout, NULL);
+  p_vkDestroyShaderModule(device, vs, NULL);
+  p_vkDestroyShaderModule(device, fs, NULL);
+  p_vkDestroyImageView(device, view, NULL);
+  p_vkDestroyImage(device, image, NULL);
+  p_vkDestroyBuffer(device, readback, NULL);
+  p_vkDestroyBuffer(device, ibo, NULL);
+  p_vkDestroyBuffer(device, ubo_good, NULL);
+  p_vkDestroyBuffer(device, ubo_bad, NULL);
+  p_vkFreeMemory(device, img_mem, NULL);
+  p_vkFreeMemory(device, rmem, NULL);
+  p_vkFreeMemory(device, imem, NULL);
+  p_vkFreeMemory(device, umem_good, NULL);
+  p_vkFreeMemory(device, umem_bad, NULL);
+  p_vkDestroyDevice(device, NULL);
+  p_vkDestroyInstance(instance, NULL);
+  if (inject_wrong_binding) {
+    if (!match_bad) {
+      printf("FIRST_FAIL_STAGE draw-readback (wrong binding not observed)\n");
+      return 2;
+    }
+    printf("FIRST_FAIL_STAGE draw-readback (injected wrong UBO binding)\n");
+    return 0;
+  }
+  if (!match_good) {
+    printf("UBO shader did not read parameters/mvp/srgb\n");
+    return 2;
+  }
+  printf("UBO shader-read PASS\n");
+  return 0;
+}
+
+static int ubo_probe(void) {
+  int good = ubo_draw(0);
+  if (good)
+    return good;
+  int bad = ubo_draw(1);
+  if (bad)
+    return bad;
+  printf("UBO PASS\n");
+  return 0;
+}
+
+/* Explicit Khronos layer chain. Production Android loaders look in
+ * /data/local/debug/vulkan, which shell UID cannot create. VK_LAYER_PATH
+ * is not an Android loader discovery path. */
+enum { kLayerLinkInfo = 0, kLoaderDataCallback = 1, kNegotiateIface = 1 };
+
+typedef struct val_instance_link {
+  struct val_instance_link *pNext;
+  PFN_vkGetInstanceProcAddr pfnNextGetInstanceProcAddr;
+  PFN_vkVoidFunction pfnNextGetPhysicalDeviceProcAddr;
+} val_instance_link;
+
+typedef struct val_instance_create {
+  VkStructureType sType;
+  const void *pNext;
+  int function;
+  union {
+    val_instance_link *pLayerInfo;
+    PFN_vkVoidFunction pfnSetInstanceLoaderData;
+  } u;
+} val_instance_create;
+
+typedef struct val_device_link {
+  struct val_device_link *pNext;
+  PFN_vkGetInstanceProcAddr pfnNextGetInstanceProcAddr;
+  PFN_vkGetDeviceProcAddr pfnNextGetDeviceProcAddr;
+} val_device_link;
+
+typedef struct val_device_create {
+  VkStructureType sType;
+  const void *pNext;
+  int function;
+  union {
+    val_device_link *pLayerInfo;
+    PFN_vkVoidFunction pfnSetDeviceLoaderData;
+  } u;
+} val_device_create;
+
+typedef struct val_negotiate {
+  int sType;
+  void *pNext;
+  uint32_t loaderLayerInterfaceVersion;
+  PFN_vkGetInstanceProcAddr pfnGetInstanceProcAddr;
+  PFN_vkGetDeviceProcAddr pfnGetDeviceProcAddr;
+  PFN_vkVoidFunction pfnGetPhysicalDeviceProcAddr;
+} val_negotiate;
+
+#ifndef VK_EXT_debug_utils
+typedef VkFlags VkDebugUtilsMessageSeverityFlagsEXT;
+typedef VkFlags VkDebugUtilsMessageTypeFlagsEXT;
+typedef VkFlags VkDebugUtilsMessengerCreateFlagsEXT;
+typedef enum VkDebugUtilsMessageSeverityFlagBitsEXT {
+  VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT = 0x00000100,
+  VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT = 0x00001000
+} VkDebugUtilsMessageSeverityFlagBitsEXT;
+typedef struct VkDebugUtilsMessengerCallbackDataEXT {
+  VkStructureType sType;
+  const void *pNext;
+  VkFlags flags;
+  const char *pMessageIdName;
+  int32_t messageIdNumber;
+  const char *pMessage;
+  uint32_t queueLabelCount;
+  const void *pQueueLabels;
+  uint32_t cmdBufLabelCount;
+  const void *pCmdBufLabels;
+  uint32_t objectCount;
+  const void *pObjects;
+} VkDebugUtilsMessengerCallbackDataEXT;
+typedef VkBool32 (*PFN_vkDebugUtilsMessengerCallbackEXT)(
+    VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT,
+    const VkDebugUtilsMessengerCallbackDataEXT *, void *);
+typedef struct VkDebugUtilsMessengerCreateInfoEXT {
+  VkStructureType sType;
+  const void *pNext;
+  VkDebugUtilsMessengerCreateFlagsEXT flags;
+  VkDebugUtilsMessageSeverityFlagsEXT messageSeverity;
+  VkDebugUtilsMessageTypeFlagsEXT messageType;
+  PFN_vkDebugUtilsMessengerCallbackEXT pfnUserCallback;
+  void *pUserData;
+} VkDebugUtilsMessengerCreateInfoEXT;
+#endif
+
+struct val_log {
+  int errors;
+  int warnings;
+};
+
+struct val_lib {
+  void *h;
+  void *(*lookup)(void *, const char *);
+};
+
+static void *val_host_sym(void *h, const char *n) { return dlsym(h, n); }
+
+static VkResult val_set_loader_data(void *parent, void *object) {
+  if (parent && object)
+    *(void **)object = *(void **)parent;
+  return VK_SUCCESS;
+}
+
+static VkResult val_set_instance_data(VkInstance instance, void *object) {
+  return val_set_loader_data(instance, object);
+}
+
+static VkResult val_set_device_data(VkDevice device, void *object) {
+  return val_set_loader_data(device, object);
+}
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL val_messenger(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT types,
+    const VkDebugUtilsMessengerCallbackDataEXT *data, void *user) {
+  (void)types;
+  struct val_log *log = user;
+  const char *lvl = "OTHER";
+  if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+    lvl = "ERROR";
+    log->errors++;
+  } else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+    lvl = "WARN";
+    log->warnings++;
+  } else {
+    return VK_FALSE;
+  }
+  printf("VAL %s %s: %s\n", lvl,
+         data && data->pMessageIdName ? data->pMessageIdName : "",
+         data && data->pMessage ? data->pMessage : "");
+  return VK_FALSE;
+}
+
+static int val_open_layer(const char *path, struct val_lib *out) {
+  char abs[512];
+  const char *use = path;
+  if (path[0] != '/') {
+    if (getcwd(abs, sizeof(abs) - 64)) {
+      size_t n = strlen(abs);
+      snprintf(abs + n, sizeof(abs) - n, "/%s", path);
+      use = abs;
+    }
+  }
+  memset(out, 0, sizeof(*out));
+  out->h = dlopen(use, RTLD_NOW | RTLD_LOCAL);
+  if (out->h) {
+    out->lookup = val_host_sym;
+    printf("VAL layer host-dlopen %s\n", use);
+    return 1;
+  }
+  printf("VAL host-dlopen: %s\n", dlerror());
+  /* Android VVL is a bionic ELF (libandroid/liblog/libdl). glibc dlopen
+   * cannot load it. android_dlopen may still fail if libandroid's
+   * dependency tree is incomplete in this shell process. */
+  void *hc = dlopen("libhybris-common.so.1", RTLD_NOW | RTLD_GLOBAL);
+  if (!hc)
+    hc = dlopen("libhybris-common.so", RTLD_NOW | RTLD_GLOBAL);
+  if (!hc) {
+    printf("VAL libhybris-common: %s\n", dlerror());
+    return 0;
+  }
+  void *(*adlopen)(const char *, int) = dlsym(hc, "android_dlopen");
+  void *(*adlsym)(void *, const char *) = dlsym(hc, "android_dlsym");
+  char *(*adlerr)(void) = dlsym(hc, "android_dlerror");
+  if (!adlopen || !adlsym) {
+    printf("VAL android_dlopen missing\n");
+    return 0;
+  }
+  out->h = adlopen(use, RTLD_NOW);
+  if (!out->h) {
+    printf("VAL android_dlopen: %s\n", adlerr && adlerr() ? adlerr() : "failed");
+    return 0;
+  }
+  out->lookup = adlsym;
+  printf("VAL layer android-dlopen %s\n", use);
+  return 1;
+}
+
+static PFN_vkGetInstanceProcAddr val_backend_gipa;
+
+static int val_is_loader_stype(VkStructureType t) {
+  return t == VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO ||
+         t == VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO ||
+         t == VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+}
+
+static const void *val_strip_loader_pnext(const void *pnext) {
+  const struct {
+    VkStructureType sType;
+    const void *pNext;
+  } *cur = pnext;
+  while (cur) {
+    if (val_is_loader_stype(cur->sType)) {
+      cur = cur->pNext;
+      continue;
+    }
+    return cur;
+  }
+  return NULL;
+}
+
+static int val_keep_instance_ext(const char *name) {
+  return name && strcmp(name, "VK_EXT_debug_utils") &&
+         strcmp(name, "VK_EXT_debug_report") &&
+         strcmp(name, "VK_EXT_validation_features") &&
+         strcmp(name, "VK_EXT_layer_settings") &&
+         strcmp(name, "VK_EXT_layer_settings_set");
+}
+
+static VkResult val_next_create_instance(const VkInstanceCreateInfo *ci,
+                                         const VkAllocationCallbacks *alloc,
+                                         VkInstance *out) {
+  PFN_vkCreateInstance real =
+      (PFN_vkCreateInstance)val_backend_gipa(NULL, "vkCreateInstance");
+  if (!real)
+    return VK_ERROR_INITIALIZATION_FAILED;
+  VkInstanceCreateInfo local = *ci;
+  const char *kept[16];
+  uint32_t n = 0;
+  for (uint32_t i = 0; i < ci->enabledExtensionCount && n < 16; i++) {
+    if (val_keep_instance_ext(ci->ppEnabledExtensionNames[i]))
+      kept[n++] = ci->ppEnabledExtensionNames[i];
+  }
+  local.enabledExtensionCount = n;
+  local.ppEnabledExtensionNames = n ? kept : NULL;
+  local.enabledLayerCount = 0;
+  local.ppEnabledLayerNames = NULL;
+  local.pNext = val_strip_loader_pnext(ci->pNext);
+  printf("VAL next-CreateInstance ext=%u pNext=%p\n", n, local.pNext);
+  return real(&local, alloc, out);
+}
+
+static PFN_vkVoidFunction val_next_gipa(VkInstance instance, const char *name) {
+  if (!name)
+    return NULL;
+  if (!strcmp(name, "vkGetInstanceProcAddr"))
+    return (PFN_vkVoidFunction)val_next_gipa;
+  if (!instance && !strcmp(name, "vkCreateInstance"))
+    return (PFN_vkVoidFunction)val_next_create_instance;
+  return val_backend_gipa(instance, name);
+}
+
+static int val_probe(void) {
+  const char *layer_path = getenv("PROBE_VK_LAYER");
+  if (!layer_path || !layer_path[0])
+    layer_path = "./libVkLayer_khronos_validation.so";
+  if (access(layer_path, R_OK) != 0) {
+    printf("VAL UNSUPPORTED missing layer %s\n", layer_path);
+    return 3;
+  }
+  void *vk = dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1",
+                    RTLD_NOW | RTLD_LOCAL);
+  if (!vk) {
+    printf("Vulkan dlopen: %s\n", dlerror());
+    return 2;
+  }
+  PFN_vkGetInstanceProcAddr backend_gipa = dlsym(vk, "vkGetInstanceProcAddr");
+  if (!backend_gipa) {
+    printf("MISSING backend vkGetInstanceProcAddr\n");
+    return 2;
+  }
+  val_backend_gipa = backend_gipa;
+  struct val_lib layer;
+  if (!val_open_layer(layer_path, &layer)) {
+    printf("VAL UNSUPPORTED layer load failed\n");
+    return 3;
+  }
+  typedef VkResult (*neg_fn)(val_negotiate *);
+  neg_fn negotiate = (neg_fn)layer.lookup(
+      layer.h, "vkNegotiateLoaderLayerInterfaceVersion");
+  PFN_vkGetInstanceProcAddr layer_gipa = NULL;
+  if (negotiate) {
+    val_negotiate n = {.sType = kNegotiateIface,
+                       .loaderLayerInterfaceVersion = 2};
+    VkResult nr = negotiate(&n);
+    printf("VAL negotiate rc=%d version=%u gipa=%p\n", nr,
+           n.loaderLayerInterfaceVersion, (void *)n.pfnGetInstanceProcAddr);
+    if (nr == VK_SUCCESS)
+      layer_gipa = n.pfnGetInstanceProcAddr;
+  }
+  if (!layer_gipa)
+    layer_gipa = (PFN_vkGetInstanceProcAddr)layer.lookup(
+        layer.h, "vkGetInstanceProcAddr");
+  if (!layer_gipa) {
+    printf("VAL layer GIPA missing\n");
+    return 2;
+  }
+  PFN_vkEnumerateInstanceLayerProperties enum_layers =
+      (PFN_vkEnumerateInstanceLayerProperties)layer_gipa(
+          NULL, "vkEnumerateInstanceLayerProperties");
+  if (enum_layers) {
+    uint32_t lc = 0;
+    enum_layers(&lc, NULL);
+    VkLayerProperties *lp = calloc(lc, sizeof(*lp));
+    if (lc)
+      enum_layers(&lc, lp);
+    for (uint32_t i = 0; i < lc; i++)
+      printf("VAL layer %s spec=%u\n", lp[i].layerName, lp[i].specVersion);
+    free(lp);
+  }
+  PFN_vkCreateInstance create_inst =
+      (PFN_vkCreateInstance)layer_gipa(NULL, "vkCreateInstance");
+  if (!create_inst) {
+    printf("VAL layer vkCreateInstance missing\n");
+    return 2;
+  }
+  struct val_log log = {0};
+  val_instance_link ilink = {
+      .pfnNextGetInstanceProcAddr = val_next_gipa};
+  val_instance_create idata = {
+      .sType = VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO,
+      .function = kLoaderDataCallback,
+      .u.pfnSetInstanceLoaderData = (PFN_vkVoidFunction)val_set_instance_data};
+  val_instance_create ilink_ci = {
+      .sType = VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO,
+      .pNext = &idata,
+      .function = kLayerLinkInfo,
+      .u.pLayerInfo = &ilink};
+  VkDebugUtilsMessengerCreateInfoEXT msg = {
+      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+      .pNext = &ilink_ci,
+      .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+      .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+      .pfnUserCallback = val_messenger,
+      .pUserData = &log};
+  VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+                           .pApplicationName = "hybris-val",
+                           .apiVersion = VK_API_VERSION_1_0};
+  const char *inst_ext = "VK_EXT_debug_utils";
+  VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                             .pNext = &msg,
+                             .pApplicationInfo = &app,
+                             .enabledExtensionCount = 1,
+                             .ppEnabledExtensionNames = &inst_ext};
+  VkInstance instance = VK_NULL_HANDLE;
+  CHECK(create_inst(&ci, NULL, &instance));
+  printf("VAL legal-instance errors=%d warnings=%d\n", log.errors,
+         log.warnings);
+  /* pNext messengers only cover CreateInstance/DestroyInstance. */
+  PFN_vkCreateDebugUtilsMessengerEXT create_msg =
+      (PFN_vkCreateDebugUtilsMessengerEXT)layer_gipa(
+          instance, "vkCreateDebugUtilsMessengerEXT");
+  PFN_vkDestroyDebugUtilsMessengerEXT destroy_msg =
+      (PFN_vkDestroyDebugUtilsMessengerEXT)layer_gipa(
+          instance, "vkDestroyDebugUtilsMessengerEXT");
+  VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
+  if (create_msg) {
+    VkDebugUtilsMessengerCreateInfoEXT persist = msg;
+    persist.pNext = NULL;
+    VkResult mr = create_msg(instance, &persist, NULL, &messenger);
+    printf("VAL CreateDebugUtilsMessengerEXT = %d messenger=%p\n", mr,
+           (void *)(uintptr_t)messenger);
+    if (mr != VK_SUCCESS)
+      messenger = VK_NULL_HANDLE;
+  } else {
+    printf("VAL vkCreateDebugUtilsMessengerEXT missing\n");
+  }
+  PFN_vkEnumeratePhysicalDevices enum_pd =
+      (PFN_vkEnumeratePhysicalDevices)layer_gipa(
+          instance, "vkEnumeratePhysicalDevices");
+  PFN_vkGetPhysicalDeviceQueueFamilyProperties qf =
+      (PFN_vkGetPhysicalDeviceQueueFamilyProperties)layer_gipa(
+          instance, "vkGetPhysicalDeviceQueueFamilyProperties");
+  PFN_vkCreateDevice create_dev =
+      (PFN_vkCreateDevice)layer_gipa(instance, "vkCreateDevice");
+  PFN_vkDestroyDevice destroy_dev =
+      (PFN_vkDestroyDevice)layer_gipa(instance, "vkDestroyDevice");
+  PFN_vkDestroyInstance destroy_inst =
+      (PFN_vkDestroyInstance)layer_gipa(instance, "vkDestroyInstance");
+  PFN_vkGetDeviceProcAddr backend_gdp =
+      (PFN_vkGetDeviceProcAddr)backend_gipa(instance, "vkGetDeviceProcAddr");
+  if (!enum_pd || !qf || !create_dev || !destroy_dev || !destroy_inst ||
+      !backend_gdp) {
+    printf("VAL missing chained instance dispatch\n");
+    return 2;
+  }
+  uint32_t count = 0;
+  CHECK(enum_pd(instance, &count, NULL));
+  if (!count)
+    return 2;
+  VkPhysicalDevice devices[4];
+  if (count > 4)
+    count = 4;
+  CHECK(enum_pd(instance, &count, devices));
+  uint32_t qi = 0;
+  if (!pick_queue(qf, devices[0], &qi))
+    return 2;
+  float priority = 1;
+  VkDeviceQueueCreateInfo qc = {.sType =
+                                    VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                .queueFamilyIndex = qi,
+                                .queueCount = 1,
+                                .pQueuePriorities = &priority};
+  val_device_link dlink = {.pfnNextGetInstanceProcAddr = val_next_gipa,
+                           .pfnNextGetDeviceProcAddr = backend_gdp};
+  val_device_create ddata = {
+      .sType = VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO,
+      .function = kLoaderDataCallback,
+      .u.pfnSetDeviceLoaderData = (PFN_vkVoidFunction)val_set_device_data};
+  val_device_create dlink_ci = {
+      .sType = VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO,
+      .pNext = &ddata,
+      .function = kLayerLinkInfo,
+      .u.pLayerInfo = &dlink};
+  VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                           .pNext = &dlink_ci,
+                           .queueCreateInfoCount = 1,
+                           .pQueueCreateInfos = &qc};
+  VkDevice device;
+  CHECK(create_dev(devices[0], &dc, NULL, &device));
+  printf("VAL legal-device errors=%d warnings=%d\n", log.errors, log.warnings);
+  if (log.errors) {
+    printf("VAL legal path produced ERROR messages\n");
+    destroy_dev(device, NULL);
+    if (destroy_msg && messenger)
+      destroy_msg(instance, messenger, NULL);
+    destroy_inst(instance, NULL);
+    return 2;
+  }
+  PFN_vkGetDeviceProcAddr layer_gdp =
+      (PFN_vkGetDeviceProcAddr)layer_gipa(instance, "vkGetDeviceProcAddr");
+  PFN_vkCreateBuffer create_buf = NULL;
+  if (layer_gdp)
+    create_buf = (PFN_vkCreateBuffer)layer_gdp(device, "vkCreateBuffer");
+  if (!create_buf) {
+    printf("VAL layer vkCreateBuffer missing\n");
+    destroy_dev(device, NULL);
+    if (destroy_msg && messenger)
+      destroy_msg(instance, messenger, NULL);
+    destroy_inst(instance, NULL);
+    return 2;
+  }
+  int errors_before = log.errors;
+  VkBufferCreateInfo bad = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                            .size = 0,
+                            .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+  VkBuffer buf = VK_NULL_HANDLE;
+  VkResult br = create_buf(device, &bad, NULL, &buf);
+  printf("VAL illegal-zero-size-buffer rc=%d errors=%d (before=%d)\n", br,
+         log.errors, errors_before);
+  if (buf && layer_gdp) {
+    PFN_vkDestroyBuffer destroy_buf =
+        (PFN_vkDestroyBuffer)layer_gdp(device, "vkDestroyBuffer");
+    if (destroy_buf)
+      destroy_buf(device, buf, NULL);
+  }
+  destroy_dev(device, NULL);
+  if (destroy_msg && messenger)
+    destroy_msg(instance, messenger, NULL);
+  destroy_inst(instance, NULL);
+  if (log.errors <= errors_before) {
+    printf("VAL illegal call was not reported\n");
+    return 2;
+  }
+  printf("VAL PASS legal_errors=0 illegal_errors=%d warnings=%d\n",
+         log.errors, log.warnings);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   setbuf(stdout, NULL);
   const char *mode = argc > 1 ? argv[1] : "vk";
@@ -566,6 +1810,14 @@ int main(int argc, char **argv) {
   int rc;
   if (!strcmp(mode, "dispatch"))
     rc = dispatch_probe();
+  else if (!strcmp(mode, "life"))
+    rc = life_probe();
+  else if (!strcmp(mode, "caps"))
+    rc = caps_probe();
+  else if (!strcmp(mode, "ubo"))
+    rc = ubo_probe();
+  else if (!strcmp(mode, "val"))
+    rc = val_probe();
   else if (!strcmp(mode, "vk"))
     rc = vkprobe();
   else
