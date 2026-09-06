@@ -678,3 +678,32 @@ Remaining limits: condition-variable/rwlock lazy initialization still needs
 review, process-shared behavior is unchanged, and lookup-lock performance,
 fork/signal reentrancy, timed/recursive/errorcheck mutex semantics and allocation
 failure injection are not validated by this normal-mutex workload.
+
+## Static rwlock first use and reader sharing
+
+`rwlock-init` reuses the lock workload in `probe_lock_init.c` with real rwlock
+imports from the bionic fixture. Four workers race to write-lock each of 32
+fresh static rwlocks; atomic occupancy must remain one inside every critical
+section. Then all four workers read-lock each rwlock simultaneously and meet
+at a barrier before any releases it. While all four readers hold the lock,
+trywrlock must return EBUSY. Every worker joins and every rwlock is destroyed.
+Thread creation failure releases and joins all started workers.
+
+Before the fix, run `20260907T020611-1e79682d` on 29854870 times out in
+`hybris-rwlock-init` (watchdog exit 142). Multiple threads could allocate and
+publish different backing locks for one Android static initializer. The bridge
+now rechecks and publishes under the existing host synchronization guard and
+uses that guard when reading the pointer for unlock. It releases the guard
+before acquiring or waiting on the user's rwlock. Allocation/init failures
+produce explicit fatal diagnostics; those failure paths are not injected.
+
+This covers process-private static write first use and subsequent read sharing.
+It does not establish writer fairness, timed/try-read behavior, process-shared
+rwlocks, fork/signal reentrancy, allocation cleanup on failure or lookup-lock
+performance. Condition-variable lazy initialization remains separate work.
+
+Fresh library/probe builds and runs `20260907T020805-a5abffff` (29854870) and
+`20260907T020805-1a903c3d` (KB2000) each complete **57 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. All four rwlock workers report zero
+errors on both devices; the prior mutex and concurrent Vulkan workloads also
+pass. The common library retains the same 130 dynamic exports.

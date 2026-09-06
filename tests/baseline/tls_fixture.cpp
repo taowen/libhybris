@@ -24,3 +24,11 @@ static MutexSlot mutex_slots[32] = {};
 extern "C" int mutex_fixture_lock(unsigned i) { return pthread_mutex_lock(&mutex_slots[i].mutex); }
 extern "C" int mutex_fixture_unlock(unsigned i) { return pthread_mutex_unlock(&mutex_slots[i].mutex); }
 extern "C" int mutex_fixture_destroy(unsigned i) { return pthread_mutex_destroy(&mutex_slots[i].mutex); }
+
+struct RWLockSlot { unsigned prefix; pthread_rwlock_t lock; };
+static RWLockSlot rwlock_slots[32] = {};
+extern "C" int rwlock_fixture_write(unsigned i) { return pthread_rwlock_wrlock(&rwlock_slots[i].lock); }
+extern "C" int rwlock_fixture_read(unsigned i) { return pthread_rwlock_rdlock(&rwlock_slots[i].lock); }
+extern "C" int rwlock_fixture_trywrite(unsigned i) { return pthread_rwlock_trywrlock(&rwlock_slots[i].lock); }
+extern "C" int rwlock_fixture_unlock(unsigned i) { return pthread_rwlock_unlock(&rwlock_slots[i].lock); }
+extern "C" int rwlock_fixture_destroy(unsigned i) { return pthread_rwlock_destroy(&rwlock_slots[i].lock); }

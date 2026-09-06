@@ -24,6 +24,13 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+Static rwlock first use now rechecks and publishes its backing pointer under
+the same short host guard used for static mutexes. The independent `rwlock-init`
+workload adds 32 fresh locks, four competing writers, four simultaneous readers
+and try-write rejection while readers hold each lock. The pre-fix library
+times out on this workload. This does not close condition-variable races,
+process-shared rwlock behavior, timed operations or fairness requirements.
+
 Vulkan platform loading and global function setup now each use pthread_once.
 The module is published after init_module returns; null/Wayland global create
 and enumeration pointers are resolved during setup instead of written lazily
@@ -36,7 +43,7 @@ initialization, including four-byte-aligned bionic storage. A bionic DSO
 workload checks 32 fresh static locks with four concurrent users. Two device
 runs each complete 56 PASS / 2 UNSUPPORTED; archived pre-fix common times out
 on the mutex workload, while the new common passes eight fresh processes.
-Condition-variable/rwlock lazy initialization, process-shared semantics and
+Condition-variable lazy initialization, process-shared semantics and
 lookup-lock performance still need separate work.
 
 Promoted TLS registration now replays every entry missing from the calling

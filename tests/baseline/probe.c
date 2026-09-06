@@ -29,7 +29,9 @@ int main(int argc, char **argv) {
   else if (!strcmp(mode, "vk-init"))
     rc = vulkan_init_probe();
   else if (!strcmp(mode, "mutex-init"))
-    rc = mutex_init_probe();
+    rc = lock_init_probe(0);
+  else if (!strcmp(mode, "rwlock-init"))
+    rc = lock_init_probe(1);
   else if (!strcmp(mode, "tls-dtor"))
     rc = tls_destructor_probe();
   else if (!strcmp(mode, "tls-bounds"))

@@ -46,7 +46,7 @@ int dispatch_probe(void);
 int life_probe(int unload);
 int init_probe(void);
 int vulkan_init_probe(void);
-int mutex_init_probe(void);
+int lock_init_probe(int rwlock);
 int tls_probe(void);
 int tls_bounds_probe(void);
 int tls_destructor_probe(void);
