@@ -4,37 +4,8 @@
 #include "shaders/widget.frag.inc"
 #include "shaders/widget-large.vert.inc"
 #include "shaders/widget-large.frag.inc"
-#include <stddef.h>
+#include "widget_fixture.h"
 
-
-enum {
-  kWidgetUboBytes = 272,
-  kWidgetIndexCount = 18,
-  kWidgetImage = 16
-};
-
-struct widget_ubo {
-  float parameters[12][4];
-  float mvp[16];
-  float checker[3];
-  int srgbTarget;
-};
-
-struct large_widget_ubo {
-  struct widget_ubo widget;
-  float matrices[14][16];
-  float tail[3][4];
-  int32_t signed_tag;
-  uint32_t enabled;
-  float end_marker[2];
-};
-_Static_assert(sizeof(struct large_widget_ubo) == 1232, "large std140 size");
-_Static_assert(offsetof(struct large_widget_ubo, matrices) == 272, "matrix array offset");
-_Static_assert(sizeof(((struct large_widget_ubo *)0)->matrices[0]) == 64, "matrix stride");
-_Static_assert(offsetof(struct large_widget_ubo, tail) == 1168, "tail offset");
-_Static_assert(offsetof(struct large_widget_ubo, signed_tag) == 1216, "int offset");
-_Static_assert(offsetof(struct large_widget_ubo, enabled) == 1220, "bool storage offset");
-_Static_assert(offsetof(struct large_widget_ubo, end_marker) == 1224, "end offset");
 
 static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic, int large, int update_mode) {
   const int staged = update_mode == 1;
@@ -201,55 +172,9 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   VkPhysicalDeviceMemoryProperties mp;
   p_vkGetPhysicalDeviceMemoryProperties(pd, &mp);
 
-  struct widget_ubo good = {0};
-  struct widget_ubo bad = {0};
-  good.parameters[0][0] = 1.0f;
-  good.mvp[0] = 1.0f;
-  good.mvp[5] = 1.0f;
-  good.mvp[10] = 1.0f;
-  good.mvp[15] = 1.0f;
-  good.checker[0] = 0.0f;
-  good.srgbTarget = 1;
-  /* Keep identity MVP so the triangle still covers the readback pixel.
-   * Only fragment-encoded fields differ. */
-  bad.parameters[0][0] = 0.0f;
-  bad.mvp[0] = 1.0f;
-  bad.mvp[5] = 1.0f;
-  bad.mvp[10] = 1.0f;
-  bad.mvp[15] = 1.0f;
-  bad.checker[0] = 1.0f;
-  bad.srgbTarget = 0;
-  if (sizeof(good) != kWidgetUboBytes) {
-    printf("UBO sizeof=%zu expected=%d\n", sizeof(good), kWidgetUboBytes);
-    return 2;
-  }
-  printf("UBO layout parameters@0 mvp@192 checker@256 srgb@268 size=%zu\n",
-         sizeof(good));
-
-  struct large_widget_ubo large_good = {.widget = good};
-  struct large_widget_ubo large_bad = {.widget = bad};
+  struct large_widget_ubo good, bad;
+  uint32_t ubo_bytes = widget_fixture_data(large, dynamic, &good, &bad);
   const void *good_data = &good, *bad_data = &bad;
-  uint32_t ubo_bytes = kWidgetUboBytes;
-  if (large) {
-    for (unsigned i = 0; i < 4; ++i) large_good.widget.parameters[11][i] = 41 + i;
-    for (unsigned m = 0; m < 14; ++m)
-      for (unsigned i = 0; i < 16; ++i) large_good.matrices[m][i] = 1 + m * 16 + i;
-    for (unsigned t = 0; t < 3; ++t)
-      for (unsigned i = 0; i < 4; ++i) large_good.tail[t][i] = 51 + t + 10 * i;
-    large_good.signed_tag = -37;
-    large_good.enabled = 1;
-    large_good.end_marker[0] = 91;
-    large_good.end_marker[1] = 92;
-    large_bad = large_good;
-    large_bad.widget.srgbTarget = 0;
-    large_bad.signed_tag = 37;
-    large_bad.enabled = 0;
-    good_data = &large_good;
-    bad_data = &large_bad;
-    ubo_bytes = sizeof(large_good);
-    printf("UBO_LARGE matrices@272 array_stride=64 column_stride=16 tail@1168 "
-           "signed@1216 bool@1220 end@1224 size=%u dynamic=%d\n", ubo_bytes, dynamic);
-  }
 
   VkDeviceSize stride = ubo_bytes;
   VkDeviceSize total = ubo_bytes;

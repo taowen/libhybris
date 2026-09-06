@@ -1337,3 +1337,17 @@ with matching pipeline/layout/module associations. VVL/SyncVal remains clean.
 Offline mutations of the first run's pipeline layout and vertex module
 (replaced with the fragment module) are rejected for all four captures;
 `shader-negative-check.log` records these checks without changing originals.
+
+
+Widget layout definitions and good/alternate data construction are separated
+into widget_fixture.h, included in the probe source snapshot and manifest.
+The helper returns owned 1232-byte storage; the small case uploads only its
+272-byte prefix. Both layouts have compile-time size/offset checks. Shader
+arrays, GPU call sequence and expected pixels remain unchanged.
+
+Rebuilt runs `20260907T043548-b2be0f97` (29854870) and
+`20260907T043548-895d9f1e` (KB2000) each report 88 PASS, 2 UNSUPPORTED.
+All widget variants, validation/SyncVal and ordinary/dynamic capture evidence
+pass after extraction; fixed attachment divergence remains draw 60 / 61.
+This batch reorganizes fixture ownership and does not close additional
+compatibility or arbitrary-application diagnosis gates.

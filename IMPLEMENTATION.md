@@ -470,3 +470,10 @@ disassembly/decorations and pipeline/layout/module associations. A dedicated
 shader_evidence module keeps those checks separate from draw-resource checks.
 Driver-internal shader transforms/cache keys and general pipeline histories
 remain unobserved.
+
+
+Widget UBO layouts and data construction now live in widget_fixture.h. The
+draw routine consumes owned good/alternate data and a byte count, leaving
+resource setup, upload, recording and readback in probe_widget.c. Small-layout
+size/offset assertions join the existing large-layout checks. This is a
+maintainability change; generation and general draw-history gaps remain open.
