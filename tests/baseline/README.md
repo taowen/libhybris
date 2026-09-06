@@ -1107,3 +1107,21 @@ All successful cycles ended with live=0, and refusal returned -1
 (VK_ERROR_OUT_OF_HOST_MEMORY). The standard loader may reject allocation
 before reaching the ICD; this is API-boundary failure evidence, not proof of
 failure at the ICD record allocation or every HAL allocation site.
+
+
+`icd-alloc-direct` explicitly loads the optional adapter and calls its
+`vk_icdGetInstanceProcAddr` entry, without loading the standard Vulkan loader.
+Its first application allocator call refuses the adapter's instance record;
+the probe requires OUT_OF_HOST_MEMORY, exactly one allocation attempt and
+zero outstanding allocations. It then restores allocation and completes three
+instance create/query/destroy cycles, followed by another allocation refusal.
+This is a direct ICD/HAL boundary workload, not standard-loader or layer-chain
+coverage. Existing `vk-alloc` cases retain those separate paths. No dispatch
+header rewriting is needed for these direct instance queries/destruction.
+Rebuilt runs `20260907T034217-545f66e6` (29854870) and
+`20260907T034217-f1c385c1` (KB2000) each completed **69 PASS / 2 UNSUPPORTED**,
+including validation/SyncVal and capture/replay. Both direct cases record
+initial-reject=-1, calls=1, live=0; each recovery cycle also ends at live=0.
+Their final mapping records contain neither the standard nor Android Vulkan
+loader. This proves the tested adapter allocation refusal and subsequent
+recovery, not all allocation failure positions or reentrant callbacks.

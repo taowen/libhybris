@@ -27,7 +27,9 @@ int main(int argc, char **argv) {
   else if (!strcmp(mode, "init"))
     rc = init_probe();
   else if (!strcmp(mode, "vk-alloc"))
-    rc = vulkan_allocator_probe();
+    rc = vulkan_allocator_probe(0);
+  else if (!strcmp(mode, "icd-alloc-direct"))
+    rc = vulkan_allocator_probe(1);
   else if (!strcmp(mode, "vk-init"))
     rc = vulkan_init_probe();
   else if (!strcmp(mode, "mutex-init"))

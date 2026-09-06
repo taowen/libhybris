@@ -155,10 +155,11 @@ static void *VKAPI_CALL instance_reallocate(void *user, void *original, size_t s
   return replacement;
 }
 
-int vulkan_allocator_probe(void) {
-  void *library = dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+int vulkan_allocator_probe(int direct_icd) {
+  void *library = dlopen(direct_icd ? "libhybris-vulkan-icd.so.0" :
+      (getenv("PROBE_VK") ?: "libvulkan.so.1"), RTLD_NOW | RTLD_LOCAL);
   if (!library) return 2;
-  PFN_vkGetInstanceProcAddr gipa = dlsym(library, "vkGetInstanceProcAddr");
+  PFN_vkGetInstanceProcAddr gipa = dlsym(library, direct_icd ? "vk_icdGetInstanceProcAddr" : "vkGetInstanceProcAddr");
   PFN_vkCreateInstance create = gipa ? (PFN_vkCreateInstance)gipa(NULL, "vkCreateInstance") : NULL;
   if (!create) return 2;
   struct allocation_probe state = {0};
@@ -166,6 +167,16 @@ int vulkan_allocator_probe(void) {
       .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
   VkInstanceCreateInfo info = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
   int failed = 0;
+  if (direct_icd) {
+    /* No standard loader is loaded on this path: the first allocation is
+     * the adapter instance record, before the HAL creates an object. */
+    state.reject = 1;
+    VkInstance rejected = VK_NULL_HANDLE;
+    VkResult result = create(&info, &callbacks, &rejected);
+    printf("VK_ALLOC direct-initial-reject=%d calls=%u live=%u\n", result, state.calls, state.live);
+    if (result != VK_ERROR_OUT_OF_HOST_MEMORY || state.calls != 1 || state.live) return 2;
+    state.reject = 0;
+  }
   for (unsigned round = 0; round < 3; ++round) {
     VkInstance instance = VK_NULL_HANDLE;
     VkResult result = create(&info, &callbacks, &instance);

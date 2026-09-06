@@ -46,7 +46,7 @@ int dispatch_probe(void);
 int life_probe(int unload);
 int init_probe(void);
 int vulkan_init_probe(void);
-int vulkan_allocator_probe(void);
+int vulkan_allocator_probe(int direct_icd);
 int lock_init_probe(int rwlock);
 int sync_destroy_probe(int check_kind);
 int cond_init_probe(void);

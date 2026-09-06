@@ -382,3 +382,11 @@ an allocation-refusing create returning OUT_OF_HOST_MEMORY. Runs
 68 PASS / 2 UNSUPPORTED. Failure is measured at the API boundary; the loader
 may stop it before ICD creation. Callback reentrancy and individual ICD/HAL
 failure sites remain unverified.
+
+
+A separate `icd-alloc-direct` workload reaches the adapter's own instance-record
+allocation via its exported ICD resolver. It refuses the first allocation,
+requires exactly one callback and OUT_OF_HOST_MEMORY, then restores allocation
+for three complete instance lifetimes. This isolates adapter failure/recovery
+from the standard loader's earlier allocations; it does not exercise layer
+chaining, every HAL failure site, allocator reentrancy or device callbacks.
