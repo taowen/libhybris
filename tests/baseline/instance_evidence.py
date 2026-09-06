@@ -32,6 +32,8 @@ def instance_evidence(output: str) -> dict:
             destroyed += 1
     if live or len(created) != 16 or destroyed != 16:
         raise ValueError(f'expected 16 complete lifetimes, got {len(created)}/{destroyed}, live={live}')
+    if peak != 4:
+        raise ValueError(f'expected four simultaneously live instances, got {peak}')
     return dict(created=len(created), destroyed=destroyed, remaining=len(live),
                 peak_live=peak, reused_handles=sum(count > 1 for count in handles.values()),
                 scope='ICD instance records only; not device/resource ownership')

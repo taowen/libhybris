@@ -3,6 +3,7 @@
 struct vk_init_gate {
   pthread_mutex_t mutex;
   pthread_cond_t condition;
+  pthread_barrier_t live_barrier;
   int start, cancel;
   PFN_vkGetInstanceProcAddr gipa;
   PFN_vkCreateInstance create;
@@ -26,18 +27,22 @@ static int create_and_query(struct vk_init_gate *g, unsigned index) {
   VkResult result = create ? create(&ci, NULL, &instance) : VK_ERROR_INITIALIZATION_FAILED;
   if (result != VK_SUCCESS) {
     printf("VK_INIT worker=%u create=%p result=%d\n", index, (void *)create, result);
-    return 2;
+    instance = VK_NULL_HANDLE;
   }
   PFN_vkDestroyInstance destroy = (PFN_vkDestroyInstance)
-      g->gipa(instance, "vkDestroyInstance");
+      (instance ? g->gipa(instance, "vkDestroyInstance") : NULL);
   PFN_vkEnumeratePhysicalDevices enumerate = (PFN_vkEnumeratePhysicalDevices)
-      g->gipa(instance, "vkEnumeratePhysicalDevices");
+      (instance ? g->gipa(instance, "vkEnumeratePhysicalDevices") : NULL);
   uint32_t count = 0;
   result = enumerate ? enumerate(instance, &count, NULL) : VK_ERROR_INITIALIZATION_FAILED;
   int ok = destroy && result == VK_SUCCESS && count > 0;
   if (!ok) printf("VK_INIT worker=%u enumerate=%d count=%u destroy=%p\n",
                   index, result, count, (void *)destroy);
+  /* Every worker reaches both barriers even on create/query failure.
+   * Hold four successful objects live together before any is destroyed. */
+  pthread_barrier_wait(&g->live_barrier);
   if (destroy) destroy(instance, NULL);
+  pthread_barrier_wait(&g->live_barrier);
   return ok ? 0 : 2;
 }
 
@@ -58,12 +63,15 @@ static void *vk_init_run(void *opaque) {
   if (cancel) return NULL;
   for (unsigned i = 0; i < 4; ++i) {
     /* Some workers first enumerate; others first create. Main has done neither. */
+    int first, second;
     if (w->index & 1) {
-      if (enumerate_global(g) || create_and_query(g, w->index)) break;
+      first = enumerate_global(g);
+      second = create_and_query(g, w->index);
     } else {
-      if (create_and_query(g, w->index) || enumerate_global(g)) break;
+      first = create_and_query(g, w->index);
+      second = enumerate_global(g);
     }
-    ++w->completed;
+    if (!first && !second) ++w->completed;
   }
   return NULL;
 }
@@ -77,6 +85,7 @@ int vulkan_init_probe(void) {
       .create = dlsym(h, "vkCreateInstance"),
       .enumerate = dlsym(h, "vkEnumerateInstanceExtensionProperties")};
   if (!g.gipa || !g.create || !g.enumerate) return 2;
+  if (pthread_barrier_init(&g.live_barrier, NULL, 4)) return 2;
   struct vk_init_worker workers[4] = {0};
   pthread_t threads[4];
   unsigned started = 0;
@@ -96,6 +105,7 @@ int vulkan_init_probe(void) {
     printf("VK_INIT worker=%u completed=%u expected=4\n", i, workers[i].completed);
     if (workers[i].completed != 4) rc = 2;
   }
+  pthread_barrier_destroy(&g.live_barrier);
   pthread_cond_destroy(&g.condition);
   pthread_mutex_destroy(&g.mutex);
   if (dlclose(h)) rc = 2;

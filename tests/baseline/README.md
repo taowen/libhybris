@@ -1075,3 +1075,18 @@ This covers ICD instance records only, not frontend/device/resource state,
 custom allocation callback failure/reentrancy, trace truncation or malformed
 HAL behavior. Destroy records precede backend destruction and do not imply
 GPU completion or driver unloading.
+
+
+The concurrent instance probe now uses two barriers per round: all four
+instances remain alive before the first destroy, and all destroys finish
+before any next-round create. All workers complete the barriers even after
+create/query/global-enumeration errors; partial thread startup cancels before
+entering them. `instance_evidence.py` now requires peak_live=4, in addition to
+16 unique, paired lifetimes. The previous peak-2 and peak-1 trace files were
+rejected by this stronger gate. This verifies overlapping object lifetimes,
+not parallel execution inside the HAL, handle reuse or error-injection paths.
+Rebuilt runs `20260907T033524-371d9b4f` (29854870) and
+`20260907T033524-e279f2dc` (KB2000) each completed **65 PASS / 2 UNSUPPORTED**,
+including native/hybris/ICD concurrent instance workloads and validation/capture.
+Both evidence files report created=16, destroyed=16, remaining=0, peak_live=4,
+reused_handles=0. Thus actual raw-handle reuse remains unverified.

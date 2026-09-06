@@ -365,3 +365,11 @@ or input chains. Device/resource generations, the replacement frontend's
 state and arbitrary draw/resource evidence remain open. Allocator failure,
 custom-callback reentrancy and malformed HAL behavior still need dedicated
 coverage beyond the existing concurrent lifecycle workload.
+
+
+The instance concurrent probe now holds every round's four successful instances
+until all workers reach a barrier, then finishes all destructions before the
+next round. Failure paths still reach both barriers; partial thread startup
+cancels before entering them. The evidence checker now requires peak_live=4;
+previous peak-2/peak-1 traces fail that stronger gate. This establishes actual
+object overlap, not a guarantee of backend execution overlap or handle reuse.
