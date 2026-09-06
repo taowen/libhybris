@@ -62,6 +62,7 @@ int properties2_check(PFN_vkGetPhysicalDeviceProperties2 query, VkPhysicalDevice
                       const VkPhysicalDeviceProperties *legacy);
 int ubo_probe(void);
 int ubo_dynamic_probe(int validate);
+int ubo_large_probe(int validate);
 int ubo_draw(int inject_wrong_binding, int validate);
 int validation_probe(void);
 int ubo_validation_probe(void);

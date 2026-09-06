@@ -30,7 +30,7 @@ rm -rf "$PROBE_SRC"
 mkdir -p "$PROBE_SRC/shaders"
 cp tls_fixture.cpp sync_fixture.h stdio_fixture.h "$PROBE_SRC/"
 cp "${SOURCES[@]}" probe.h dispatch_commands.inc capability_fields.inc feature_compare.inc property_compare.inc "$PROBE_SRC/"
-cp shaders/widget.vert shaders/widget.frag shaders/widget.vert.inc shaders/widget.frag.inc "$PROBE_SRC/shaders/"
+cp shaders/widget.vert shaders/widget.frag shaders/widget.vert.inc shaders/widget.frag.inc shaders/widget-large.vert.inc shaders/widget-large.frag.inc "$PROBE_SRC/shaders/"
 
 
 # Use the pinned repository toolchain unless the caller explicitly overrides it.

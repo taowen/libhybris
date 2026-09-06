@@ -2,6 +2,9 @@
 
 #include "shaders/widget.vert.inc"
 #include "shaders/widget.frag.inc"
+#include "shaders/widget-large.vert.inc"
+#include "shaders/widget-large.frag.inc"
+#include <stddef.h>
 
 
 enum {
@@ -17,7 +20,23 @@ struct widget_ubo {
   int srgbTarget;
 };
 
-static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic) {
+struct large_widget_ubo {
+  struct widget_ubo widget;
+  float matrices[14][16];
+  float tail[3][4];
+  int32_t signed_tag;
+  uint32_t enabled;
+  float end_marker[2];
+};
+_Static_assert(sizeof(struct large_widget_ubo) == 1232, "large std140 size");
+_Static_assert(offsetof(struct large_widget_ubo, matrices) == 272, "matrix array offset");
+_Static_assert(sizeof(((struct large_widget_ubo *)0)->matrices[0]) == 64, "matrix stride");
+_Static_assert(offsetof(struct large_widget_ubo, tail) == 1168, "tail offset");
+_Static_assert(offsetof(struct large_widget_ubo, signed_tag) == 1216, "int offset");
+_Static_assert(offsetof(struct large_widget_ubo, enabled) == 1220, "bool storage offset");
+_Static_assert(offsetof(struct large_widget_ubo, end_marker) == 1224, "end offset");
+
+static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic, int large) {
   void *h =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
@@ -178,8 +197,33 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   printf("UBO layout parameters@0 mvp@192 checker@256 srgb@268 size=%zu\n",
          sizeof(good));
 
-  VkDeviceSize stride = kWidgetUboBytes;
-  VkDeviceSize total = kWidgetUboBytes;
+  struct large_widget_ubo large_good = {.widget = good};
+  struct large_widget_ubo large_bad = {.widget = bad};
+  const void *good_data = &good, *bad_data = &bad;
+  uint32_t ubo_bytes = kWidgetUboBytes;
+  if (large) {
+    for (unsigned i = 0; i < 4; ++i) large_good.widget.parameters[11][i] = 41 + i;
+    for (unsigned m = 0; m < 14; ++m)
+      for (unsigned i = 0; i < 16; ++i) large_good.matrices[m][i] = 1 + m * 16 + i;
+    for (unsigned t = 0; t < 3; ++t)
+      for (unsigned i = 0; i < 4; ++i) large_good.tail[t][i] = 51 + t + 10 * i;
+    large_good.signed_tag = -37;
+    large_good.enabled = 1;
+    large_good.end_marker[0] = 91;
+    large_good.end_marker[1] = 92;
+    large_bad = large_good;
+    large_bad.widget.srgbTarget = 0;
+    large_bad.signed_tag = 37;
+    large_bad.enabled = 0;
+    good_data = &large_good;
+    bad_data = &large_bad;
+    ubo_bytes = sizeof(large_good);
+    printf("UBO_LARGE matrices@272 array_stride=64 column_stride=16 tail@1168 "
+           "signed@1216 bool@1220 end@1224 size=%u dynamic=%d\n", ubo_bytes, dynamic);
+  }
+
+  VkDeviceSize stride = ubo_bytes;
+  VkDeviceSize total = ubo_bytes;
   uint32_t dynamic_offset = 0;
   VkDescriptorType descriptor_type = dynamic ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
                                               : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -189,12 +233,12 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
     p_vkGetPhysicalDeviceProperties(pd, &properties);
     VkDeviceSize alignment = properties.limits.minUniformBufferOffsetAlignment;
     if (!alignment || alignment > UINT32_MAX / 8) return 2;
-    stride = ((kWidgetUboBytes + alignment - 1) / alignment) * alignment;
-    total = stride * 3 + kWidgetUboBytes;
+    stride = ((ubo_bytes + alignment - 1) / alignment) * alignment;
+    total = stride * 3 + ubo_bytes;
     dynamic_offset = (uint32_t)(stride * (inject_wrong_binding ? 1 : 2));
     printf("UBO_DYNAMIC alignment=%llu base=%llu dynamic=%u range=%u total=%llu\n",
            (unsigned long long)alignment, (unsigned long long)stride, dynamic_offset,
-           kWidgetUboBytes, (unsigned long long)total);
+           ubo_bytes, (unsigned long long)total);
   }
 
   VkBufferCreateInfo ubo_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -223,11 +267,11 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   if (dynamic) {
     memset(mapped, 0, (size_t)total);
     for (unsigned slot = 0; slot < 4; ++slot)
-      memcpy((char *)mapped + stride * slot, slot == 3 ? &good : &bad, sizeof(good));
-  } else memcpy(mapped, &good, sizeof(good));
+      memcpy((char *)mapped + stride * slot, slot == 3 ? good_data : bad_data, ubo_bytes);
+  } else memcpy(mapped, good_data, ubo_bytes);
   p_vkUnmapMemory(device, umem_good);
   CHECK(p_vkMapMemory(device, umem_bad, 0, total, 0, &mapped));
-  memcpy(mapped, &bad, sizeof(bad));
+  memcpy(mapped, bad_data, ubo_bytes);
   p_vkUnmapMemory(device, umem_bad);
 
   uint16_t indices[kWidgetIndexCount] = {0, 1, 2, 0, 2, 3, 4, 5, 6,
@@ -309,12 +353,12 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
 
   VkShaderModuleCreateInfo vs_ci = {.sType =
                                         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                    .codeSize = kWidgetVertSpv_word_count * 4,
-                                    .pCode = kWidgetVertSpv};
+                                    .codeSize = (large ? kWidgetLargeVertSpv_word_count : kWidgetVertSpv_word_count) * 4,
+                                    .pCode = large ? kWidgetLargeVertSpv : kWidgetVertSpv};
   VkShaderModuleCreateInfo fs_ci = {.sType =
                                         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                    .codeSize = kWidgetFragSpv_word_count * 4,
-                                    .pCode = kWidgetFragSpv};
+                                    .codeSize = (large ? kWidgetLargeFragSpv_word_count : kWidgetFragSpv_word_count) * 4,
+                                    .pCode = large ? kWidgetLargeFragSpv : kWidgetFragSpv};
   VkShaderModule vs, fs;
   CHECK(p_vkCreateShaderModule(device, &vs_ci, NULL, &vs));
   CHECK(p_vkCreateShaderModule(device, &fs_ci, NULL, &fs));
@@ -441,7 +485,7 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   VkDescriptorBufferInfo dbi = {.buffer = !dynamic && inject_wrong_binding ? ubo_bad
                                                                : ubo_good,
                                 .offset = dynamic ? stride : 0,
-                                .range = kWidgetUboBytes};
+                                .range = ubo_bytes};
   VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                                 .dstSet = set,
                                 .dstBinding = 0,
@@ -451,7 +495,7 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   p_vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
   printf("DRAW set=%p layout=%p pipeline=%p buffer=%p range=%u inject=%d\n",
          (void *)set, (void *)pipeline_layout, (void *)pipeline,
-         (void *)dbi.buffer, kWidgetUboBytes, inject_wrong_binding);
+         (void *)dbi.buffer, ubo_bytes, inject_wrong_binding);
 
   VkCommandPoolCreateInfo cpc = {.sType =
                                      VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -593,11 +637,20 @@ int ubo_validation_probe(void) {
 
 
 int ubo_draw(int inject_wrong_binding, int validate) {
-  return ubo_draw_internal(inject_wrong_binding, validate, 0);
+  return ubo_draw_internal(inject_wrong_binding, validate, 0, 0);
 }
 
 int ubo_dynamic_probe(int validate) {
-  int result = ubo_draw_internal(0, validate, 1);
+  int result = ubo_draw_internal(0, validate, 1, 0);
   if (result) return result;
-  return ubo_draw_internal(1, validate, 1);
+  return ubo_draw_internal(1, validate, 1, 0);
+}
+
+int ubo_large_probe(int validate) {
+  for (int dynamic = 0; dynamic < 2; ++dynamic)
+    for (int alternate = 0; alternate < 2; ++alternate) {
+      int result = ubo_draw_internal(alternate, validate, dynamic, 1);
+      if (result) return result;
+    }
+  return 0;
 }

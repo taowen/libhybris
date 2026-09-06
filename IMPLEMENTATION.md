@@ -430,5 +430,12 @@ overflow, large-file boundaries and multibyte state remain unverified.
 Widget rendering now has a dynamic-UBO probe with nonzero aligned descriptor
 base and dynamic offset, deliberately different data in the other slots,
 exact expected good/alternate pixels and an ICD validation/SyncVal variant.
-The effective range remains 272 bytes. Larger UBO blocks, multiple dynamic
+That variant keeps an effective range of 272 bytes. Multiple dynamic
 bindings and draw-time reconstruction of dynamic capture remain open.
+
+
+A second widget variant now uses a real 1232-byte shader block, with explicit
+matrix array/column strides, signed int and 32-bit bool storage at the tail.
+Shader checks of non-symmetric matrices and tail sentinels feed exact pixel
+readback through ordinary and dynamic descriptors. This extends the independent
+probe; arbitrary-application draw diagnosis and runtime generation remain open.

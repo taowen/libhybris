@@ -153,6 +153,8 @@ for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked', 'libtls-fixt
 
 
 cases = [
+    ('native', 'ubo-large', 'probe-bionic'),
+    ('hybris', 'ubo-large', 'probe-glibc'),
     ('native', 'ubo-dynamic', 'probe-bionic'),
     ('hybris', 'ubo-dynamic', 'probe-glibc'),
     ('native', 'stdio', 'probe-bionic'),
@@ -224,7 +226,7 @@ if a.icd_hal:
     # The manifest starts at 1.0; interface 5 queries the HAL's supported
     # instance version via vkEnumerateInstanceVersion.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic')]
+              for mode in ('vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     if a.validation_layer:
         (stage / 'layers').mkdir()
@@ -236,7 +238,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.extend([('icd', mode, 'probe-glibc') for mode in ('validation', 'ubo-validation', 'ubo-dynamic-validation')])
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation')])
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)

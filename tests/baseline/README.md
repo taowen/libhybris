@@ -1214,3 +1214,32 @@ exact good/alternate pixels, and both ICD dynamic validation variants report
 zero errors. Static validation/SyncVal and capture/replay remain passing.
 The 1232-byte buffer contains four aligned slots; it is not a 1232-byte shader
 block.
+
+
+`ubo-large` extends the widget shader block to 1232 bytes: the original
+272-byte prefix, fourteen column-major mat4 values at 272 (array stride=64,
+column stride=16), three vec4 tail values at 1168, signed int at 1216,
+32-bit bool storage at 1220 and vec2 end marker at 1224. Host static assertions
+check offsets/size; the fragment shader checks every matrix element, tail
+vector and end marker, returning magenta on mismatch. Valid blocks encode
+bool/int/srgb into the expected good/alternate pixels. The matrices contain
+distinct non-symmetric values, so a transpose or incorrect stride fails.
+Both ordinary and dynamic descriptors run with both data variants;
+`ubo-large-validation` repeats all four draws through ICD VVL/SyncVal.
+This is a synthetic layout; it does not reproduce Blender's complete instanced
+widget block, descriptor templates, staging copy or command re-record/resubmit.
+
+The large embedded shaders are compiled from `widget.vert` / `widget.frag`
+with `glslangValidator -V --target-env vulkan1.0 -DLARGE_UBO=1`, then validated
+with `spirv-val --target-env vulkan1.0`. Their SPIR-V decorations confirm the
+host offsets above, MatrixStride=16 and matrix ArrayStride=64. The original
+shaders compiled without the define remain byte-for-byte identical to their
+committed embedded arrays. The build snapshots both source and large embedded
+arrays in the probe manifest.
+
+Rebuilt runs `20260907T041010-737e6c4d` (29854870) and
+`20260907T041010-39a5c131` (KB2000) each report 79 PASS, 2 UNSUPPORTED.
+All four large-UBO variants produce the exact expected good/alternate pixels
+on native/frontend/ICD; ICD VVL/SyncVal reports zero errors for each draw.
+Dynamic descriptors use base=1280 and offset=2560 / 1280 with range=1232
+and total buffer size=5072. Existing static capture/replay also passes.

@@ -4,6 +4,13 @@ layout(set = 0, binding = 0, std140) uniform constants {
     mat4 mvp;
     vec3 checkerColorAndSize;
     int srgbTarget;
+#ifdef LARGE_UBO
+    mat4 matrices[14];
+    vec4 tail[3];
+    int signedTag;
+    bool enabled;
+    vec2 endMarker;
+#endif
 } PushConstants;
 
 void main() {
