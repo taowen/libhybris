@@ -24,6 +24,14 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+Missing shared-memory backing now returns failure before the allocator or
+translator touches the shared header. Mutex/condition/rwlock initialization
+returns ENOMEM when no backing object is obtained. `shared-unavailable`
+exercises actual bionic imports when glibc's /dev/shm is absent; this does not
+implement Android ashmem support or validate working process-shared locks.
+The shared rwlock destroy path still needs handle translation before destroy,
+and the allocator's mapping/growth/concurrent-open behavior needs further work.
+
 `common/bionic_sync.c` now owns the static synchronization publication guard,
 backing allocation and raw-pointer lookup. Its private header centralizes
 initializer values and hidden helper declarations. `hooks.c` retains API

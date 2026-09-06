@@ -66,3 +66,39 @@ extern "C" int cond_fixture_destroy(unsigned i) {
     int error = pthread_cond_destroy(&cond_slots[i].cond);
     return error ? error : pthread_mutex_destroy(&cond_slots[i].mutex);
 }
+
+extern "C" int shared_fixture_init(unsigned kind) {
+    int error;
+    if (kind == 0) {
+        pthread_mutexattr_t attr;
+        pthread_mutex_t object;
+        if ((error = pthread_mutexattr_init(&attr))) return error;
+        error = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+        if (!error) {
+            error = pthread_mutex_init(&object, &attr);
+            if (!error) pthread_mutex_destroy(&object);
+        }
+        pthread_mutexattr_destroy(&attr);
+    } else if (kind == 1) {
+        pthread_condattr_t attr;
+        pthread_cond_t object;
+        if ((error = pthread_condattr_init(&attr))) return error;
+        error = pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+        if (!error) {
+            error = pthread_cond_init(&object, &attr);
+            if (!error) pthread_cond_destroy(&object);
+        }
+        pthread_condattr_destroy(&attr);
+    } else {
+        pthread_rwlockattr_t attr;
+        pthread_rwlock_t object;
+        if ((error = pthread_rwlockattr_init(&attr))) return error;
+        error = pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+        if (!error) {
+            error = pthread_rwlock_init(&object, &attr);
+            if (!error) pthread_rwlock_destroy(&object);
+        }
+        pthread_rwlockattr_destroy(&attr);
+    }
+    return error;
+}

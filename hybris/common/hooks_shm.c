@@ -203,6 +203,9 @@ void *hybris_get_shmpointer(hybris_shm_pointer_t handle)
             _hybris_shm_init();
         }
 
+        if (_hybris_shm_fd < 0 || !_hybris_shm_data)
+            return NULL;
+
         pthread_mutex_lock(&_hybris_shm_data->access_mutex);
 
         _sync_mmap_with_shm();  /* make sure our mmap is sync'ed */
@@ -233,6 +236,11 @@ hybris_shm_pointer_t hybris_shm_alloc(size_t size)
         /* if we are not yet attached to any shm region, then do it now */
         _hybris_shm_init();
     }
+
+    /* Opening/creating the backing store may fail (for example Android has
+     * no glibc /dev/shm). Do not dereference its header before checking it. */
+    if (_hybris_shm_fd < 0 || !_hybris_shm_data)
+        return 0;
 
     pthread_mutex_lock(&_hybris_shm_data->access_mutex);
 

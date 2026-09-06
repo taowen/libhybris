@@ -34,6 +34,8 @@ int main(int argc, char **argv) {
     rc = lock_init_probe(1);
   else if (!strcmp(mode, "cond-init"))
     rc = cond_init_probe();
+  else if (!strcmp(mode, "shared-unavailable"))
+    rc = shared_unavailable_probe();
   else if (!strcmp(mode, "tls-dtor"))
     rc = tls_destructor_probe();
   else if (!strcmp(mode, "tls-bounds"))

@@ -183,6 +183,7 @@ cases = [
     ('hybris', 'mutex-init', 'probe-glibc'),
     ('hybris', 'rwlock-init', 'probe-glibc'),
     ('hybris', 'cond-init', 'probe-glibc'),
+    ('hybris', 'shared-unavailable', 'probe-glibc'),
     ('hybris', 'unload', 'probe-glibc'),
     ('hybris', 'init', 'probe-glibc'),
     ('hybris', 'tls', 'probe-glibc'),

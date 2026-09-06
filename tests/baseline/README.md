@@ -759,3 +759,31 @@ Fresh library/probe builds and runs `20260907T021854-5ecc07d9` (29854870) and
 including the three synchronization first-use probes, VVL, SyncVal and
 capture/replay. This structural change adds no compatibility coverage beyond
 those existing workloads; their documented limitations still apply.
+
+## Missing shared-memory backing
+
+The hybris-only `shared-unavailable` case requires glibc's `/dev/shm` directory
+to be absent; it reports unsupported if that precondition is not met. It
+checks that the existing shared allocator returns zero and translation of an
+AArch64 tagged offset returns NULL. It then calls actual bionic pthread
+mutex/condition/rwlock attribute and initialization APIs through the fixture:
+PROCESS_SHARED initialization must return ENOMEM for all three object kinds.
+It does not destroy failed objects or exercise them as initialized locks.
+
+Before the fix, `20260907T022257-f825a071` on 29854870 crashes with SIGSEGV
+(exit 139) on the allocator call. Allocation and translation now check that
+the backing store was opened before accessing its header. The three pthread
+initializers propagate missing allocation/translation as ENOMEM instead of
+passing NULL to glibc. This also guards a NULL private allocation, but malloc
+failure is not injected by this workload.
+
+This is verified failure handling, not process-shared lock support. It adds
+no ashmem/memfd backend and does not validate successful shared mappings,
+concurrent initialization, growth/remap, interprocess exclusion, shared-object
+destruction or allocation reclamation. Existing shared rwlock destruction and
+condition-wait semantics remain separate defects to address.
+
+Fresh library/probe builds and runs `20260907T022445-38be09a4` (29854870) and
+`20260907T022445-d0261787` (KB2000) each complete **59 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. Each device returns ENOMEM (12) for
+all three shared initializers. Common's 130 dynamic exports remain unchanged.

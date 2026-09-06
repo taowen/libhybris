@@ -639,6 +639,8 @@ static int _hybris_hook_pthread_mutex_init(pthread_mutex_t *__mutex,
             realmutex = (pthread_mutex_t *)hybris_get_shmpointer(handle);
     }
 
+    if (!realmutex)
+        return ENOMEM;
     return pthread_mutex_init(realmutex, __mutexattr);
 }
 
@@ -846,6 +848,8 @@ static int _hybris_hook_pthread_cond_init(pthread_cond_t *cond,
             realcond = (pthread_cond_t *)hybris_get_shmpointer(handle);
     }
 
+    if (!realcond)
+        return ENOMEM;
     return pthread_cond_init(realcond, attr);
 }
 
@@ -1202,6 +1206,8 @@ static int _hybris_hook_pthread_rwlock_init(pthread_rwlock_t *__rwlock,
             realrwlock = (pthread_rwlock_t *)hybris_get_shmpointer(handle);
     }
 
+    if (!realrwlock)
+        return ENOMEM;
     return pthread_rwlock_init(realrwlock, realattr);
 }
 
@@ -3477,4 +3483,3 @@ void* hybris_get_hooked_symbol(const char *sym, const char *requester)
 
     return NULL;
 }
-
