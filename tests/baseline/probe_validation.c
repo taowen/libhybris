@@ -1,12 +1,6 @@
 #include "probe.h"
 
-struct validation_state {
-  unsigned errors;
-  unsigned expected;
-  int injecting;
-};
-
-static VKAPI_ATTR VkBool32 VKAPI_CALL validation_message(
+VKAPI_ATTR VkBool32 VKAPI_CALL validation_message(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     VkDebugUtilsMessageTypeFlagsEXT types,
     const VkDebugUtilsMessengerCallbackDataEXT *data, void *user) {

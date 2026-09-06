@@ -198,7 +198,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.append(('icd', 'validation', 'probe-glibc'))
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('validation', 'ubo-validation')])
 
 results = []
 observed_paths = set()

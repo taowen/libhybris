@@ -28,6 +28,8 @@ int main(int argc, char **argv) {
     rc = tls_probe();
   else if (!strcmp(mode, "caps"))
     rc = caps_probe();
+  else if (!strcmp(mode, "ubo-validation"))
+    rc = ubo_validation_probe();
   else if (!strcmp(mode, "validation"))
     rc = validation_probe();
   else if (!strcmp(mode, "ubo"))

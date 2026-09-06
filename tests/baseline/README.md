@@ -308,3 +308,17 @@ Run 20260907T002102-c49a311d also passed (30 PASS / 2 UNSUPPORTED).
 The validation-active snapshot verifies the layer mapping before instance
 destruction; the completion snapshot alone can miss the unloaded layer.
 Both layer and original manifest hashes are recorded.
+
+
+The same layer options now also run ubo-validation. This executes both widget
+bindings with an explicitly enabled VK_EXT_validation_features synchronization
+validation feature, a live debug-utils messenger, and the existing exact
+pixel assertions. Both are legal API workloads: the alternate binding checks
+a known different shader result, not an invalid Vulkan call.
+
+Runs 20260907T002320-36535264 (29854870) and
+20260907T002358-2143b043 (KB2000) each completed 31 PASS / 2 UNSUPPORTED.
+Both widget renders produced their expected pixels with zero validation
+ERRORs, including the upload/render/transfer/host-readback and destruction
+paths. This is fixed-fixture coverage; arbitrary applications, WSI and
+capture/replay are still not verified.

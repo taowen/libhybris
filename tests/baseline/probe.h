@@ -48,5 +48,15 @@ int tls_probe(void);
 int caps_probe(void);
 int ubo_probe(void);
 int validation_probe(void);
+int ubo_validation_probe(void);
+struct validation_state {
+  unsigned errors;
+  unsigned expected;
+  int injecting;
+};
+VKAPI_ATTR VkBool32 VKAPI_CALL validation_message(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT types,
+    const VkDebugUtilsMessengerCallbackDataEXT *data, void *user);
 
 #endif

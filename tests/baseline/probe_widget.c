@@ -17,7 +17,7 @@ struct widget_ubo {
   int srgbTarget;
 };
 
-static int ubo_draw(int inject_wrong_binding) {
+static int ubo_draw(int inject_wrong_binding, int validate) {
   void *h =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
@@ -32,7 +32,37 @@ static int ubo_draw(int inject_wrong_binding) {
                            .apiVersion = VK_API_VERSION_1_0};
   VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
                              .pApplicationInfo = &app};
+  const char *layer = "VK_LAYER_KHRONOS_validation";
+  const char *extensions[] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+                              VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME};
+  VkValidationFeatureEnableEXT enabled = VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
+  struct validation_state validation = {0};
+  VkDebugUtilsMessengerCreateInfoEXT debug = {
+      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+      .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+      .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+      .pfnUserCallback = validation_message, .pUserData = &validation};
+  VkValidationFeaturesEXT features = {
+      .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT, .pNext = &debug,
+      .enabledValidationFeatureCount = 1, .pEnabledValidationFeatures = &enabled};
+  VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
+  PFN_vkDestroyDebugUtilsMessengerEXT destroy_messenger = NULL;
+  if (validate) {
+    ci.pNext = &features;
+    ci.enabledLayerCount = 1;
+    ci.ppEnabledLayerNames = &layer;
+    ci.enabledExtensionCount = 2;
+    ci.ppEnabledExtensionNames = extensions;
+  }
   CHECK(p_vkCreateInstance(&ci, NULL, &instance));
+  if (validate) {
+    V(vkCreateDebugUtilsMessengerEXT);
+    destroy_messenger = (PFN_vkDestroyDebugUtilsMessengerEXT)gip(instance, "vkDestroyDebugUtilsMessengerEXT");
+    if (!destroy_messenger) return 2;
+    CHECK(p_vkCreateDebugUtilsMessengerEXT(instance, &debug, NULL, &messenger));
+  }
   V(vkDestroyInstance);
   V(vkEnumeratePhysicalDevices);
   V(vkGetPhysicalDeviceMemoryProperties);
@@ -479,7 +509,15 @@ static int ubo_draw(int inject_wrong_binding) {
   p_vkFreeMemory(device, umem_good, NULL);
   p_vkFreeMemory(device, umem_bad, NULL);
   p_vkDestroyDevice(device, NULL);
+  if (validate) {
+    probe_mappings("widget-validation-active");
+    destroy_messenger(instance, messenger, NULL);
+  }
   p_vkDestroyInstance(instance, NULL);
+  if (validate) {
+    printf("WIDGET validation errors=%u binding=%d\n", validation.errors, inject_wrong_binding);
+    if (validation.errors) return 2;
+  }
   if (inject_wrong_binding) {
     if (!match_bad) {
       printf("UBO negative-control FAIL (unexpected pixel)\n");
@@ -497,13 +535,18 @@ static int ubo_draw(int inject_wrong_binding) {
 }
 
 int ubo_probe(void) {
-  int good = ubo_draw(0);
+  int good = ubo_draw(0, 0);
   if (good)
     return good;
-  int bad = ubo_draw(1);
+  int bad = ubo_draw(1, 0);
   if (bad)
     return bad;
   printf("UBO PASS\n");
   return 0;
 }
 
+int ubo_validation_probe(void) {
+  int result = ubo_draw(0, 1);
+  if (result) return result;
+  return ubo_draw(1, 1);
+}

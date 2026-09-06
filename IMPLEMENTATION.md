@@ -94,3 +94,9 @@ Two devices each completed 30 PASS / 2 UNSUPPORTED; legal lifecycle zero
 errors and injected zero-size buffer exactly one expected VUID, aborted
 before vendor execution. Capture/replay and validation of the full rendering
 workload remain open.
+
+
+Widget validation: the standard layer now observes both full widget fixtures
+with SyncVal enabled. Each device passed the original exact pixels with zero
+ERRORs (31 PASS / 2 UNSUPPORTED overall). This closes the missing validation
+coverage of this fixture, not G04's remaining capture/replay requirement.
