@@ -52,7 +52,7 @@ are committed and pushed separately to taowen/ardesk.
   semantics or case list change is intended by this split.
 
 Remaining large-file work includes pthread/libc/TLS separation inside common,
-Vulkan generated exports versus frontend/WSI logic, and targeted review of
+further WSI/backend state separation, and targeted review of
 large platform/driver files. Imported Android linker sources should retain
 their upstream structure unless a concrete fix requires changing them.
 
@@ -129,3 +129,16 @@ KB2000 (`20260907T005631-3e16a681`), each run is 45 PASS / 2 UNSUPPORTED,
 including unchanged VVL/SyncVal and full-image capture/replay. Pointer presence
 is not command-execution coverage; per-object compatibility state and the
 unsupported modern aliases remain open.
+
+
+Vulkan export split: `vulkan_exports.c` owns the unchanged AArch64 trampolines,
+header/platform-guarded export list, missing-symbol diagnostic and bulk pointer
+resolution. `vulkan.c` retains Android-library ownership, proc-query and WSI
+wrappers; its existing constructor calls the hidden export initializer after
+loading the backend. The frontend file decreases from 1036 to 257 lines.
+A fresh AArch64 build preserves all 643 defined dynamic exports by name, type,
+binding and visibility. No extra public helper is exported. Runs on 29854870
+(`20260907T010200-b47ca796`) and KB2000 (`20260907T010201-038aaa84`) each complete
+45 PASS / 2 UNSUPPORTED, and all five 726-command query reports exactly match
+the pre-split runs. VVL/SyncVal and full-image headless capture/replay also pass.
+This structural change does not add per-object state or new API support.

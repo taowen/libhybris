@@ -44,7 +44,7 @@
 
 | 模块 | 当前证据 | 不能据此推断 |
 |---|---|---|
-| [Vulkan 包装](hybris/vulkan/vulkan.c) | 导出 trampoline，GIPA/GDPA 对少数 WSI 函数拦截，其余转发 | 所有新加兼容处理都会覆盖静态链接、dlsym、GIPA、GDPA 四种入口 |
+| [Vulkan 包装](hybris/vulkan/vulkan.c) / [导出](hybris/vulkan/vulkan_exports.c) | 独立文件持有导出 trampoline，GIPA/GDPA 对少数 WSI 函数拦截，其余转发 | 所有新加兼容处理都会覆盖静态链接、dlsym、GIPA、GDPA 四种入口 |
 | [Vulkan 平台构建](hybris/vulkan/platforms/Makefile.am) | common/null/wayland；Xlib/XCB surface 在 Vulkan 包装中返回不支持 | 历史 `vulkanplatform_x11.so` 仍是当前源码能力 |
 | [GLES 包装](hybris/glesv2/glesv2.c) | GLES 导出与 Android 库桥接 | 提供桌面 OpenGL core/compat、GLX 或完整 GL→GLES 转换 |
 | [EGL X11](hybris/egl/platforms/x11/x11_window.cpp) | `TAWC-DRI` 与 `m_present_sock` 分支并存；后者发 AHB3 私有消息 | EGL X11 已只有统一窗口协议，或已经支持 Vulkan X11 |

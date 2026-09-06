@@ -8,6 +8,8 @@ lib_LTLIBRARIES = \
 
 libvulkan_la_SOURCES = \
 	vulkan.c \
+	vulkan_exports.c \
+	vulkan_exports.h \
 	ws.c
 
 libvulkan_la_CFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/common $(ANDROID_HEADERS_CFLAGS) -DPKGLIBDIR="\"$(pkglibdir)/\""

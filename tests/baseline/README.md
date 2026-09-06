@@ -415,3 +415,11 @@ and capture/replay. All five dispatch variants check 726 names with zero scope
 errors. Native/hybris/standard-ICD dlsym availability was 232/632/269 commands;
 GDPA returned 138 commands in each configuration. These are pointer-resolution
 counts, not supported feature counts or a compatibility percentage.
+
+
+Export split regression: rebuilt libraries and probes, compared all 643 defined
+dynamic frontend exports (name/type/binding/visibility), then ran 29854870
+`20260907T010200-b47ca796` and KB2000 `20260907T010201-038aaa84`.
+Both are **45 PASS / 2 UNSUPPORTED**. All five registry-query reports per device
+match their pre-split run exactly. The current fixed AArch64/Wayland-enabled
+build is verified; this is not a new platform/build-configuration matrix.
