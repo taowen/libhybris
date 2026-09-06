@@ -60,7 +60,8 @@ endif
 
 if WANT_ARCH_ARM64
 libhybris_common_la_SOURCES += \
-	tls_patcher.c
+	tls_patcher.c \
+	tls_first_touch.S
 endif
 
 libhybris_common_la_CPPFLAGS = \

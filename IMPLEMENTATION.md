@@ -562,3 +562,14 @@ that fallback is not covered on current devices. No handle header is modified.
 The AArch64 build adds system_ext/lib64 for modern Android loader dependencies.
 See gaps.md's Redmi/X300 checkpoint for passing paths and unresolved Mali
 pipeline/concurrency failures; the full X300 baseline is not passing.
+
+
+AArch64 patched MRS reads now initialize foreign-thread bionic TLS on first
+touch through `tls_first_touch.S`; integer/NEON registers and flags are saved
+around allocation and host errno is restored. The pthread shadow includes
+the tid prefix needed by inlined bionic mutex paths. The fast path only checks
+slot 1, so late module initializer replay remains the hook/TLSDESC resolver's
+responsibility. Reservation and allocation use HYBRIS_TLS_THUNK_SIZE (80).
+The first-touch probe and full Redmi/X300 results are in the baseline README;
+X300 initialization/TLS passes, but ICD graphics pipelines still crash.
+Signal/fork, SVE/SME and arbitrary Android pthread layouts are not covered.

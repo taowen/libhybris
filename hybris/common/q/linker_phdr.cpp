@@ -578,15 +578,16 @@ bool ElfReader::ReserveAddressSpace(address_space_params* address_space) {
   // Over-reserve VA space for the TLS thunk region that will be placed after
   // the ELF segments. The actual thunk size is determined exactly by counting
   // MRS instructions in LoadSegments; this just ensures there's room.
-  // Worst case: every instruction is MRS → (code_size / 4) * 16 = 4x code
-  // size. Page-aligned since the thunk mmap rounds up to page boundaries.
+  // Worst case: every instruction needs one HYBRIS_TLS_THUNK_SIZE thunk per 4 bytes of code.
+  // Reservation scales with the common patcher allocation size, not a separate estimate.
+  // Page-aligned since the thunk mmap rounds up to page boundaries.
   // This only costs virtual address space (PROT_NONE), not physical memory.
   if (_tls_patcher_funcs.patch_tls) {
     size_t thunk_reserve = 0;
     for (size_t i = 0; i < phdr_num_; ++i) {
       const ElfW(Phdr)* phdr = &phdr_table_[i];
       if (phdr->p_type == PT_LOAD && (phdr->p_flags & PF_X) != 0) {
-        thunk_reserve += phdr->p_filesz * 4;
+        thunk_reserve += phdr->p_filesz * (HYBRIS_TLS_THUNK_SIZE / 4);
       }
     }
     load_size_ += PAGE_END(thunk_reserve);
@@ -755,7 +756,7 @@ bool ElfReader::LoadSegments() {
     if (total_mrs_count > 0) {
       // Allocate one thunk region sized exactly for all MRS instructions,
       // placed right after the ELF segments in the over-reserved address space.
-      thunk_size = total_mrs_count * 16;  // 16 bytes per thunk
+      thunk_size = total_mrs_count * HYBRIS_TLS_THUNK_SIZE;
       thunk_size = (thunk_size + 4095) & ~(size_t)4095;  // page-align
 
       ElfW(Addr) min_vaddr, max_vaddr;

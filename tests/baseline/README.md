@@ -1555,3 +1555,32 @@ in device.json. With no selection all cases run. `--capture-tools` requires a
 full run, including reference images. Future device validation is restricted
 to Redmi and X300; X300 APK installation must use `../../tools/install-apk.sh`
 from the repository root (headless probes use adb push and need no APK).
+
+
+Foreign-thread MRS first touch (2026-09-07): AArch64 TLS thunks now check
+bionic TLS slot 1 before returning the adjusted thread pointer. On first
+access a separate assembly helper preserves integer/NEON registers, NZCV,
+FPCR and FPSR while initializing the compatibility TLS; the C helper restores
+host errno. The bionic pthread shadow's tid prefix receives SYS_gettid.
+Initialized-thread reads do not call the helper. Q linker reservations and
+patcher allocations share the 80-byte thunk size; MRS to XZR is left intact.
+
+The standalone `tls-mrs` probe enters a naked bionic fixture on eight fresh
+glibc threads, before any bionic libc/TLSDESC access. It checks selected
+caller-saved integer/NEON state, NZCV, errno and the shadow tid over 32 reads
+per thread. Old-library negative control `20260907T062749-34d32fa1` on X300
+fails all eight workers with observed=-1; the new library passes on both
+phones. This does not exhaust all destination registers or prove signal,
+fork, cancellation/unwind, SVE/SME, allocation-failure or arbitrary Android
+pthread layouts. Modules promoted after initial thread setup still require
+a hook/TLSDESC resolver to replay their initializers; the fast MRS path does
+not catch up such modules.
+
+Full post-fix Redmi run `20260907T062705-eb2706e7`: **96 PASS,
+4 UNSUPPORTED, 1 CRASH** (native-groups). X300 run
+`20260907T062706-9fb06554`: **83 PASS, 4 UNSUPPORTED, 13 CRASH, 1 FAIL**.
+Frontend vk-init/TLS and ICD vk-init now pass. X300 retains native-groups,
+five ICD widget variants, five widget validation variants and two capture
+crashes, plus ICD core11 transfer failure. These remain open; this batch
+only resolves the observed foreign-thread first-touch failure. No unit-test
+suite was added.

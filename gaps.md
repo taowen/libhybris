@@ -305,3 +305,17 @@ libvulkan 在 KHR group 枚举后使用 physical handle 时均 SIGSEGV；直接 
 再闭合一个真实应用故障。固定离屏通过仍不等于 G04/G06/G11/G12 完成。
 开发可用 runner 的重复 `--case BACKEND-MODE` 参数选择用例，保留 manifest、
 逐项分类与清理；默认完整运行不变，定向运行不与 capture 同用。
+
+
+2026-09-07 TLS 首次访问补充：AArch64 MRS thunk 在 glibc 新线程尚未建立
+bionic TLS slot 1 时调用保存寄存器/标志的初始化 helper，并填写 pthread
+shadow 的 tid 前缀。独立 `tls-mrs` 探针在八个新线程验证首次进入、部分
+整数/NEON 状态、NZCV、errno 和 tid；X300 旧库负对照
+`20260907T062749-34d32fa1` 八线程均失败，新库两台均通过。
+完整红米 `20260907T062705-eb2706e7` 为 96 PASS / 4 UNSUPPORTED / 1 CRASH；
+X300 `20260907T062706-9fb06554` 为 83 PASS / 4 UNSUPPORTED / 13 CRASH / 1 FAIL。
+X300 frontend vk-init/TLS 和 ICD vk-init 已通过；native-groups、ICD widget、
+widget validation、capture 崩溃及 core11 transfer 失败仍未解决。
+该修补不证明 signal/fork、SVE/SME、所有 Android pthread 布局或后加载模块
+的 IE TLS 初值重放。下一步仍需打通 X300 ICD graphics pipeline 和 core11
+传输，再继续 G02/G04 的应用与 WSI 验收；不能据此关闭 G03。

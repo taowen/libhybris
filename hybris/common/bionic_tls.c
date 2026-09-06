@@ -19,6 +19,9 @@
 
 #include "config.h"
 #include <pthread.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -285,6 +288,10 @@ void *_hybris_hook___get_tls_hooks()
             fprintf(stderr, "HYBRIS: fatal: failed to allocate pthread_internal_t shadow\n");
             abort();
         }
+        /* Q and current bionic pthread_internal_t start with next/prev then
+         * pid_t tid. Inlined bionic mutex code reads this prefix directly. */
+        pid_t tid = (pid_t)syscall(SYS_gettid);
+        memcpy((char *)pthread_shadow + 2 * sizeof(void *), &tid, sizeof(tid));
         pthread_internal_shadow_ptr = pthread_shadow;
 
         pthread_once(&bionic_tls_key_once, _bionic_tls_key_init);
@@ -322,4 +329,13 @@ void *_hybris_hook___get_tls_hooks()
     pthread_mutex_unlock(&g_promoted_tls.mutex);
 
     return tls_static_tls + BIONIC_TPIDR_OFFSET;
+}
+
+/* Called only by the first-touch assembly helper. MRS cannot change errno. */
+__attribute__((visibility("hidden")))
+void hybris_tls_first_touch_c(void)
+{
+    int saved_errno = errno;
+    _hybris_hook___get_tls_hooks();
+    errno = saved_errno;
 }

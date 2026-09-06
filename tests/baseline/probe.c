@@ -16,7 +16,9 @@ int main(int argc, char **argv) {
 #endif
   );
   int rc;
-  if (!strcmp(mode, "groups"))
+  if (!strcmp(mode, "tls-mrs"))
+    rc = tls_mrs_probe();
+  else if (!strcmp(mode, "groups"))
     rc = groups_probe(0);
   else if (!strcmp(mode, "groups-dlsym"))
     rc = groups_probe(1);

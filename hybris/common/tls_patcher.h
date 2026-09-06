@@ -20,6 +20,9 @@
 
 #include <stddef.h>
 
+/* Shared by the patcher and Q linker reservation; includes 16-byte alignment. */
+#define HYBRIS_TLS_THUNK_SIZE 80
+
 #ifdef __cplusplus
 extern "C" {
 #endif

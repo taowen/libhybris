@@ -175,3 +175,44 @@ extern "C" int rwlock_fixture_monotonic(void) {
     return sync_rw_monotonic(pthread_rwlock_timedrdlock_monotonic_np,
                              pthread_rwlock_timedwrlock_monotonic_np);
 }
+
+/* First Android instruction sequence on a foreign glibc thread. No TLS helper
+ * or libc call may precede MRS. Check caller-saved integer/vector state and
+ * NZCV as well as the bionic pthread prefix populated by the slow path. */
+extern "C" __attribute__((naked)) int tls_fixture_first_mrs(void) {
+  __asm__ volatile(
+      "mov x0, #0x101\n"
+      "mov x1, #0x202\n"
+      "dup v0.2d, x0\n"
+      "dup v31.2d, x1\n"
+      "mov x16, #0x1616\n"
+      "mov x17, #0x1717\n"
+      "cmp x0, x0\n"
+      "mrs x9, tpidr_el0\n"
+      "mrs x10, nzcv\n"
+      "lsr x10, x10, #28\n"
+      "cmp x10, #6\n"
+      "b.ne 1f\n"
+      "cmp x0, #0x101\n"
+      "b.ne 1f\n"
+      "cmp x1, #0x202\n"
+      "b.ne 1f\n"
+      "mov x11, #0x1616\n"
+      "cmp x16, x11\n"
+      "b.ne 1f\n"
+      "mov x11, #0x1717\n"
+      "cmp x17, x11\n"
+      "b.ne 1f\n"
+      "umov x11, v0.d[1]\n"
+      "cmp x11, x0\n"
+      "b.ne 1f\n"
+      "umov x11, v31.d[1]\n"
+      "cmp x11, x1\n"
+      "b.ne 1f\n"
+      "ldr x9, [x9, #8]\n"
+      "cbz x9, 1f\n"
+      "ldr w0, [x9, #16]\n"
+      "ret\n"
+      "1: mov w0, #-1\n"
+      "ret\n");
+}

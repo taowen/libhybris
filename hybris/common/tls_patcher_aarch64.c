@@ -24,8 +24,8 @@
 #define MRS_OPCODE 0xD53
 #define TPIDR_EL0  0x5E82
 
-/* Thunk size in bytes (4 instructions = 16 bytes) */
-#define THUNK_SIZE 16
+#define THUNK_SIZE HYBRIS_TLS_THUNK_SIZE
+extern void hybris_tls_first_touch(void);
 
 /* Instruction format for MRS X<rt>, TPIDR_EL0 */
 struct __attribute__((__packed__)) mrs_inst {
@@ -37,7 +37,7 @@ _Static_assert(sizeof(struct mrs_inst) == 4, "MRS instruction size must be 4");
 
 static int is_mrs_tpidr_el0(uint32_t instruction) {
     const struct mrs_inst* mrs = (const struct mrs_inst*)&instruction;
-    return mrs->opcode == MRS_OPCODE && mrs->sys_reg == TPIDR_EL0;
+    return mrs->opcode == MRS_OPCODE && mrs->sys_reg == TPIDR_EL0 && mrs->rt != 31;
 }
 
 /* Count MRS TPIDR_EL0 instructions in a code segment */
@@ -53,17 +53,10 @@ static size_t hybris_count_tls_arch(void* segment_addr, size_t segment_size) {
     return mrs_count;
 }
 
-/* Generate a thunk that adjusts the thread pointer and jumps back.
- *
- * Thunk code (4 instructions, 16 bytes):
- *   mrs x<rt>, tpidr_el0                 ; Read glibc thread pointer
- *   add x<rt>, x<rt>, #(offset & 0xFFF)  ; Low 12 bits
- *   add x<rt>, x<rt>, #(offset>>12), LSL #12  ; High 12 bits (adds 0 if unused)
- *   b <return_addr>                      ; Branch back to instruction after original MRS
- *
- * ADD (immediate) supports up to 12 bits unshifted or 12 bits shifted left by 12,
- * so two ADDs cover offsets up to 0xFFFFFF (16 MB).
- */
+/* Preserve MRS semantics, including registers and flags. A new glibc thread
+ * can enter vendor code without passing any libc hook or TLSDESC resolver.
+ * Check the bionic pthread shadow on every read; only first touch calls the
+ * register-preserving slow helper. No helper runs on initialized threads. */
 static void generate_tls_thunk(int tls_offset_words, uint32_t target_register,
                                void* mrs_location, void* thunk) {
     uint32_t* code = (uint32_t*)thunk;
@@ -80,7 +73,7 @@ static void generate_tls_thunk(int tls_offset_words, uint32_t target_register,
 
     /* Calculate branch offset back to the instruction after the original MRS */
     void* return_addr = (char*)mrs_location + 4;
-    intptr_t return_diff = (intptr_t)return_addr - (intptr_t)((char*)thunk + 12);
+    intptr_t return_diff = (intptr_t)return_addr - (intptr_t)((char*)thunk + 60);
     if (return_diff % 4 != 0 || return_diff / 4 < -(1 << 25) || return_diff / 4 >= (1 << 25)) {
         fprintf(stderr, "HYBRIS: fatal: return branch from thunk %p to %p out of range\n",
                 thunk, return_addr);
@@ -88,17 +81,25 @@ static void generate_tls_thunk(int tls_offset_words, uint32_t target_register,
     }
     int32_t return_offset = return_diff / 4;
 
-    /* MRS X<rt>, TPIDR_EL0 */
-    code[0] = 0xD53BD040 | target_register;
+    code[0] = 0xa9be47f0; /* stp x16, x17, [sp, #-32]! */
+    code[1] = 0xf9000bfe; /* str x30, [sp, #16] */
+    code[2] = 0xd53bd050; /* mrs x16, tpidr_el0 */
+    code[3] = 0x91000210 | (imm_lo << 10);
+    code[4] = 0x91400210 | (imm_hi << 10);
+    code[5] = 0xf9400611; /* ldr x17, [x16, #8]: bionic pthread shadow */
+    code[6] = 0xb5000091; /* cbnz x17, +16 (restore) */
+    code[7] = 0x58000131; /* ldr x17, +36 (helper pointer) */
+    code[8] = 0xd63f0220; /* blr x17 */
+    code[9] = 0xd503201f; /* nop */
+    code[10] = 0xf9400bfe; /* ldr x30, [sp, #16] */
+    code[11] = 0xa8c247f0; /* ldp x16, x17, [sp], #32 */
+    code[12] = 0xd53bd040 | target_register;
+    code[13] = 0x91000000 | (target_register << 5) | target_register | (imm_lo << 10);
+    code[14] = 0x91400000 | (target_register << 5) | target_register | (imm_hi << 10);
+    code[15] = 0x14000000 | (return_offset & 0x3ffffff);
+    uintptr_t helper = (uintptr_t)hybris_tls_first_touch;
+    memcpy(&code[16], &helper, sizeof(helper));
 
-    /* ADD X<rt>, X<rt>, #imm_lo */
-    code[1] = 0x91000000 | (target_register << 5) | target_register | (imm_lo << 10);
-
-    /* ADD X<rt>, X<rt>, #imm_hi, LSL #12  (sh bit 22 set) */
-    code[2] = 0x91400000 | (target_register << 5) | target_register | (imm_hi << 10);
-
-    /* B <return_offset> */
-    code[3] = 0x14000000 | (return_offset & 0x3FFFFFF);
 }
 
 /* Replace MRS instruction with branch to thunk */
@@ -126,7 +127,7 @@ static void hybris_patch_tls_arch(void* segment_addr, size_t segment_size, int t
 
         const struct mrs_inst* mrs = (const struct mrs_inst*)&text[i];
 
-        /* Allocate 16 bytes from the thunk region */
+        /* Allocate one aligned first-touch thunk. */
         void* thunk = hybris_allocate_thunk_near(&text[i], THUNK_SIZE);
 
         /* Generate thunk and patch the instruction */

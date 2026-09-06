@@ -159,6 +159,7 @@ for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked', 'libtls-fixt
 
 
 cases = [
+    ('hybris', 'tls-mrs', 'probe-glibc'),
     ('native', 'groups', 'probe-bionic'),
     ('native', 'groups-dlsym', 'probe-bionic'),
     ('hybris', 'groups', 'probe-glibc'),
