@@ -6,35 +6,40 @@ This is a smoke test, not conformance certification or application compatibility
 
 ## Build
 
-From this repository (not the parent ardesk tree):
+From this repository root:
 
 ```sh
-bash ../../tools/build-aarch64.sh
-bash build.sh
-python3 run.py --serial 29854870
+bash tools/build-aarch64.sh
+export ANDROID_NDK_HOME=/path/to/android-ndk
+bash tests/baseline/build.sh
+python3 tests/baseline/run.py --serial 29854870
 ```
 
 `tools/build-aarch64.sh` cross-compiles this checkout, stages `build/install`
 and `build/runtime`, and writes `build/manifest.json` with ELF sha256/build-id
 for every installed binary. It refuses `vulkanplatform_x11.so`; that plugin is
-not a current source target. The AArch64 toolchain image comes from the parent
+not a current source target. Each build starts with fresh source/install/runtime staging. The AArch64 toolchain image comes from the parent
 project's `tools/ensure-glibc-builder.sh` when this tree is checked out as
 `third_party/libhybris`. Otherwise set `BUILDER_IMAGE` and `--headers`.
 
-`build.sh` compiles `probe-glibc`, `probe-glibc-linked` (DT_NEEDED libvulkan)
-and `probe-bionic`. Set `BIONIC_CC` if the default NDK clang wrapper is absent.
+`tests/baseline/build.sh` compiles `probe-glibc`, `probe-glibc-linked` (DT_NEEDED libvulkan)
+and `probe-bionic`. Set `ANDROID_NDK_HOME` or an explicit `BIONIC_CC`.
 
 ```sh
-python3 run.py --serial 29854870 \
-  --hybris-lib build/install/usr/lib/hybris \
-  --runtime build/runtime \
-  --manifest build/manifest.json
+python3 tests/baseline/run.py --serial 29854870 \
+  --hybris-lib /path/to/install/usr/lib/hybris \
+  --runtime /path/to/runtime \
+  --manifest /path/to/manifest.json
 ```
 
 The runner uses a unique `/data/local/tmp/libhybris-baseline-<run-id>` directory,
-records loaded ELF hashes, rejects unknown platform plugins, and kills leftover
-device PIDs after a host timeout. Results go under `build/results/<run-id>/`.
-Each probe arms `alarm(25)` from a constructor so a stuck loader still dies.
+verifies the supplied manifest against all staged ELF files (including SONAME
+aliases), rejects unknown platform plugins, and kills its recorded probe PID
+after a host timeout after checking its executable path. Manifest hashes describe
+staged files, not observed runtime mappings. Custom library paths do not inherit
+the default manifest; supply their matching manifest explicitly. Results go under `build/results/<run-id>/`.
+Each probe arms `alarm(25)` from its own constructor. A dependency constructor
+can run earlier, so the host timeout and pre-exec PID tracking are still required.
 Exit 0 means the implemented checks passed, 3 means unsupported, 124 timeout;
 the runner returns nonzero for FAIL/TIMEOUT/CRASH.
 
@@ -45,8 +50,11 @@ the runner returns nonzero for FAIL/TIMEOUT/CRASH.
   all 1024 returned words. Instance requests Vulkan 1.0; reported device version
   does not imply that later-version features were exercised.
 - Dispatch: resolve the same symbols via link, dlsym, GIPA and GDPA; a missing
-  name must return NULL instead of a trampoline. BeginRendering/Submit2 are
-  reported present or null according to the loaded driver, not advertised.
+  name must return NULL. Negative checks cover NULL-instance non-global queries,
+  GDPA instance/physical-device commands and disabled device extensions.
+  Ordinary proc queries preserve backend resolution; only WSI/frontend commands
+  substitute local wrappers. Equal function addresses are not required.
+  This is not yet a generated per-device compatibility dispatch layer.
 - EGL/GLES: pbuffer contexts requesting ES 2 and ES 3; clear and read back;
   compile/link a simple shader pair, draw a triangle using a VBO, verify a pixel.
   Drivers may return a higher compatible context version.
@@ -63,7 +71,8 @@ Readbacks are test assertions, not a proposed production presentation path.
 Android 13 (SDK 33), model M2012K11AC. Vendor driver identifies itself as
 Adreno 650, Vulkan 1.1.128, driver `0x801f6000`; GLES 3.2 V@0502.0,
 GLSL ES 3.20, EGL 1.5. Use queried driver identity rather than inferred SoC.
-Source examined/rebuilt: `dcc3588`.
+Initial baseline source: `dcc3588`. Subsequent dispatch/tooling review starts
+from `1599593`; exact binaries and dirty-source status are recorded per run.
 
 | Case | Android native | glibc + hybris | glibc linked |
 |---|---|---|---|
@@ -84,3 +93,10 @@ The 2026-09-06 rerun used `tools/build-aarch64.sh` from this checkout. Results
 are under `build/results/<run-id>/` with `manifest.json` ELF hashes. Rebuild
 the library when measuring a different source revision; a dirty working tree
 is recorded as `source_dirty` in the manifest.
+
+## Review checks
+
+The manifest verification was checked against modified, missing, extra and
+redirected SONAME ELF files. The 2026-09-06 review rerun on 29854870 passed
+10 checks with 2 expected desktop-GL unsupported results. No new GPU feature
+or window-system compatibility is implied by these results.

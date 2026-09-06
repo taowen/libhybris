@@ -99,3 +99,6 @@ tests/baseline/probe-glibc
 tests/baseline/probe-bionic
 tests/baseline/probe-glibc-linked
 
+
+__pycache__/
+*.pyc

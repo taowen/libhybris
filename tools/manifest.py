@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -41,7 +40,7 @@ def build_id(path: Path) -> str | None:
 
 
 def is_elf(path: Path) -> bool:
-    if not path.is_file() or path.is_symlink():
+    if not path.is_file():
         return False
     with path.open('rb') as handle:
         return handle.read(4) == b'\x7fELF'
@@ -84,6 +83,18 @@ def describe_tree(root: Path, label: str) -> list[dict]:
     return entries
 
 
+def verify_manifest(payload: dict, hybris_lib: Path, runtime: Path) -> None:
+    """Verify the complete deployable ELF set, including SONAME aliases."""
+    expected = {(e['tree'], e['path']): e['sha256'] for e in payload['elfs']}
+    actual = {(label, str(path.relative_to(root))): sha256_file(path)
+              for label, root in [('hybris', hybris_lib), ('runtime', runtime)]
+              for path in collect_elfs(root)}
+    if not expected or actual != expected:
+        changed = sorted(k for k in actual.keys() | expected.keys()
+                         if actual.get(k) != expected.get(k))
+        raise ValueError('manifest does not match staged ELF files: ' + repr(changed))
+
+
 def write_manifest(out: Path, payload: dict) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2) + '\n')
@@ -115,7 +126,7 @@ def main() -> int:
         'hybris_lib': str(args.hybris_lib.resolve()),
         'runtime': str(args.runtime.resolve()),
         'elfs': describe_tree(args.hybris_lib, 'hybris') + describe_tree(args.runtime, 'runtime'),
-        'note': 'source_commit identifies the tree that produced these binaries only when this script built them.',
+        'note': 'Build script supplies source provenance; ELF hashes verify artifacts, not source-to-binary reproducibility.',
     }
     write_manifest(args.out, payload)
     print(args.out)

@@ -19,7 +19,7 @@ Builds libhybris for aarch64 glibc and stages:
   $OUT/runtime   glibc loader and DT_NEEDED runtime .so files
   $OUT/manifest.json  ELF sha256/build-id for every staged binary
 
---headers defaults to ../../android-headers when this tree sits in ardesk.
+--headers defaults to the sibling android-headers checkout when available.
 The AArch64 toolchain comes from tools/ensure-glibc-builder.sh in the parent
 project when present; otherwise set BUILDER_IMAGE to a Debian-based image
 that has aarch64-linux-gnu-gcc, autoconf, wayland, vulkan and X11 -dev:arm64.
@@ -62,22 +62,19 @@ mkdir -p "$OUT"
 SRC_COPY="$OUT/src"
 INSTALL="$OUT/install"
 RUNTIME="$OUT/runtime"
-STUBS="$OUT/stubs"
 PC="$OUT/pc"
 LOG="$OUT/hybris-build.log"
 
 if [[ "$CLEAN" = 1 ]]; then
-    rm -rf "$SRC_COPY" "$INSTALL" "$RUNTIME" "$STUBS" "$PC" "$LOG"
+    rm -rf "$SRC_COPY" "$INSTALL" "$RUNTIME" "$PC" "$LOG"
 fi
 
-if command -v rsync >/dev/null; then
-    rsync -a --delete --exclude .git --exclude tests/baseline/build "$ROOT/" "$SRC_COPY/"
-else
-    rm -rf "$SRC_COPY"
-    mkdir -p "$SRC_COPY"
-    cp -a "$ROOT/." "$SRC_COPY/"
-    rm -rf "$SRC_COPY/tests/baseline/build"
-fi
+# Copy only build inputs; custom output directories inside the checkout cannot
+# recursively copy themselves. A fresh install/runtime avoids stale artifacts.
+rm -rf "$SRC_COPY" "$INSTALL" "$RUNTIME"
+mkdir -p "$SRC_COPY"
+cp -a "$ROOT/hybris" "$SRC_COPY/"
+cp -a "$ROOT/compat" "$SRC_COPY/"
 
 # Bind the headers as they are; they are not rewritten.
 HEADERS_ABS="$(cd "$HEADERS" && pwd)"
@@ -97,10 +94,9 @@ CXX_BIN=${HOST_TRIPLE}-g++
 BUILD_DIR=/src/hybris
 OUT_DIR=/out/install
 PC_DIR=/out/pc
-STUB_DIR=/out/stubs
 RUNTIME_DIR=/out/runtime
 BUILD_LOG=/out/hybris-build.log
-mkdir -p "$OUT_DIR" "$PC_DIR" "$STUB_DIR" "$RUNTIME_DIR"
+mkdir -p "$OUT_DIR" "$PC_DIR" "$RUNTIME_DIR"
 : >"$BUILD_LOG"
 run_logged() {
     if "$@" >>"$BUILD_LOG" 2>&1; then
@@ -111,21 +107,6 @@ run_logged() {
         exit 1
     fi
 }
-gen_stub() {
-    local soname="$1"
-    if [[ ! -f "$STUB_DIR/$soname" ]]; then
-        "$CC_BIN" -shared -nostdlib -Wl,-soname,"$soname" \
-            -x c /dev/null -o "$STUB_DIR/$soname"
-        ln -sf "$soname" "$STUB_DIR/${soname%.so.*}.so"
-    fi
-}
-gen_stub libwayland-client.so.0
-gen_stub libwayland-server.so.0
-gen_stub libwayland-egl.so.1
-gen_stub libvulkan.so.1
-gen_stub libX11.so.6
-gen_stub libxcb.so.1
-gen_stub libX11-xcb.so.1
 HOST_WAYLAND_INCLUDE="$(pkg-config --variable=includedir wayland-client 2>/dev/null || echo /usr/include)"
 HOST_WAYLAND_PROTOCOLS_DATADIR="$(pkg-config --variable=pkgdatadir wayland-protocols 2>/dev/null || echo /usr/share/wayland-protocols)"
 HOST_WAYLAND_SCANNER="$(command -v wayland-scanner)"

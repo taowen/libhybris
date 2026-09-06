@@ -7,7 +7,10 @@ OUT="${OUT:-$PWD/build}"
 BUNDLE="$OUT/bundle"
 HYBRIS_LIB="${HYBRIS_LIB:-$OUT/install/usr/lib/hybris}"
 RUNTIME="${RUNTIME:-$OUT/runtime}"
-BIONIC_CC="${BIONIC_CC:-${ANDROID_NDK_HOME:-/home/taowen/Android/Sdk/ndk/29.0.14206865}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang}"
+if [[ -z "${BIONIC_CC:-}" ]]; then
+    : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME or BIONIC_CC}"
+    BIONIC_CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+fi
 
 if [[ ! -f "$HYBRIS_LIB/libvulkan.so.1" ]]; then
     echo "missing $HYBRIS_LIB/libvulkan.so.1; run tools/build-aarch64.sh first" >&2

@@ -34,7 +34,6 @@
 #include "ws.h"
 
 static void *vulkan_handle = NULL;
-static void *self_handle = NULL;
 
 /*
  * Arm64 assembly trampoline replacing the original IFUNC-based VULKAN_IDLOAD.
@@ -48,10 +47,10 @@ static void *self_handle = NULL;
  *   1. A hidden function-pointer variable (_vulkan_ptr_<sym>)
  *   2. A linker-set entry registering it for bulk resolution
  *   3. A trampoline: load the pointer, abort with the symbol name if it
- *      is NULL, otherwise br through x16 (IPC scratch), preserving args
+ *      is NULL, otherwise br through x16 (IP0 scratch), preserving args
  *
  * A constructor resolves all pointers after relocation completes.
- * GIPA/GDPA return NULL for unresolved symbols instead of the trampoline.
+ * GIPA/GDPA preserve the backend resolver scope and extension checks.
  */
 
 struct _vulkan_sym_entry {
@@ -92,8 +91,6 @@ __asm__( \
     "    .asciz \"" #sym "\"\n" \
     ".text\n" \
 );
-
-static PFN_vkVoidFunction hybris_vk_wrapper_or_null(const char *pName, int *known);
 
 static void _init_androidvulkan()
 {
@@ -194,48 +191,66 @@ VULKAN_IDLOAD(vkDestroySurfaceKHR);
 
 static PFN_vkVoidFunction (*_real_vkGetDeviceProcAddr)(VkDevice device, const char* pName) = NULL;
 
+/* Do not resolve proc queries from our ELF export table. Android loaders may
+ * export stubs for unsupported commands, and GDPA excludes instance commands.
+ * Ordinary calls retain the instance/device-specific downstream pointer.
+ * Only commands whose semantics we implement locally substitute a wrapper. */
 PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
 {
-    int known = 0;
-    PFN_vkVoidFunction local;
-
     if (!pName)
         return NULL;
-
-    if (_vkGetInstanceProcAddr == NULL) {
-        HYBRIS_DLSYSM(vulkan, &_vkGetInstanceProcAddr, "vkGetInstanceProcAddr");
-    }
-
-    local = hybris_vk_wrapper_or_null(pName, &known);
-    if (known)
-        return local;
-
-    if (_vkGetInstanceProcAddr == NULL)
+    if (!_vkGetInstanceProcAddr)
         return NULL;
-    return (*_vkGetInstanceProcAddr)(instance, pName);
+
+    if (!strcmp(pName, "vkGetInstanceProcAddr"))
+        return (PFN_vkVoidFunction)vkGetInstanceProcAddr;
+
+#ifdef WANT_WAYLAND
+    /* Wayland has no downstream name. The platform translates its enabled
+     * extension to Android surface at CreateInstance; query that capability. */
+    const char *platform = getenv("HYBRIS_VULKANPLATFORM");
+    if (!platform) platform = "wayland";
+    if (!strcmp(pName, "vkCreateWaylandSurfaceKHR") ||
+        !strcmp(pName, "vkGetPhysicalDeviceWaylandPresentationSupportKHR")) {
+        if (!instance || strcmp(platform, "wayland") ||
+            !_vkGetInstanceProcAddr(instance, "vkCreateAndroidSurfaceKHR"))
+            return NULL;
+        return !strcmp(pName, "vkCreateWaylandSurfaceKHR")
+            ? (PFN_vkVoidFunction)vkCreateWaylandSurfaceKHR
+            : (PFN_vkVoidFunction)vkGetPhysicalDeviceWaylandPresentationSupportKHR;
+    }
+#endif
+    PFN_vkVoidFunction backend = _vkGetInstanceProcAddr(instance, pName);
+    if (!backend)
+        return NULL;
+#define LOCAL(name) if (!strcmp(pName, #name)) return (PFN_vkVoidFunction)name
+    LOCAL(vkCreateInstance);
+    LOCAL(vkEnumerateInstanceExtensionProperties);
+    LOCAL(vkGetDeviceProcAddr);
+#ifdef WANT_WAYLAND
+    LOCAL(vkDestroySurfaceKHR);
+    LOCAL(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
+    LOCAL(vkGetPhysicalDeviceSurfaceCapabilities2KHR);
+    LOCAL(vkCreateSwapchainKHR);
+#endif
+#undef LOCAL
+    return backend;
 }
 
 PFN_vkVoidFunction vkGetDeviceProcAddr(VkDevice device, const char* pName)
 {
-    int known = 0;
-    PFN_vkVoidFunction local;
-
-    if (!pName)
+    if (!pName || !_real_vkGetDeviceProcAddr)
         return NULL;
-
-    local = hybris_vk_wrapper_or_null(pName, &known);
-    if (known)
-        return local;
-
-    if (!_real_vkGetDeviceProcAddr) {
-        if (!vulkan_handle)
-            _init_androidvulkan();
-        _real_vkGetDeviceProcAddr = (PFN_vkVoidFunction (*)(VkDevice, const char*))
-            android_dlsym(vulkan_handle, "vkGetDeviceProcAddr");
-    }
-    if (!_real_vkGetDeviceProcAddr)
+    PFN_vkVoidFunction backend = _real_vkGetDeviceProcAddr(device, pName);
+    if (!backend)
         return NULL;
-    return _real_vkGetDeviceProcAddr(device, pName);
+    if (!strcmp(pName, "vkGetDeviceProcAddr"))
+        return (PFN_vkVoidFunction)vkGetDeviceProcAddr;
+#ifdef WANT_WAYLAND
+    if (!strcmp(pName, "vkCreateSwapchainKHR"))
+        return (PFN_vkVoidFunction)vkCreateSwapchainKHR;
+#endif
+    return backend;
 }
 VULKAN_IDLOAD(vkCreateDevice);
 VULKAN_IDLOAD(vkDestroyDevice);
@@ -1004,63 +1019,14 @@ VULKAN_IDLOAD(vkCmdDrawMeshTasksIndirectCountEXT);
 extern const struct _vulkan_sym_entry __start_vulkan_syms[];
 extern const struct _vulkan_sym_entry __stop_vulkan_syms[];
 
-static PFN_vkVoidFunction hybris_vk_self_symbol(const char *pName)
-{
-    if (!self_handle) {
-        Dl_info info;
-        if (dladdr((void *)vkGetInstanceProcAddr, &info) && info.dli_fname)
-            self_handle = dlopen(info.dli_fname, RTLD_LAZY | RTLD_NOLOAD);
-        if (!self_handle)
-            self_handle = RTLD_DEFAULT;
-    }
-    return (PFN_vkVoidFunction)dlsym(self_handle, pName);
-}
-
-static int hybris_vk_is_local_wrapper(const char *pName)
-{
-    return !strcmp(pName, "vkCreateInstance") ||
-           !strcmp(pName, "vkEnumerateInstanceExtensionProperties") ||
-           !strcmp(pName, "vkGetInstanceProcAddr") ||
-           !strcmp(pName, "vkGetDeviceProcAddr")
-#ifdef WANT_WAYLAND
-           || !strcmp(pName, "vkCreateWaylandSurfaceKHR")
-           || !strcmp(pName, "vkGetPhysicalDeviceWaylandPresentationSupportKHR")
-           || !strcmp(pName, "vkDestroySurfaceKHR")
-           || !strcmp(pName, "vkCreateXlibSurfaceKHR")
-           || !strcmp(pName, "vkGetPhysicalDeviceXlibPresentationSupportKHR")
-           || !strcmp(pName, "vkCreateXcbSurfaceKHR")
-           || !strcmp(pName, "vkGetPhysicalDeviceXcbPresentationSupportKHR")
-           || !strcmp(pName, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR")
-           || !strcmp(pName, "vkCreateSwapchainKHR")
-           || !strcmp(pName, "vkGetPhysicalDeviceSurfaceCapabilities2KHR")
-#endif
-        ;
-}
-
-static PFN_vkVoidFunction hybris_vk_wrapper_or_null(const char *pName, int *known)
-{
-    const struct _vulkan_sym_entry *s;
-
-    *known = 0;
-    if (hybris_vk_is_local_wrapper(pName)) {
-        *known = 1;
-        return hybris_vk_self_symbol(pName);
-    }
-    for (s = __start_vulkan_syms; s < __stop_vulkan_syms; s++) {
-        if (strcmp(s->name, pName) != 0)
-            continue;
-        *known = 1;
-        if (!s->ptr || !*s->ptr)
-            return NULL;
-        return hybris_vk_self_symbol(pName);
-    }
-    return NULL;
-}
-
 __attribute__((constructor))
 static void _resolve_vulkan_syms(void)
 {
     _init_androidvulkan();
+    _vkGetInstanceProcAddr = vulkan_handle
+        ? (PFN_vkGetInstanceProcAddr)android_dlsym(vulkan_handle, "vkGetInstanceProcAddr") : NULL;
+    _real_vkGetDeviceProcAddr = vulkan_handle
+        ? (PFN_vkGetDeviceProcAddr)android_dlsym(vulkan_handle, "vkGetDeviceProcAddr") : NULL;
     for (const struct _vulkan_sym_entry *s = __start_vulkan_syms;
          s < __stop_vulkan_syms; s++) {
         *s->ptr = vulkan_handle ? android_dlsym(vulkan_handle, s->name) : NULL;

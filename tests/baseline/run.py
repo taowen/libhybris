@@ -15,7 +15,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
-from manifest import unexpected_platforms, sha256_file, build_id  # noqa: E402
+from manifest import unexpected_platforms, verify_manifest  # noqa: E402
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
@@ -31,7 +31,7 @@ if a.hybris_lib is None:
     a.hybris_lib = default_out / 'install/usr/lib/hybris'
 if a.runtime is None:
     a.runtime = default_out / 'runtime'
-if a.manifest is None:
+if a.manifest is None and a.hybris_lib == default_out / 'install/usr/lib/hybris' and a.runtime == default_out / 'runtime':
     candidate = default_out / 'manifest.json'
     a.manifest = candidate if candidate.is_file() else None
 
@@ -68,24 +68,22 @@ def classify(code: int) -> str:
         return 'PASS'
     if code == 3:
         return 'UNSUPPORTED'
-    if code == 124:
+    if code in {124, 142}:
         return 'TIMEOUT'
     if code < 0 or code == 139 or code == 134:
         return 'CRASH'
     return 'FAIL'
 
 
-def kill_remote(marker: str) -> None:
-    # Host timeout is not the same as the device process exiting.
-    shell(
-        "pids=$(ps -A -o PID,NAME,ARGS 2>/dev/null | grep "
-        + shlex.quote(marker)
-        + " | grep -v grep | awk '{print $1}'); "
-        "if [ -n \"$pids\" ]; then kill -9 $pids 2>/dev/null; fi",
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+def kill_remote() -> None:
+    # The shell records the exact child PID before exec, including constructors.
+    # Check its executable path before killing, so a reused PID is not targeted.
+    shell("if [ -f " + remote + "/probe.pid ]; then "
+          "read pid < " + remote + "/probe.pid; "
+          "case $(readlink /proc/$pid/exe) in " + remote +
+          "/*) kill -9 \"$pid\" 2>/dev/null ;; esac; fi",
+          check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+          timeout=10)
 
 
 metadata = {name: prop(name) for name in ['ro.product.model', 'ro.build.fingerprint', 'ro.build.version.sdk']}
@@ -98,6 +96,7 @@ metadata['runtime'] = str(a.runtime.resolve())
 metadata['manifest'] = str(a.manifest.resolve()) if a.manifest else None
 if a.manifest:
     provenance = json.loads(a.manifest.read_text())
+    verify_manifest(provenance, a.hybris_lib, a.runtime)
     metadata['binary_source_commit'] = provenance.get('source_commit')
     metadata['binary_source_dirty'] = provenance.get('source_dirty')
     metadata['compiler'] = provenance.get('compiler')
@@ -105,22 +104,6 @@ if a.manifest:
     metadata['note'] = 'binary_source_commit comes from the build manifest, not from inspecting this git HEAD.'
 else:
     metadata['note'] = 'No build manifest; source HEAD does not identify the loaded binaries.'
-metadata['loaded'] = {
-    'libvulkan': {
-        'path': 'libvulkan.so.1.2.183',
-        'sha256': sha256_file(a.hybris_lib / 'libvulkan.so.1.2.183'),
-        'build_id': build_id(a.hybris_lib / 'libvulkan.so.1.2.183'),
-    },
-    'libEGL': {
-        'path': 'libEGL.so.1.0.0',
-        'sha256': sha256_file(a.hybris_lib / 'libEGL.so.1.0.0'),
-        'build_id': build_id(a.hybris_lib / 'libEGL.so.1.0.0'),
-    },
-    'probe-glibc': {
-        'sha256': sha256_file(a.bundle / 'probe-glibc'),
-        'build_id': build_id(a.bundle / 'probe-glibc'),
-    },
-}
 (a.out / 'device.json').write_text(json.dumps(metadata, indent=2) + '\n')
 if a.manifest:
     shutil.copy2(a.manifest, a.out / 'manifest.json')
@@ -134,8 +117,6 @@ shutil.copytree(a.runtime, stage / 'glibc', symlinks=False)
 for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked']:
     shutil.copy2(a.bundle / binary, stage / binary)
 
-shell('mkdir -p ' + remote, check=True)
-subprocess.run(adb + ['push', str(stage) + '/.', remote + '/'], check=True, stdout=subprocess.DEVNULL)
 
 cases = [
     ('native', 'vk', 'probe-bionic'),
@@ -154,6 +135,11 @@ cases = [
 
 results = []
 try:
+    if a.manifest:
+        verify_manifest(provenance, stage / 'hybris', stage / 'glibc')
+    shell('mkdir -p ' + remote, check=True)
+    subprocess.run(adb + ['push', str(stage) + '/.', remote + '/'],
+                   check=True, stdout=subprocess.DEVNULL)
     for backend, mode, binary in cases:
         if backend == 'native':
             command = (
@@ -170,10 +156,10 @@ try:
                 './glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./' + binary + ' '
             )
         name = backend + '-' + mode
-        marker = remote + '/' + binary
         try:
             r = shell(
-                'cd ' + remote + ' && ' + command + mode,
+                'cd ' + remote + ' && sh -c ' + shlex.quote(
+                    'echo $$ > probe.pid; exec env ' + command + mode),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=35,
@@ -181,15 +167,17 @@ try:
             output, code = r.stdout, r.returncode
         except subprocess.TimeoutExpired as exc:
             output, code = exc.stdout or b'', 124
-            kill_remote(marker)
+            kill_remote()
         (a.out / (name + '.log')).write_bytes(output or b'')
         status = classify(code)
         results.append(dict(case=name, status=status, exit_code=code, binary=binary))
         print(name, status, 'exit=' + str(code), flush=True)
 finally:
-    kill_remote(remote)
-    shell('rm -rf ' + remote, check=False)
-    (a.out / 'summary.json').write_text(json.dumps(results, indent=2) + '\n')
+    try:
+        kill_remote()
+        shell('rm -rf ' + remote, check=False, timeout=10)
+    finally:
+        (a.out / 'summary.json').write_text(json.dumps(results, indent=2) + '\n')
 
 failed = [r for r in results if r['status'] in {'FAIL', 'TIMEOUT', 'CRASH'}]
 raise SystemExit(1 if failed else 0)

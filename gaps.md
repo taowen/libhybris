@@ -150,7 +150,7 @@ P0 = 兼容增强前的基础；P1 = 直接影响目标应用；P2 = 基础可�
 | ID / 优先级 | 缺口与风险 | 最小验收证据 |
 |---|---|---|
 | G01 / P0 | 自主构建与产物来源：现有 probe 自主运行，但库构建仍借父项目；旧 staging 残留 | 独立 checkout 构建脚本，固定 headers/compiler/deps；运行 manifest 含实际 ELF hash/build-id、driver、设备、env、quirk 配置；干净安装无旧平台库。**已落地** `tools/build-aarch64.sh` + `tools/manifest.py` + runner 唯一 run-id；仍依赖父项目 builder 镜像或 `BUILDER_IMAGE`，android-headers 仍在仓库外 |
-| G02 / P0 | 全入口 dispatch、core/KHR alias、每 instance/device 的真实函数表；避免包装绕过/递归/NULL branch | 从 vk.xml 固定版本生成覆盖表；同一测试经 link/dlsym/GIPA/GDPA；BeginRendering/KHR、Submit2/KHR 等按启用能力测试；未支持符号符合规范，不假成功。**部分落地**：GIPA/GDPA 对已登记符号返回包装或 NULL，未解析 trampoline abort；尚无 vk.xml 生成覆盖表，也无 per-instance 函数表 |
+| G02 / P0 | 全入口 dispatch、core/KHR alias、每 instance/device 的真实函数表；避免包装绕过/递归/NULL branch | 从 vk.xml 固定版本生成覆盖表；同一测试经 link/dlsym/GIPA/GDPA；BeginRendering/KHR、Submit2/KHR 等按启用能力测试；未支持符号符合规范，不假成功。**部分落地**：普通 GIPA/GDPA 查询保留 backend 对 instance/device 的解析结果，只替换必要前端/WSI 包装；新增作用域/未启用扩展的负例测试，未解析的直接导出调用有错误信息。尚无 vk.xml 生成覆盖表，也无完整 per-instance/device 兼容状态表 |
 | G03 / P0 | 多线程/多 context/多 device 与对象生命周期 | 并行 create/destroy、二次 init/dlopen、回调、线程 TLS、handle 重用有回归；对象 state 按 generation 识别，不能用进程全局单一 current device |
 | G04 / P0 | 标准 loader/layer/tool 接入 | 一个已知非法小测试被 validation 捕获；一个合法小测试零新增错误；完成一帧 capture/replay 且像素匹配，再扩大到应用 |
 | G05 / P0 | 能力宣告与模拟实现脱节 | features/features2、properties/limits、extensions、format/image-format query 与 CreateDevice enable 路径一致；保留原始/有效能力差异及原因；不通过删整个 pNext 重试 |
@@ -231,13 +231,13 @@ descriptor 需在实际使用时重建有效状态：普通 set、copy/update te
 现有 baseline 已补（2026-09-06）：
 
 - `tools/build-aarch64.sh` 从本仓库交叉编译并写出 `manifest.json`；`build.sh` 只编 probe。
-- 运行器校验 stale platform、记录 ELF hash/build-id；`source_dirty` 区分工作区改动。
-- 超时后按 run-id 杀远端 PID；`alarm(25)` 提到 constructor。
+- 每次构建使用干净 staging；运行器校验 manifest 的完整 ELF 集合及 SONAME 别名。哈希证明部署输入，不等于实际 runtime mappings；`source_dirty` 仅标记有改动，不是源码内容指纹。
+- exec 前记录 probe PID，超时后检查 executable 路径再清理；`alarm(25)` 在 probe constructor，不覆盖更早的依赖 constructor，因此仍需要 host timeout。
 - 设备目录改为 `/data/local/tmp/libhybris-baseline-<run-id>`。
 
 仍缺：
 
-- 更精确区分“不支持”与 API 调用失败；当前 EGL config 错误也可能归为 unsupported。
+- 已区分 EGL_CLIENT_APIS 不支持桌面 GL 与 EGL 调用失败；仍需要更完整的 context/profile 特性测试。
 - ES3 专用功能、Vulkan shader/texture、多线程尚未测；基础三角形不足以代表 API feature level。
 - 标准 validation/capture 接入（G04）和 draw→image 诊断链（G06）未做。
 

@@ -67,6 +67,13 @@ static int eglprobe(int version) {
          p_eglQueryString(d, EGL_VENDOR), p_eglQueryString(d, EGL_CLIENT_APIS),
          p_eglQueryString(d, EGL_EXTENSIONS));
   int desktop = version == 0;
+  const char *apis = p_eglQueryString(d, EGL_CLIENT_APIS);
+  if (desktop && (!apis || !strstr(apis, "OpenGL ")) &&
+      (!apis || strcmp(apis, "OpenGL"))) {
+    printf("DESKTOP_GL UNSUPPORTED (EGL_CLIENT_APIS)\n");
+    p_eglTerminate(d);
+    return 3;
+  }
   EGLint attrs[] = {EGL_SURFACE_TYPE,
                     EGL_PBUFFER_BIT,
                     EGL_RENDERABLE_TYPE,
@@ -81,14 +88,18 @@ static int eglprobe(int version) {
                     EGL_NONE};
   EGLConfig config;
   EGLint count = 0;
-  if (!p_eglChooseConfig(d, attrs, &config, 1, &count) || !count) {
+  if (!p_eglChooseConfig(d, attrs, &config, 1, &count)) {
+    printf("eglChooseConfig FAIL 0x%x\n", p_eglGetError());
+    return 2;
+  }
+  if (!count) {
     printf("NO CONFIG for %s%d error=0x%x\n", desktop ? "GL" : "GLES", version,
            p_eglGetError());
     return 3;
   }
   if (!p_eglBindAPI(desktop ? EGL_OPENGL_API : EGL_OPENGL_ES_API)) {
     printf("eglBindAPI FAIL 0x%x\n", p_eglGetError());
-    return 3;
+    return 2;
   }
   EGLint ca[] = {EGL_CONTEXT_CLIENT_VERSION, version, EGL_NONE};
   EGLint pa[] = {EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE};
@@ -407,13 +418,14 @@ static int dispatch_probe(void) {
   }
   PFN_vkGetInstanceProcAddr gip_gipa =
       (PFN_vkGetInstanceProcAddr)gip(NULL, "vkGetInstanceProcAddr");
+  /* NULL-instance self lookup is optional before Vulkan 1.2. */
+  (void)gip_gipa;
   PFN_vkCreateInstance create_gip =
       (PFN_vkCreateInstance)gip(NULL, "vkCreateInstance");
   PFN_vkEnumerateInstanceExtensionProperties enum_gip =
       (PFN_vkEnumerateInstanceExtensionProperties)gip(
           NULL, "vkEnumerateInstanceExtensionProperties");
-  if (!same_or_both((void *)gip, (void *)gip_gipa, "vkGetInstanceProcAddr") ||
-      !same_or_both((void *)create_dl, (void *)create_gip, "vkCreateInstance") ||
+  if (!same_or_both((void *)create_dl, (void *)create_gip, "vkCreateInstance") ||
       !same_or_both((void *)enum_dl, (void *)enum_gip,
                     "vkEnumerateInstanceExtensionProperties"))
     return 2;
@@ -428,6 +440,14 @@ static int dispatch_probe(void) {
   if (gip(NULL, "vkHybrisDefinitelyMissing123") != NULL) {
     printf("GIPA missing-symbol leaked\n");
     return 2;
+  }
+  const char *nonglobal[] = {"vkCreateDevice", "vkQueueSubmit", "vkDestroyInstance",
+                            "vkCreateSwapchainKHR", "vkCreateWaylandSurfaceKHR"};
+  for (unsigned i = 0; i < sizeof(nonglobal)/sizeof(nonglobal[0]); ++i) {
+    if (gip(NULL, nonglobal[i])) {
+      printf("GIPA_SCOPE FAIL %s without instance\n", nonglobal[i]);
+      return 2;
+    }
   }
   VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                            .pApplicationName = "hybris-dispatch",
@@ -503,6 +523,18 @@ static int dispatch_probe(void) {
   if (gdp(device, "vkHybrisDefinitelyMissing123") != NULL) {
     printf("GDPA missing-symbol leaked\n");
     return 2;
+  }
+  const char *nondevice[] = {"vkCreateInstance", "vkCreateDevice",
+      "vkEnumeratePhysicalDevices", "vkGetPhysicalDeviceProperties",
+      "vkDestroySurfaceKHR", "vkCreateWaylandSurfaceKHR", "vkCreateXcbSurfaceKHR",
+      "vkCreateSwapchainKHR", "vkCmdBeginRenderingKHR", "vkQueueSubmit2KHR"};
+  /* No device extensions were enabled. Their commands must not be exposed.
+   * Later core commands may still be returned, but must not be called. */
+  for (unsigned i = 0; i < sizeof(nondevice)/sizeof(nondevice[0]); ++i) {
+    if (gdp(device, nondevice[i])) {
+      printf("GDPA_SCOPE FAIL %s\n", nondevice[i]);
+      return 2;
+    }
   }
   PFN_vkQueueSubmit submit = (PFN_vkQueueSubmit)gdp(device, "vkQueueSubmit");
   void *begin_khr = (void *)gdp(device, "vkCmdBeginRenderingKHR");
