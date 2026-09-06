@@ -151,6 +151,8 @@ for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked', 'libtls-fixt
 
 
 cases = [
+    ('native', 'sync-destroy', 'probe-bionic'),
+    ('hybris', 'sync-destroy', 'probe-glibc'),
     ('native', 'vk', 'probe-bionic'),
     ('native', 'vk-dlsym', 'probe-bionic'),
     ('native', 'vk-gdpa', 'probe-bionic'),

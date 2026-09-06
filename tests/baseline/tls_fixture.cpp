@@ -139,3 +139,6 @@ extern "C" int shared_fixture_init(unsigned kind) {
     }
     return error;
 }
+
+#include "sync_fixture.h"
+extern "C" int sync_fixture_destroy(unsigned kind) { return sync_destroy_lifecycle(kind); }

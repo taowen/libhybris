@@ -47,6 +47,7 @@ int life_probe(int unload);
 int init_probe(void);
 int vulkan_init_probe(void);
 int lock_init_probe(int rwlock);
+int sync_destroy_probe(void);
 int cond_init_probe(void);
 int cond_clock_probe(void);
 int shared_unavailable_probe(void);

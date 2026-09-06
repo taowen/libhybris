@@ -101,6 +101,13 @@ Both-device regression runs `20260907T030507-d17a9d9b` and
 `20260907T030507-63e6a157` each pass 61 cases with 2 unsupported; the common
 130-symbol and Vulkan 643-symbol defined export sets are unchanged.
 
+Destroying an unused process-private static mutex, condition or rwlock now
+succeeds without treating its initializer as a glibc pointer. The independent
+`sync-destroy` case covers normal/recursive/errorcheck mutexes, a condition and
+a rwlock, then explicitly reinitializes the same storage and exercises another
+valid lifecycle. Native and hybris execute the same bionic source. This does
+not cover active-object destruction, double destroy or shared synchronization.
+
 Static condition-variable lookup and first allocation now use the same short
 host publication guard as mutexes/rwlocks. Signal, broadcast and all four wait
 wrappers share it, while actual waiting happens after the guard is released.

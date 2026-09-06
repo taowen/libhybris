@@ -238,6 +238,7 @@ descriptor 需在实际使用时重建有效状态：普通 set、copy/update te
 仍缺：
 
 - 已区分 EGL_CLIENT_APIS 不支持桌面 GL 与 EGL 调用失败；仍需要更完整的 context/profile 特性测试。
+- 已补未使用的私有静态 mutex/condition/rwlock 销毁及显式重新初始化的原生/hybris 对照；仍未覆盖共享同步对象、在用对象销毁或重复销毁。
 - ES3 专用功能、Vulkan texture/compute、GLES 共享资源并发访问与共享对象在仍被引用时删除尚未测；widget shader 和 device/fence 双线程不足以代表 API feature level。
 - 标准 validation/capture 接入（G04）尚未完成；已移除绕开标准 loader 的手写 layer chain，原 native 成功记录不再作为完成证据。
 - G03/G05/G06 只有 headless probe，没有 generation 对象表或完整证据包。`unload` 现在能正常退出，是因为 hooks DSO 被钉住，不是因为 Android Vulkan 对象可回收。`init`/`tls` 检查并发首次 `android_dlopen` 得到完整结果，以及 frontend 关闭后工作线程能退出；另由 `tls-dtor` 观测两种 TLS 模型的实际 C++ 析构，`tls-bounds` 检查跨线程注册的初值补齐与本地修改保留。它们不证明映射消失、静态槽回收或所有 vendor TLS 析构正确。

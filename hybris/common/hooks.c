@@ -661,7 +661,14 @@ static int _hybris_hook_pthread_rwlock_init(pthread_rwlock_t *__rwlock,
 static int _hybris_hook_pthread_rwlock_destroy(pthread_rwlock_t *__rwlock)
 {
     int ret;
-    pthread_rwlock_t *realrwlock = (pthread_rwlock_t *) *(uintptr_t *) __rwlock;
+    uintptr_t value = hybris_read_sync_value(__rwlock);
+    /* An unused static initializer has no host rwlock to destroy. */
+    if (value <= ANDROID_TOP_ADDR_VALUE_RWLOCK) {
+        value = 0;
+        memcpy(__rwlock, &value, sizeof(value));
+        return 0;
+    }
+    pthread_rwlock_t *realrwlock = (pthread_rwlock_t *)value;
 
     TRACE_HOOK("rwlock %p", __rwlock);
 

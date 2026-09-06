@@ -278,7 +278,15 @@ int _hybris_hook_pthread_mutex_destroy(pthread_mutex_t *__mutex)
     if (!__mutex)
         return EINVAL;
 
-    pthread_mutex_t *realmutex = (pthread_mutex_t *) *(uintptr_t *) __mutex;
+    uintptr_t value = hybris_read_sync_value(__mutex);
+    /* A valid, unused static initializer owns no host allocation. */
+    if (value <= ANDROID_TOP_ADDR_VALUE_MUTEX &&
+        !hybris_check_android_shared_mutex(value)) {
+        value = 0;
+        memcpy(__mutex, &value, sizeof(value));
+        return 0;
+    }
+    pthread_mutex_t *realmutex = (pthread_mutex_t *)value;
 
     if (!realmutex)
         return EINVAL;
@@ -481,7 +489,15 @@ int _hybris_hook_pthread_cond_init(pthread_cond_t *cond,
 int _hybris_hook_pthread_cond_destroy(pthread_cond_t *cond)
 {
     int ret;
-    pthread_cond_t *realcond = (pthread_cond_t *) *(uintptr_t *) cond;
+    uintptr_t value = hybris_read_sync_value(cond);
+    /* No wait/signal has materialized this private static condition yet. */
+    if (value <= ANDROID_TOP_ADDR_VALUE_COND &&
+        !hybris_check_android_shared_cond(value)) {
+        value = 0;
+        memcpy(cond, &value, sizeof(value));
+        return 0;
+    }
+    pthread_cond_t *realcond = (pthread_cond_t *)value;
 
     TRACE_HOOK("cond %p", cond);
 

@@ -992,3 +992,20 @@ including mutex/rwlock/condition first use, condition clock/error handling,
 shared-allocation failure, EGL/Vulkan, validation/SyncVal and capture/replay.
 This structural change does not establish working Android process-shared
 synchronization, destruction with waiters, 32-bit ABI coverage or fairness.
+
+
+`sync-destroy` checks five unused private static initializers: normal,
+recursive and errorcheck mutexes, a condition and a rwlock. Each is destroyed,
+explicitly reinitialized in the same storage, used and destroyed again.
+`sync_fixture.h` supplies identical bionic lifecycle code to the native probe
+and the Android DSO loaded by hybris. It is included in the probe manifest.
+The old common library returned EINVAL for the first normal mutex in
+`20260907T030830-362e5220`; that run's native fixture load did not reach the
+workload and is not native semantic evidence. The final native probe compiles
+this lifecycle directly, avoiding unrelated TLS fixture imports.
+After rebuilding, runs `20260907T031048-dcf57325` (29854870) and
+`20260907T031048-d72e6be0` (KB2000) each completed **63 PASS / 2 UNSUPPORTED**,
+including native/hybris success for all five kinds, validation/SyncVal and
+capture/replay. The 130 common and 643 Vulkan defined exports are unchanged.
+No claim is made about double destroy, destruction while in use, 32-bit ABI,
+working shared synchronization or reclamation of the shared allocator.

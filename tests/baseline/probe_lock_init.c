@@ -1,6 +1,9 @@
 #include "probe.h"
 #include <sched.h>
 #include <errno.h>
+#ifdef __BIONIC__
+#include "sync_fixture.h"
+#endif
 
 /* Exercise actual bionic pthread imports on fresh static mutexes/rwlocks. */
 struct lock_race {
@@ -94,4 +97,35 @@ int lock_init_probe(int rwlock) {
   if (close_android(fixture)) rc = 2;
   printf("%s %s (32 fresh locks, four concurrent first users)\n", label, rc ? "FAIL" : "PASS");
   return rc;
+}
+
+int sync_destroy_probe(void) {
+#ifdef __BIONIC__
+  int (*destroy)(unsigned) = sync_destroy_lifecycle;
+#else
+  void *(*open_fixture)(const char *, int) = dlopen;
+  void *(*find_fixture)(void *, const char *) = dlsym;
+  int (*close_fixture)(void *) = dlclose;
+  void *common = dlopen("libhybris-common.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!common) return 2;
+  open_fixture = dlsym(common, "android_dlopen");
+  find_fixture = dlsym(common, "android_dlsym");
+  close_fixture = dlsym(common, "android_dlclose");
+  if (!open_fixture || !find_fixture || !close_fixture) return 2;
+  void *fixture = open_fixture("./libtls-fixture.so", RTLD_NOW);
+  if (!fixture) return 2;
+  int (*destroy)(unsigned) = find_fixture(fixture, "sync_fixture_destroy");
+  if (!destroy) return 2;
+#endif
+  for (unsigned kind = 0; kind < 5; ++kind) {
+    printf("SYNC_DESTROY begin kind=%u\n", kind);
+    int error = destroy(kind);
+    printf("SYNC_DESTROY kind=%u result=%d\n", kind, error);
+    if (error) return 2;
+  }
+#ifndef __BIONIC__
+  if (close_fixture(fixture)) return 2;
+#endif
+  printf("SYNC_DESTROY PASS\n");
+  return 0;
 }
