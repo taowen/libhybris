@@ -9,6 +9,7 @@ lib_LTLIBRARIES = \
 libvulkan_la_SOURCES = \
 	vulkan.c \
 	render_dispatch.c \
+	timeline_dispatch.c \
 	render_dispatch.h \
 	vulkan_exports.c \
 	vulkan_exports.h \

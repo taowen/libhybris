@@ -607,3 +607,14 @@ under one mutex; draw-path contention/performance is not established. This is
 not a complete frontend resource registry, generation-based diagnostic system,
 or an implementation of all promoted-command aliases. Building this module
 requires Vulkan 1.3 headers, as supplied by the current AArch64 build toolchain.
+
+
+Host timeline semaphore commands live in `timeline_dispatch.c`. Their core/KHR
+ELF exports resolve the exact backend name using the supplied registered
+VkDevice. GIPA/GDPA only return these wrappers after the backend availability
+gate succeeds. Lookup releases the metadata mutex before invoking GDPA or the
+command, so a host wait does not hold that mutex against a signal from another
+thread. Missing implementations return an error without modifying output data.
+This forwards native timeline support; it neither emulates timeline semaphores
+nor changes advertised feature bits. Semaphore objects are not independently
+tracked by this dispatch helper.

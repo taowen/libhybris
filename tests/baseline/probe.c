@@ -86,6 +86,11 @@ int main(int argc, char **argv) {
     rc = ubo_large_probe(1);
   else if (!strcmp(mode, "ubo-dynamic-good") || !strcmp(mode, "ubo-dynamic-bad"))
     rc = ubo_dynamic_draw(!strcmp(mode, "ubo-dynamic-bad"));
+  else if (!strncmp(mode, "timeline-", 9)) {
+    int khr = strstr(mode, "khr") != NULL;
+    int route = strstr(mode, "linked") ? 3 : strstr(mode, "elf") ? 2 : strstr(mode, "gdpa") ? 1 : 0;
+    rc = timeline_probe(khr, route, strstr(mode, "validation") != NULL);
+  }
   else if (!strcmp(mode, "command-alloc"))
     rc = command_allocator_probe();
   else if (!strcmp(mode, "render-owners"))

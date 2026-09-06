@@ -1682,3 +1682,37 @@ Multi-GPU ownership, simultaneous command recording, protected queues,
 secondary command buffers, arbitrary driver allocation failures and lookup
 contention remain unverified; the metadata does not legalize stale-handle use
 or concurrent destruction without Vulkan external synchronization.
+
+
+Timeline semaphore dispatch (2026-09-07): standalone `timeline-core` requests
+API 1.2; `timeline-khr` requests API 1.1 and enables KHR_timeline_semaphore.
+Both query/enable the timelineSemaphore feature. `-gdpa`, `-elf` and `-linked`
+select separate command paths; the unsuffixed case uses GIPA. An initial host
+wait is released by a signal on a second thread, followed by four queue
+wait-before-host-signal submissions. Each starts with a zero-timeout host wait,
+submits a future timeline wait/signal pair, verifies the fence is not yet ready,
+then host-signals the dependency, waits on the timeline and fence, checks the
+exact counter (3, 5, 7, 9), and resets/reuses the fence. No queue/device wait-idle
+is used. The semaphore protocol follows the
+[Khronos timeline sample](https://docs.vulkan.org/samples/latest/samples/extensions/timeline_semaphore/README.html).
+These submissions contain no command buffers and do not prove resource memory
+visibility or multiqueue execution. The delayed signal thread exercises ordinary
+cross-thread host operations, not exhaustive scheduling or thread-safety proof.
+
+Old frontend `20260907T073632-06569d89` passes KHR GIPA but aborts through
+KHR ELF/link at GetSemaphoreCounterValueKHR. Native KHR GIPA passes as well.
+The frontend now resolves all three host timeline commands by the supplied
+registered device and exact core/KHR name; no Android core-export fallback or
+feature emulation is involved. The 643 public Vulkan export names are unchanged.
+
+Final full X300 `20260907T074051-325fe194`: **135 PASS / 10 UNSUPPORTED /
+1 CRASH**. Final Redmi `20260907T074052-c6dc686b`: **98 PASS / 47 UNSUPPORTED /
+1 CRASH**. The remaining crash on each is native-groups. X300's ICD path uses
+the explicit scoped Mali option. All frontend timeline routes pass on X300;
+standard-loader core/KHR validation variants have errors=0 with synchronization
+validation enabled. Native/standard-loader absent KHR ELF exports remain
+UNSUPPORTED. Redmi does not provide the required API/extension and all 24 new
+cases remain UNSUPPORTED. Existing validation and both capture/replay gates pass.
+No unit-test suite was added. Timeline import/export, multiple semaphores with
+WAIT_ANY, concurrent monotonic signal ordering, multiqueue dependencies,
+resource visibility, and destruction with outstanding work remain uncovered.

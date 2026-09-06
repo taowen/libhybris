@@ -194,6 +194,7 @@ PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
 #endif
 #undef LOCAL
     PFN_vkVoidFunction local = hybris_render_dispatch_proc(pName);
+    if (!local) local = hybris_timeline_dispatch_proc(pName);
     return local ? local : backend;
 }
 
@@ -211,6 +212,7 @@ PFN_vkVoidFunction vkGetDeviceProcAddr(VkDevice device, const char* pName)
         return (PFN_vkVoidFunction)vkCreateSwapchainKHR;
 #endif
     PFN_vkVoidFunction local = hybris_render_dispatch_proc(pName);
+    if (!local) local = hybris_timeline_dispatch_proc(pName);
     return local ? local : backend;
 }
 

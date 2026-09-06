@@ -77,6 +77,13 @@ static struct device_state *find_device(VkDevice handle)
         if (state->handle == handle) return state;
     return NULL;
 }
+PFN_vkVoidFunction hybris_frontend_device_command(VkDevice device, const char *name)
+{
+    pthread_mutex_lock(&guard);
+    int registered = find_device(device) != NULL;
+    pthread_mutex_unlock(&guard);
+    return registered ? device_proc(device, name) : NULL;
+}
 static struct pool_state *find_pool(VkDevice device, VkCommandPool handle)
 {
     for (struct pool_state *state = pools; state; state = state->next)

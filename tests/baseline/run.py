@@ -238,6 +238,13 @@ cases = [
 
 cases.extend(('hybris', mode, 'probe-glibc') for mode in ('render-owners', 'command-alloc'))
 
+timeline_cases = tuple('timeline-' + family + suffix for family in ('core', 'khr')
+                       for suffix in ('', '-gdpa', '-elf'))
+for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
+    cases.extend((backend, mode, binary) for mode in timeline_cases)
+cases.extend(('hybris-linked', 'timeline-' + family + '-linked', 'probe-glibc-linked')
+             for family in ('core', 'khr'))
+
 render_cases = ('render-core13', 'render-khr13', 'render-core13-elf', 'render-khr13-elf')
 for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.extend((backend, mode, binary) for mode in render_cases)
@@ -255,7 +262,9 @@ if a.icd_hal:
     cases += [('icd', mode, 'probe-glibc')
               for mode in ('version', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
-    cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases)
+    cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases)
+    cases.extend(('icd-linked', 'timeline-' + family + '-linked', 'probe-glibc-linked')
+                 for family in ('core', 'khr'))
     cases.extend(('icd-linked', mode, 'probe-glibc-linked')
                  for mode in ('render-core13-linked', 'render-khr13-linked'))
     if a.validation_layer:
@@ -268,7 +277,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.extend([('icd', mode, 'probe-glibc') for mode in ('render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)
