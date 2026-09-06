@@ -439,3 +439,11 @@ matrix array/column strides, signed int and 32-bit bool storage at the tail.
 Shader checks of non-symmetric matrices and tail sentinels feed exact pixel
 readback through ordinary and dynamic descriptors. This extends the independent
 probe; arbitrary-application draw diagnosis and runtime generation remain open.
+
+
+The staged widget probe now copies both UBO sizes into an unmapped device-local
+buffer, retains its descriptor/resources, and checks six fenced submissions:
+record/resubmit good, reset/re-record/resubmit alternate, then good again.
+Transfer-to-shader and resource-reuse barriers are explicit. This adds bounded
+staging and command-reuse evidence; template updates and arbitrary draw-state
+reconstruction remain open.

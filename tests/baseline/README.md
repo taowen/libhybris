@@ -1243,3 +1243,25 @@ All four large-UBO variants produce the exact expected good/alternate pixels
 on native/frontend/ICD; ICD VVL/SyncVal reports zero errors for each draw.
 Dynamic descriptors use base=1280 and offset=2560 / 1280 with range=1232
 and total buffer size=5072. Existing static capture/replay also passes.
+
+
+`ubo-staged` uploads 272-byte and 1232-byte blocks with vkCmdCopyBuffer from
+host-coherent staging buffers into a separate device-local UBO. The target
+buffer is never mapped. One descriptor, pipeline, image, readback buffer and
+command buffer remain live across six submissions per size. Submissions
+0/2/4 record uploads of good/alternate/good data, resetting the command pool
+before 2/4 after fence completion; 1/3/5 resubmit the preceding executable command
+buffer without recording. Every submission checks the exact expected pixel,
+so returning to good data cannot hide an earlier stale result. Explicit
+barriers cover previous resource use, transfer-to-uniform reads and readback.
+`ubo-staged-validation` repeats both sizes under ICD VVL/SyncVal. This does
+not cover descriptor templates, multiple queues, noncoherent staging or
+simultaneous pending command buffers. Dynamic descriptors are exercised by
+the separate dynamic/large cases, not combined with this staged path.
+
+Rebuilt runs `20260907T041458-a0e027ef` (29854870) and
+`20260907T041458-bb55971b` (KB2000) each report 83 PASS, 2 UNSUPPORTED.
+Each native/frontend/ICD staged case logs twelve submissions across both
+sizes: eight exact good pixels and four exact alternate pixels, with four
+successful command pool resets. Both ICD VVL/SyncVal size variants report
+zero errors. Existing capture/replay remains passing.

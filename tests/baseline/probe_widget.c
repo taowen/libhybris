@@ -36,7 +36,7 @@ _Static_assert(offsetof(struct large_widget_ubo, signed_tag) == 1216, "int offse
 _Static_assert(offsetof(struct large_widget_ubo, enabled) == 1220, "bool storage offset");
 _Static_assert(offsetof(struct large_widget_ubo, end_marker) == 1224, "end offset");
 
-static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic, int large) {
+static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic, int large, int staged) {
   void *h =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
@@ -136,6 +136,13 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   V(vkDestroyFence);
   V(vkQueueSubmit);
   V(vkWaitForFences);
+  PFN_vkCmdCopyBuffer copy_buffer = NULL;
+  PFN_vkResetCommandPool reset_pool = NULL;
+  if (staged) {
+    copy_buffer = (PFN_vkCmdCopyBuffer)gip(instance, "vkCmdCopyBuffer");
+    reset_pool = (PFN_vkResetCommandPool)gip(instance, "vkResetCommandPool");
+    if (!copy_buffer || !reset_pool) return 2;
+  }
   uint32_t count = 0;
   CHECK(p_vkEnumeratePhysicalDevices(instance, &count, NULL));
   VkPhysicalDevice devices[4];
@@ -243,7 +250,8 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
 
   VkBufferCreateInfo ubo_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                .size = total,
-                               .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
+                               .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                   (staged ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0)};
   VkBuffer ubo_good, ubo_bad;
   CHECK(p_vkCreateBuffer(device, &ubo_ci, NULL, &ubo_good));
   CHECK(p_vkCreateBuffer(device, &ubo_ci, NULL, &ubo_bad));
@@ -273,6 +281,23 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   CHECK(p_vkMapMemory(device, umem_bad, 0, total, 0, &mapped));
   memcpy(mapped, bad_data, ubo_bytes);
   p_vkUnmapMemory(device, umem_bad);
+
+  VkBuffer uploaded_ubo = VK_NULL_HANDLE;
+  VkDeviceMemory uploaded_memory = VK_NULL_HANDLE;
+  if (staged) {
+    VkBufferCreateInfo upload_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = ubo_bytes,
+        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+    CHECK(p_vkCreateBuffer(device, &upload_ci, NULL, &uploaded_ubo));
+    VkMemoryRequirements upload_mr;
+    p_vkGetBufferMemoryRequirements(device, uploaded_ubo, &upload_mr);
+    int upload_type = find_mem(&mp, upload_mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (upload_type < 0) return 3;
+    VkMemoryAllocateInfo upload_ai = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = upload_mr.size, .memoryTypeIndex = (uint32_t)upload_type};
+    CHECK(p_vkAllocateMemory(device, &upload_ai, NULL, &uploaded_memory));
+    CHECK(p_vkBindBufferMemory(device, uploaded_ubo, uploaded_memory, 0));
+  }
 
   uint16_t indices[kWidgetIndexCount] = {0, 1, 2, 0, 2, 3, 4, 5, 6,
                                          4, 6, 7, 8, 9, 10, 8, 10, 11};
@@ -486,6 +511,7 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
                                                                : ubo_good,
                                 .offset = dynamic ? stride : 0,
                                 .range = ubo_bytes};
+  if (staged) dbi.buffer = uploaded_ubo;
   VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                                 .dstSet = set,
                                 .dstBinding = 0,
@@ -509,68 +535,102 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
       .commandBufferCount = 1};
   VkCommandBuffer cb;
   CHECK(p_vkAllocateCommandBuffers(device, &cba_info, &cb));
-  VkCommandBufferBeginInfo begin = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-  CHECK(p_vkBeginCommandBuffer(cb, &begin));
-  VkClearValue clear = {.color = {{0, 0, 0, 0}}};
-  VkRenderPassBeginInfo rpbi = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-                                .renderPass = rp,
-                                .framebuffer = fb,
-                                .renderArea = {{0, 0}, {kWidgetImage, kWidgetImage}},
-                                .clearValueCount = 1,
-                                .pClearValues = &clear};
-  p_vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
-  p_vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-  p_vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout,
-                            0, 1, &set, dynamic ? 1 : 0, dynamic ? &dynamic_offset : NULL);
-  p_vkCmdBindIndexBuffer(cb, ibo, 0, VK_INDEX_TYPE_UINT16);
-  p_vkCmdDrawIndexed(cb, kWidgetIndexCount, 1, 0, 0, 0);
-  p_vkCmdEndRenderPass(cb);
-  VkBufferImageCopy copy = {
-      .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-      .imageExtent = {kWidgetImage, kWidgetImage, 1}};
-  p_vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           readback, 1, &copy);
-  VkMemoryBarrier to_host = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-      .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
-  p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
-      VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &to_host, 0, NULL, 0, NULL);
-  CHECK(p_vkEndCommandBuffer(cb));
-  VkFence fence;
-  VkFenceCreateInfo fc = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-  CHECK(p_vkCreateFence(device, &fc, NULL, &fence));
-  VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                     .commandBufferCount = 1,
-                     .pCommandBuffers = &cb};
-  CHECK(p_vkQueueSubmit(queue, 1, &si, fence));
-  CHECK(p_vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
-  uint8_t *pixels = NULL;
-  CHECK(p_vkMapMemory(device, rmem, 0, kWidgetImage * kWidgetImage * 4, 0,
-                      (void **)&pixels));
-  uint8_t *mid = pixels + (8 * kWidgetImage + 8) * 4;
-  printf("PIXEL mid rgba=%u,%u,%u,%u inject=%d\n", mid[0], mid[1], mid[2],
-         mid[3], inject_wrong_binding);
-  int match_good = mid[0] == 255 && mid[1] == 255 && mid[2] == 0 && mid[3] == 255;
-  int match_bad = mid[0] == 0 && mid[1] == 255 && mid[2] == 255 && mid[3] == 0;
-  const char *dump_dir = getenv("PROBE_WIDGET_DUMP_DIR");
-  int dump_failed = 0;
-  if (dump_dir) {
-    char path[4096];
-    int length = snprintf(path, sizeof(path), "%s/widget-%s.rgba", dump_dir,
-                          inject_wrong_binding ? "bad" : "good");
-    FILE *file = length >= 0 && (size_t)length < sizeof(path) ? fopen(path, "wb") : NULL;
-    if (!file) {
-      fprintf(stderr, "Cannot open widget pixel dump\n");
-      dump_failed = 1;
-    } else {
-      dump_failed = fwrite(pixels, 1, kWidgetImage * kWidgetImage * 4, file) !=
-                    kWidgetImage * kWidgetImage * 4;
-      if (fclose(file)) dump_failed = 1;
+  int match_good = 0, match_bad = 0, dump_failed = 0, pixels_failed = 0;
+  for (unsigned submission = 0; submission < (staged ? 6u : 1u); ++submission) {
+    if (staged) {
+      inject_wrong_binding = submission / 2 == 1;
+      printf("UBO_STAGED bytes=%u submission=%u rerecord=%u alternate=%d\n",
+             ubo_bytes, submission, submission % 2 == 0, inject_wrong_binding);
+    }
+    if (!staged || submission % 2 == 0) {
+      if (submission) CHECK(reset_pool(device, cpool, 0));
+      VkCommandBufferBeginInfo begin = {
+          .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+      CHECK(p_vkBeginCommandBuffer(cb, &begin));
+      if (staged) {
+        /* Cover the previous submission's UBO reads, attachment/readback use,
+         * then make this copy visible to both shader stages. */
+        VkMemoryBarrier reuse = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT |
+                             VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
+        p_vkCmdPipelineBarrier(cb,
+            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            0, 1, &reuse, 0, NULL, 0, NULL);
+        VkBufferCopy upload = {.size = ubo_bytes};
+        copy_buffer(cb, inject_wrong_binding ? ubo_bad : ubo_good, uploaded_ubo, 1, &upload);
+        VkMemoryBarrier ready = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT};
+        p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0, 1, &ready, 0, NULL, 0, NULL);
+      }
+      VkClearValue clear = {.color = {{0, 0, 0, 0}}};
+      VkRenderPassBeginInfo rpbi = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                                    .renderPass = rp,
+                                    .framebuffer = fb,
+                                    .renderArea = {{0, 0}, {kWidgetImage, kWidgetImage}},
+                                    .clearValueCount = 1,
+                                    .pClearValues = &clear};
+      p_vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+      p_vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+      p_vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout,
+                                0, 1, &set, dynamic ? 1 : 0, dynamic ? &dynamic_offset : NULL);
+      p_vkCmdBindIndexBuffer(cb, ibo, 0, VK_INDEX_TYPE_UINT16);
+      p_vkCmdDrawIndexed(cb, kWidgetIndexCount, 1, 0, 0, 0);
+      p_vkCmdEndRenderPass(cb);
+      VkBufferImageCopy copy = {
+          .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+          .imageExtent = {kWidgetImage, kWidgetImage, 1}};
+      p_vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               readback, 1, &copy);
+      VkMemoryBarrier to_host = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+          .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+          .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+      p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+          VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &to_host, 0, NULL, 0, NULL);
+      CHECK(p_vkEndCommandBuffer(cb));
+    }
+    VkFence fence;
+    VkFenceCreateInfo fc = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    CHECK(p_vkCreateFence(device, &fc, NULL, &fence));
+    VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                       .commandBufferCount = 1,
+                       .pCommandBuffers = &cb};
+    CHECK(p_vkQueueSubmit(queue, 1, &si, fence));
+    CHECK(p_vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    uint8_t *pixels = NULL;
+    CHECK(p_vkMapMemory(device, rmem, 0, kWidgetImage * kWidgetImage * 4, 0,
+                        (void **)&pixels));
+    uint8_t *mid = pixels + (8 * kWidgetImage + 8) * 4;
+    printf("PIXEL mid rgba=%u,%u,%u,%u inject=%d\n", mid[0], mid[1], mid[2],
+           mid[3], inject_wrong_binding);
+    match_good = mid[0] == 255 && mid[1] == 255 && mid[2] == 0 && mid[3] == 255;
+    match_bad = mid[0] == 0 && mid[1] == 255 && mid[2] == 255 && mid[3] == 0;
+    const char *dump_dir = getenv("PROBE_WIDGET_DUMP_DIR");
+    if (dump_dir) {
+      char path[4096];
+      int length = snprintf(path, sizeof(path), "%s/widget-%s.rgba", dump_dir,
+                            inject_wrong_binding ? "bad" : "good");
+      FILE *file = length >= 0 && (size_t)length < sizeof(path) ? fopen(path, "wb") : NULL;
+      if (!file) {
+        fprintf(stderr, "Cannot open widget pixel dump\n");
+        dump_failed = 1;
+      } else {
+        dump_failed |= fwrite(pixels, 1, kWidgetImage * kWidgetImage * 4, file) !=
+                      kWidgetImage * kWidgetImage * 4;
+        if (fclose(file)) dump_failed = 1;
+      }
+    }
+    p_vkUnmapMemory(device, rmem);
+    p_vkDestroyFence(device, fence, NULL);
+    if (inject_wrong_binding ? !match_bad : !match_good) {
+      printf("UBO pixel mismatch submission=%u alternate=%d\n", submission, inject_wrong_binding);
+      pixels_failed = 1;
     }
   }
-  p_vkUnmapMemory(device, rmem);
-  p_vkDestroyFence(device, fence, NULL);
   p_vkDestroyCommandPool(device, cpool, NULL);
   p_vkDestroyPipeline(device, pipeline, NULL);
   p_vkDestroyFramebuffer(device, fb, NULL);
@@ -584,6 +644,10 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   p_vkDestroyImage(device, image, NULL);
   p_vkDestroyBuffer(device, readback, NULL);
   p_vkDestroyBuffer(device, ibo, NULL);
+  if (staged) {
+    p_vkDestroyBuffer(device, uploaded_ubo, NULL);
+    p_vkFreeMemory(device, uploaded_memory, NULL);
+  }
   p_vkDestroyBuffer(device, ubo_good, NULL);
   p_vkDestroyBuffer(device, ubo_bad, NULL);
   p_vkFreeMemory(device, img_mem, NULL);
@@ -597,7 +661,7 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
     destroy_messenger(instance, messenger, NULL);
   }
   p_vkDestroyInstance(instance, NULL);
-  if (dump_failed) return 2;
+  if (dump_failed || pixels_failed) return 2;
   if (validate) {
     printf("WIDGET validation errors=%u binding=%d\n", validation.errors, inject_wrong_binding);
     if (validation.errors) return 2;
@@ -637,20 +701,28 @@ int ubo_validation_probe(void) {
 
 
 int ubo_draw(int inject_wrong_binding, int validate) {
-  return ubo_draw_internal(inject_wrong_binding, validate, 0, 0);
+  return ubo_draw_internal(inject_wrong_binding, validate, 0, 0, 0);
 }
 
 int ubo_dynamic_probe(int validate) {
-  int result = ubo_draw_internal(0, validate, 1, 0);
+  int result = ubo_draw_internal(0, validate, 1, 0, 0);
   if (result) return result;
-  return ubo_draw_internal(1, validate, 1, 0);
+  return ubo_draw_internal(1, validate, 1, 0, 0);
 }
 
 int ubo_large_probe(int validate) {
   for (int dynamic = 0; dynamic < 2; ++dynamic)
     for (int alternate = 0; alternate < 2; ++alternate) {
-      int result = ubo_draw_internal(alternate, validate, dynamic, 1);
+      int result = ubo_draw_internal(alternate, validate, dynamic, 1, 0);
       if (result) return result;
     }
+  return 0;
+}
+
+int ubo_staged_probe(int validate) {
+  for (int large = 0; large < 2; ++large) {
+    int result = ubo_draw_internal(0, validate, 0, large, 1);
+    if (result) return result;
+  }
   return 0;
 }
