@@ -1175,3 +1175,20 @@ Rebuilt runs `20260907T035349-1a7cf3cc` (29854870) and
 `20260907T035349-ede7da43` (KB2000) each completed **71 PASS / 2 UNSUPPORTED**,
 including both stdio cases in native and hybris, validation/SyncVal and
 capture/replay. Defined exports remain common=130, Vulkan=643, ICD=3.
+
+
+The stdio workload also covers normal/64-bit fgetpos/fsetpos: save offset 3,
+read one byte, restore and reread the same byte. Pipe queries require -1,
+ESPIPE and bionic's position=-1 result. In old run `20260907T035705-cab681fa`,
+native passed both sizes while hybris wrote position=549201271456 on the
+ordinary pipe error; its 64-bit case was not reached. The bridge now uses
+ftello/fseeko and their 64-bit variants, matching bionic's offset-only model
+and avoiding reads of uninitialized/private glibc fpos fields. See the
+[bionic implementation](https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/bionic/+/01e7576d8ba146a73fe9b1c3eb67130c471e06f0/libc/stdio/stdio.cpp).
+These are AArch64 byte-stream cases; 32-bit overflow, multibyte conversion
+state and large-file boundary cases remain unverified.
+Rebuilt runs `20260907T035849-5ba9e5ab` (29854870) and
+`20260907T035849-1dcc8353` (KB2000) each completed **71 PASS / 2 UNSUPPORTED**,
+including ordinary/64-bit position cases, validation/SyncVal and capture/replay.
+Both hybris pipe queries now return -1, ESPIPE (29), position=-1, matching
+native. Defined exports remain common=130, Vulkan=643, ICD=3.

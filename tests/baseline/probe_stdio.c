@@ -18,9 +18,13 @@ int stdio_probe(void) {
   int (*flush)(unsigned) = find_android(fixture, "stdio_fixture_flush");
   if (!flush) return 2;
 #endif
-  for (unsigned mode = 0; mode < 2; ++mode) {
+  for (unsigned mode = 0; mode < 4; ++mode) {
     printf("STDIO_FLUSH begin memory=%u\n", mode);
+#ifdef __BIONIC__
+    int result = mode < 2 ? flush(mode) : stdio_position_lifecycle(mode - 2);
+#else
     int result = flush(mode);
+#endif
     printf("STDIO_FLUSH memory=%u result=%d\n", mode, result);
     if (result) return 2;
   }

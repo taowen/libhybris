@@ -418,3 +418,10 @@ memory-stream updates. A bionic source fixture compares native and hybris
 file-buffer flush-all/readback and open_memstream flush/content publication.
 The unlocked entry receives the same correction but is not independently
 executed by this fixture; broad stdio/FILE ABI coverage remains open.
+
+
+Stdio position hooks now implement bionic's offset-only fpos via ftello/fseeko
+(normal and 64-bit), instead of accessing glibc fpos internals. Failure no
+longer copies uninitialized host position storage. Native/hybris probe checks
+byte-stream save/restore and pipe ESPIPE with bionic position=-1. 32-bit
+overflow, large-file boundaries and multibyte state remain unverified.

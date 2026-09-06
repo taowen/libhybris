@@ -163,24 +163,18 @@ int _hybris_hook_fgetpos(FILE *fp, bionic_fpos_t *pos)
 {
     TRACE_HOOK("fp %p pos %p", fp, pos);
 
-    fpos_t my_fpos;
-    int ret = fgetpos(_get_actual_fp(fp), &my_fpos);
-
-    *pos = my_fpos.__pos;
-
-    return ret;
+    /* Bionic fpos_t is an offset, not glibc's offset plus conversion state. */
+    *pos = ftello(_get_actual_fp(fp));
+    return *pos == -1 ? -1 : 0;
 }
 
 int _hybris_hook_fgetpos64(FILE *fp, bionic_fpos64_t *pos)
 {
     TRACE_HOOK("fp %p pos %p", fp, pos);
 
-    fpos64_t my_fpos;
-    int ret = fgetpos64(_get_actual_fp(fp), &my_fpos);
-
-    *pos = my_fpos.__pos;
-
-    return ret;
+    /* Bionic fpos_t is an offset, not glibc's offset plus conversion state. */
+    *pos = ftello64(_get_actual_fp(fp));
+    return *pos == -1 ? -1 : 0;
 }
 
 char* _hybris_hook_fgets(char *s, int n, FILE *fp)
@@ -278,22 +272,14 @@ int _hybris_hook_fsetpos(FILE *fp, const bionic_fpos_t *pos)
 {
     TRACE_HOOK("fp %p pos %p", fp, pos);
 
-    fpos_t my_fpos;
-    my_fpos.__pos = *pos;
-    memset(&my_fpos.__state, 0, sizeof(mbstate_t));
-
-    return fsetpos(_get_actual_fp(fp), &my_fpos);
+    return fseeko(_get_actual_fp(fp), *pos, SEEK_SET);
 }
 
 int _hybris_hook_fsetpos64(FILE *fp, const bionic_fpos64_t *pos)
 {
     TRACE_HOOK("fp %p pos %p", fp, pos);
 
-    fpos64_t my_fpos;
-    my_fpos.__pos = *pos;
-    memset(&my_fpos.__state, 0, sizeof(mbstate_t));
-
-    return fsetpos64(_get_actual_fp(fp), &my_fpos);
+    return fseeko64(_get_actual_fp(fp), *pos, SEEK_SET);
 }
 
 long _hybris_hook_ftell(FILE *fp)

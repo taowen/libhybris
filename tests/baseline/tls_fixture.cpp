@@ -145,4 +145,4 @@ extern "C" int sync_fixture_destroy(unsigned kind) { return sync_destroy_lifecyc
 extern "C" int sync_fixture_kind(unsigned unused) { (void)unused; return sync_kind_lifecycle(); }
 
 #include "stdio_fixture.h"
-extern "C" int stdio_fixture_flush(unsigned memory) { return stdio_flush_lifecycle(memory); }
+extern "C" int stdio_fixture_flush(unsigned memory) { return memory < 2 ? stdio_flush_lifecycle(memory) : stdio_position_lifecycle(memory - 2); }
