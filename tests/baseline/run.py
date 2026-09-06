@@ -126,7 +126,6 @@ cases = [
     ('native', 'dispatch', 'probe-bionic'),
     ('native', 'life', 'probe-bionic'),
     ('native', 'unload', 'probe-bionic'),
-    ('native', 'init', 'probe-bionic'),
     ('native', 'tls', 'probe-bionic'),
     ('native', 'caps', 'probe-bionic'),
     ('native', 'ubo', 'probe-bionic'),

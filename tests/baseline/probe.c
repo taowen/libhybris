@@ -737,10 +737,16 @@ static int life_probe(int unload) {
   VkInstance second = VK_NULL_HANDLE;
   CHECK(p_vkCreateInstance(&ci, NULL, &second));
   p_vkDestroyInstance(second, NULL);
-  dlclose(again);
+  if (dlclose(again) != 0) {
+    printf("LIFE second reference dlclose failed: %s\n", dlerror());
+    return 2;
+  }
   if (unload) {
     printf("LIFE closing final library reference; process exit is part of the check\n");
-    dlclose(h);
+    if (dlclose(h) != 0) {
+      printf("LIFE final frontend dlclose failed: %s\n", dlerror());
+      return 2;
+    }
   }
   /* Ordinary life mode retains the library until process exit, like other probes.
    * It does not race first hybris entry, and it does not close the frontend
@@ -796,8 +802,8 @@ static int init_probe(void) {
       dlopen(getenv("PROBE_COMMON") ?: "libhybris-common.so.1",
              RTLD_NOW | RTLD_LOCAL);
   if (!common) {
-    printf("INIT UNSUPPORTED (no libhybris-common): %s\n", dlerror());
-    return 3;
+    printf("INIT libhybris-common load failed: %s\n", dlerror());
+    return 2;
   }
   fn_android_dlopen adlopen = dlsym(common, "android_dlopen");
   fn_android_dlerror adlerror = dlsym(common, "android_dlerror");
@@ -834,6 +840,9 @@ static int init_probe(void) {
   for (; started < 2; ++started) {
     int err = pthread_create(&t[started], NULL, init_worker, &workers[started]);
     if (err) {
+      /* With one worker, main must supply the missing barrier participant
+       * before joining it. The probe still fails after that worker exits. */
+      if (started == 1) pthread_barrier_wait(&bar);
       for (int j = 0; j < started; ++j) pthread_join(t[j], NULL);
       pthread_barrier_destroy(&bar);
       printf("pthread_create failed: %s\n", strerror(err));
@@ -851,7 +860,8 @@ static int init_probe(void) {
     printf("INIT sdk mismatch %d %d\n", workers[0].sdk, workers[1].sdk);
     return 2;
   }
-  /* Both threads got a usable handle after one init. Handles may be equal.
+  /* Both threads resolved the entry after concurrent first calls. This probe
+   * does not count init invocations or require equal handles.
    * Vendor libraries stay mapped; this does not android_dlclose them. */
   printf("INIT a=%p gipa=%p b=%p gipa=%p sdk=%d\n", workers[0].handle,
          workers[0].gipa, workers[1].handle, workers[1].gipa, workers[0].sdk);
@@ -924,7 +934,7 @@ static void *tls_worker(void *arg) {
 }
 
 static int tls_probe(void) {
-  /* Worker establishes Android TLS via the frontend. Main then drops the
+  /* Worker exercises Vulkan on its own thread. Main then drops the
    * last frontend reference. Worker exit is the TLS-cleanup boundary.
    * dlclose returning 0 is not unmap proof; process exit is not reclaim. */
   void *h =
@@ -954,8 +964,13 @@ static int tls_probe(void) {
     return 2;
   }
   pthread_barrier_wait(&ready);
-  int dc = dlclose(h);
-  printf("TLS frontend dlclose=%d\n", dc);
+  int dc = -1;
+  if (ctx.rc == 0) {
+    dc = dlclose(h);
+    printf("TLS frontend dlclose=%d\n", dc);
+  } else {
+    printf("TLS frontend retained after failed Vulkan setup/teardown\n");
+  }
   pthread_barrier_wait(&closed);
   pthread_join(t, NULL);
   pthread_barrier_destroy(&ready);
@@ -968,7 +983,7 @@ static int tls_probe(void) {
     printf("TLS frontend dlclose failed\n");
     return 2;
   }
-  printf("TLS worker joined after frontend close\n");
+  printf("TLS worker joined after frontend close (TLS allocation/destructors not instrumented)\n");
   return 0;
 }
 

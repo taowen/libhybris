@@ -3952,10 +3952,11 @@ static pthread_once_t linker_once = PTHREAD_ONCE_INIT;
  *     dlcloses it.
  *   - android_dlopen callers hold vendor objects; this path does not
  *     android_dlclose them when a frontend is closed.
- * pthread_once is used because __hybris_linker_init talks to glibc
- * dlopen/dlsym and android_linker_init only. It does not call android_*.
- * Vendor hooks that later need android_* must use the _android_* pointers,
- * not the wrappers, or a hook during init would deadlock. */
+ * Public android_* wrappers wait for pthread_once to publish initialization.
+ * The bundled linker init paths configure linker state without calling those
+ * wrappers. Loader hooks use resolved _android_* entries, avoiding recursive
+ * entry into this once control. Any new initialization callback must preserve
+ * this constraint; pthread_once does not support recursive initialization. */
 static void __hybris_linker_init(void)
 {
     LOGD("Linker initialization");
