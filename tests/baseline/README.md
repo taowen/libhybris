@@ -303,3 +303,8 @@ Initial verified runs: 29854870 20260907T001810-cfa7fcb1 and KB2000
 20260907T001900-e6551fc2, each 30 PASS / 2 UNSUPPORTED (desktop GL).
 This verifies the standard validation entry path for a small workload.
 It does not validate every baseline draw or close the capture/replay gate.
+
+Run 20260907T002102-c49a311d also passed (30 PASS / 2 UNSUPPORTED).
+The validation-active snapshot verifies the layer mapping before instance
+destruction; the completion snapshot alone can miss the unloaded layer.
+Both layer and original manifest hashes are recorded.

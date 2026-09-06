@@ -95,6 +95,7 @@ int validation_probe(void) {
   VkResult rejected = create_buffer(device, &bc, NULL, &buffer);
   state.injecting = 0;
   if (rejected == VK_SUCCESS) destroy_buffer(device, buffer, NULL);
+  probe_mappings("validation-active");
   destroy_device(device, NULL);
   p_vkDestroyDebugUtilsMessengerEXT(instance, messenger, NULL);
   p_vkDestroyInstance(instance, NULL);
