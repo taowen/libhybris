@@ -29,7 +29,7 @@ are committed and pushed separately to taowen/ardesk.
 | G01 | AArch64 baseline verified | Standalone default build, fixed inputs/toolchain, library/probe hashes and sampled runtime mappings verified on two devices; see baseline README. |
 | G02 | Partial | Pinned vk.xml coverage for direct/link/GIPA/GDPA entries, alias/enablement rules and per-device dispatch. |
 | G03 | Partial | Observe TLS allocation/destruction and generation handling; exercise GLES multiple contexts and cross-thread teardown. |
-| G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Still need frame capture/replay with matching pixels and wider workload validation. |
+| G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Fixed headless widget capture/replay now matches all RGBA bytes; still need a presented frame and application/WSI coverage. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
 | G06 | Partial | Associate an injected wrong binding with the first wrong draw and effective descriptor/resource generation. |
 | G07 | Open | Reference pixels for each supported format and upload/copy/view/subresource path; reject unsupported semantics. |
@@ -100,3 +100,16 @@ Widget validation: the standard layer now observes both full widget fixtures
 with SyncVal enabled. Each device passed the original exact pixels with zero
 ERRORs (31 PASS / 2 UNSUPPORTED overall). This closes the missing validation
 coverage of this fixture, not G04's remaining capture/replay requirement.
+
+
+Headless capture/replay: fixed GFXReconstruct c2ff0eecc7a7f43aa236a5c98097a685b928b782,
+AArch64 tools and runtime dependencies built in the repository snapshot-pinned
+container. The runner captures each widget binding separately and associates
+the replay resource with its copy/submit indices. All 1024 RGBA bytes must match
+the uncaptured probe, captured probe and replay. Tool hashes/source/container
+identity and capture/API JSON/resource reports remain in the evidence package.
+This does not contain a present frame or establish application/WSI replay.
+Verified on 29854870 (`20260907T004458-8576f807`) and KB2000
+(`20260907T004459-930906e9`): 32 PASS / 2 UNSUPPORTED each, including VVL
+and SyncVal. The first capture attempt exposed a missing indirect xxhash
+runtime dependency, now included by the builder.

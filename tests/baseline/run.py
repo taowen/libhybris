@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import uuid
+from capture import stage_tools, run_capture
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -28,11 +29,14 @@ p.add_argument('--icd-hal', help='Run additional standard-loader cases with this
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
 p.add_argument('--validation-manifest', type=Path, help='Original layer JSON matching --validation-layer')
 p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
+p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
 a = p.parse_args()
 if bool(a.validation_layer) != bool(a.validation_manifest):
     p.error('--validation-layer and --validation-manifest must be supplied together')
 if a.validation_layer and not a.icd_hal:
     p.error('--validation-layer requires --icd-hal')
+if a.capture_tools and not a.icd_hal:
+    p.error('--capture-tools requires --icd-hal')
 if bool(a.icd_hal) != bool(a.vulkan_loader):
     p.error('--icd-hal and --vulkan-loader must be supplied together')
 here = Path(__file__).resolve().parent
@@ -200,6 +204,9 @@ if a.icd_hal:
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
         cases.extend([('icd', mode, 'probe-glibc') for mode in ('validation', 'ubo-validation')])
 
+if a.capture_tools:
+    stage_tools(a.capture_tools, stage, metadata, sha256_file)
+
 results = []
 observed_paths = set()
 try:
@@ -275,6 +282,29 @@ try:
         status = classify(code)
         results.append(dict(case=name, status=status, exit_code=code, binary=binary))
         print(name, status, 'exit=' + str(code), flush=True)
+    if a.capture_tools:
+        try:
+            run_capture(shell, adb, remote, a.out, metadata['commands']['icd-ubo']['command'],
+                        metadata, kill_remote)
+            code = 0
+        except subprocess.TimeoutExpired as exc:
+            code = 124
+            (a.out / 'capture-error.log').write_text(str(exc) + '\n')
+        except subprocess.CalledProcessError as exc:
+            code = exc.returncode
+            (a.out / 'capture-error.log').write_text(str(exc) + '\n')
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            code = 2
+            (a.out / 'capture-error.log').write_text(str(exc) + '\n')
+        finally:
+            try:
+                subprocess.run(adb + ['pull', remote + '/capture/.', str(a.out / 'capture')],
+                               check=True, capture_output=True, timeout=35)
+            except (OSError, subprocess.SubprocessError) as exc:
+                (a.out / 'capture-pull-error.log').write_text(str(exc) + '\n')
+        status = classify(code)
+        results.append(dict(case='icd-capture-replay', status=status, exit_code=code))
+        print('icd-capture-replay', status, 'exit=' + str(code), flush=True)
 finally:
     try:
         # Hash Android files named by the snapshots. These are path-content

@@ -34,6 +34,8 @@ int main(int argc, char **argv) {
     rc = validation_probe();
   else if (!strcmp(mode, "ubo"))
     rc = ubo_probe();
+  else if (!strcmp(mode, "ubo-good") || !strcmp(mode, "ubo-bad"))
+    rc = ubo_draw(!strcmp(mode, "ubo-bad"), 0);
   else if (!strcmp(mode, "vk"))
     rc = vkprobe();
   else if (!strcmp(mode, "0") || !strcmp(mode, "2") || !strcmp(mode, "3"))

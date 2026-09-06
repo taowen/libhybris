@@ -47,6 +47,7 @@ int init_probe(void);
 int tls_probe(void);
 int caps_probe(void);
 int ubo_probe(void);
+int ubo_draw(int inject_wrong_binding, int validate);
 int validation_probe(void);
 int ubo_validation_probe(void);
 struct validation_state {

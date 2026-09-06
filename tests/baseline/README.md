@@ -322,3 +322,48 @@ Both widget renders produced their expected pixels with zero validation
 ERRORs, including the upload/render/transfer/host-readback and destruction
 paths. This is fixed-fixture coverage; arbitrary applications, WSI and
 capture/replay are still not verified.
+
+
+## Optional headless capture/replay
+
+Build the pinned GFXReconstruct source and its AArch64 runtime dependencies:
+
+    tools/build-capture-tools.sh
+
+Add this option to the standard-loader command above:
+
+    --capture-tools tests/baseline/build/gfxreconstruct/install
+
+This adds `icd-capture-replay`. It runs `ubo-good` and `ubo-bad` separately
+because the capture manager ends its recording when the last instance is
+destroyed. For each binding it compares the uncaptured probe, captured probe
+and replayed `vkCmdCopyImageToBuffer` output: all 1024 bytes of the 16×16 RGBA8
+image must match exactly. The existing probe still verifies its expected
+center pixel. `PROBE_WIDGET_DUMP_DIR` enables raw image output only when set.
+
+The runner derives command indices from `gfxrecon-convert` output and verifies
+that the resource report names the selected copy/submit. `capture/` stores
+both `.gfxr` files, API JSONL, dump requests, resource reports, raw pixels,
+command logs and `comparison.json`. Capture tool files are checked against
+the build manifest before staging; `device.json` records that manifest and
+staged tool/runtime hashes. The builder records the fixed source/submodule
+revisions, image identity and package inventory hash. Optional tools are never
+downloaded or activated by the ordinary baseline run.
+
+Scope: two headless submissions, no swapchain or `vkQueuePresentKHR`.
+GFXReconstruct consequently reports "File did not contain any frames" even
+though it replays the draw and dumps the copy successfully. This is not a
+presented-frame, cross-driver, application or WSI replay claim. Replay resource
+dumping adds instrumentation; uninstrumented capture is compared separately.
+
+Verified 2026-09-07: 29854870 `20260907T004458-8576f807` and KB2000
+`20260907T004459-930906e9`, each **32 PASS / 2 UNSUPPORTED**, including VVL,
+SyncVal and capture/replay. Both devices produced identical complete images:
+
+- good RGBA SHA256: `34cfd029fad3bcac2285a3c2c669ac33dbf553c72814ae52a98020fa58359645`
+- bad RGBA SHA256: `4f41dc70de144b8947613e185f53a602b28ae5454d27ea819a3c3a46ff254bca`
+
+The first attempted run failed because the tools lacked the indirect
+`libxxhash.so.0` dependency; the fixed builder includes it. That failure is
+not counted as a successful capture. The ordinary probe baseline remained
+31 PASS / 2 UNSUPPORTED during that failed tool run.

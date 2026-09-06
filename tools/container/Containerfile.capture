@@ -1,0 +1,9 @@
+# Optional capture-tool builder; shares the fixed base/package snapshot.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        cmake ninja-build git libxcb-keysyms1-dev:arm64 libxcb-glx0-dev:arm64 \
+        libxrandr-dev:arm64 zlib1g-dev:arm64 liblz4-dev:arm64 libzstd-dev:arm64 \
+    && rm -rf /var/lib/apt/lists/*

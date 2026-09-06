@@ -17,7 +17,7 @@ struct widget_ubo {
   int srgbTarget;
 };
 
-static int ubo_draw(int inject_wrong_binding, int validate) {
+int ubo_draw(int inject_wrong_binding, int validate) {
   void *h =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
@@ -486,6 +486,22 @@ static int ubo_draw(int inject_wrong_binding, int validate) {
          mid[3], inject_wrong_binding);
   int match_good = mid[0] == 255 && mid[1] == 255 && mid[2] == 0 && mid[3] == 255;
   int match_bad = mid[0] == 0 && mid[1] == 255 && mid[2] == 255 && mid[3] == 0;
+  const char *dump_dir = getenv("PROBE_WIDGET_DUMP_DIR");
+  int dump_failed = 0;
+  if (dump_dir) {
+    char path[4096];
+    int length = snprintf(path, sizeof(path), "%s/widget-%s.rgba", dump_dir,
+                          inject_wrong_binding ? "bad" : "good");
+    FILE *file = length >= 0 && (size_t)length < sizeof(path) ? fopen(path, "wb") : NULL;
+    if (!file) {
+      fprintf(stderr, "Cannot open widget pixel dump\n");
+      dump_failed = 1;
+    } else {
+      dump_failed = fwrite(pixels, 1, kWidgetImage * kWidgetImage * 4, file) !=
+                    kWidgetImage * kWidgetImage * 4;
+      if (fclose(file)) dump_failed = 1;
+    }
+  }
   p_vkUnmapMemory(device, rmem);
   p_vkDestroyFence(device, fence, NULL);
   p_vkDestroyCommandPool(device, cpool, NULL);
@@ -514,6 +530,7 @@ static int ubo_draw(int inject_wrong_binding, int validate) {
     destroy_messenger(instance, messenger, NULL);
   }
   p_vkDestroyInstance(instance, NULL);
+  if (dump_failed) return 2;
   if (validate) {
     printf("WIDGET validation errors=%u binding=%d\n", validation.errors, inject_wrong_binding);
     if (validation.errors) return 2;
