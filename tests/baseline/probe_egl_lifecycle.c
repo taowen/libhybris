@@ -71,6 +71,72 @@ static void *migrate_contexts(void *opaque) {
   return NULL;
 }
 
+static int check_shared(struct context_pair *pair, int cycle) {
+  void *e = pair->e, *g = pair->g;
+  E(eglMakeCurrent);
+  E(eglDestroyContext);
+  G(glGenBuffers); G(glBindBuffer); G(glBufferData); G(glGetBufferParameteriv);
+  G(glIsBuffer); G(glDeleteBuffers); G(glGetIntegerv);
+  G(glGenTextures); G(glBindTexture); G(glTexImage2D); G(glTexSubImage2D);
+  G(glTexParameteri); G(glIsTexture); G(glDeleteTextures);
+  G(glGenFramebuffers); G(glBindFramebuffer); G(glFramebufferTexture2D);
+  G(glCheckFramebufferStatus); G(glDeleteFramebuffers); G(glReadPixels);
+  G(glFinish); G(glGetError);
+  GLuint buffer = 0, texture = 0, fbo[2] = {0};
+  const unsigned char red[] = {255,0,0,255}, green[] = {0,255,0,255};
+  for (int step = 0; step < 4; ++step) {
+    int i = step == 0 || step == 2 ? 0 : 1;
+    if (!p_eglMakeCurrent(pair->display, pair->surfaces[i], pair->surfaces[i], pair->contexts[i])) return 2;
+    if (step == 0) {
+      p_glGenBuffers(1, &buffer);
+      p_glBindBuffer(GL_ARRAY_BUFFER, buffer);
+      p_glBufferData(GL_ARRAY_BUFFER, 16, NULL, GL_STATIC_DRAW);
+      p_glGenTextures(1, &texture);
+      p_glBindTexture(GL_TEXTURE_2D, texture);
+      p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      p_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, red);
+    }
+    if (!p_glIsBuffer(buffer) || !p_glIsTexture(texture)) return 2;
+    if (step == 1) {
+      GLint binding = -1;
+      p_glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &binding);
+      if (binding != 0) return 2; /* Objects share; bindings are context-local. */
+    }
+    p_glBindBuffer(GL_ARRAY_BUFFER, buffer);
+    GLint size = 0;
+    p_glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &size);
+    if (size != (step < 2 ? 16 : 32)) return 2;
+    p_glBindTexture(GL_TEXTURE_2D, texture);
+    if (!fbo[i]) p_glGenFramebuffers(1, &fbo[i]);
+    p_glBindFramebuffer(GL_FRAMEBUFFER, fbo[i]);
+    /* Reattach after each context handoff to make shared changes observable. */
+    p_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+    if (p_glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) return 2;
+    unsigned char pixel[4] = {0};
+    p_glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    if (memcmp(pixel, step < 2 ? red : green, 4) || p_glGetError() != GL_NO_ERROR) {
+      printf("EGL_SHARED step=%d pixel=%u,%u,%u,%u\n", step,pixel[0],pixel[1],pixel[2],pixel[3]); return 2;
+    }
+    if (step == 1) {
+      p_glBufferData(GL_ARRAY_BUFFER, 32, NULL, GL_STATIC_DRAW);
+      p_glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, green);
+    }
+    if (step == 2 || step == 3) p_glDeleteFramebuffers(1, &fbo[i]);
+    if (step == 3) { p_glDeleteTextures(1, &texture); p_glDeleteBuffers(1, &buffer); }
+    /* Explicit completion before transferring ownership to the other context. */
+    p_glFinish();
+    if (p_glGetError() != GL_NO_ERROR ||
+        !p_eglMakeCurrent(pair->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT)) return 2;
+    if (step == 2) {
+      if (!p_eglDestroyContext(pair->display, pair->contexts[0])) return 2;
+      pair->contexts[0] = EGL_NO_CONTEXT;
+    }
+  }
+  printf("EGL_SHARED cycle=%d buffer-size/texture-pixels and creator destruction PASS\n", cycle);
+  return 0;
+}
+
 int egl_lifecycle_probe(void) {
   struct context_pair pair = {0};
   void *e = pair.e = dlopen(getenv("PROBE_EGL") ?: "libEGL.so.1", RTLD_NOW | RTLD_LOCAL);
@@ -116,6 +182,15 @@ int egl_lifecycle_probe(void) {
           !p_eglDestroySurface(pair.display, pair.surfaces[i])) return 2;
     }
     printf("EGL_LIFECYCLE cycle=%d isolated buffers/state/pixels and thread migration PASS\n", cycle);
+    for (int i = 0; i < 2; ++i) {
+      pair.contexts[i] = p_eglCreateContext(pair.display, config, i ? pair.contexts[0] : EGL_NO_CONTEXT, ca);
+      pair.surfaces[i] = p_eglCreatePbufferSurface(pair.display, config, pa);
+      if (pair.contexts[i] == EGL_NO_CONTEXT || pair.surfaces[i] == EGL_NO_SURFACE) return 2;
+    }
+    if (check_shared(&pair, cycle)) return 2;
+    if (!p_eglDestroyContext(pair.display, pair.contexts[1])) return 2;
+    for (int i = 0; i < 2; ++i)
+      if (!p_eglDestroySurface(pair.display, pair.surfaces[i])) return 2;
   }
   if (!p_eglTerminate(pair.display) || !p_eglReleaseThread()) return 2;
   printf("EGL_LIFECYCLE PASS\n");

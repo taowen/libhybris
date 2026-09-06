@@ -24,6 +24,13 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+The EGL lifecycle workload now also creates a share group of two GLES2
+contexts. It checks shared buffer size changes, exact shared-texture pixels,
+independent buffer binding state and continued access after destroying the
+creating context. Three cycles use explicit completion before switching and
+reattach the texture in the consumer context. Concurrent rendering and shared
+object deletion while still referenced remain outside this workload.
+
 `caps2` now compares six core 1.1 property structures as a chain and as
 individual queries: ID, subgroup, point clipping, multiview, protected memory
 and maintenance3. Core properties compare named fields against the legacy

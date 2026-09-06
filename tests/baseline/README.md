@@ -843,3 +843,24 @@ expanded caps2 workload, and all 198 recorded values agree within each device.
 Production code is unchanged in this batch. These observations do not prove
 subgroup operations, multiview rendering, protected allocations, maximum-sized
 resource creation, all extension property chains or full Vulkan 1.1 semantics.
+
+## GLES share-group lifetime
+
+`egl-life` now follows each isolated-context cycle with two GLES2 contexts in
+one share group. The first creates a 16-byte buffer and a one-pixel RGBA texture
+containing red. The second sees both objects, starts with array-buffer binding
+zero, reads red through its own FBO, resizes the buffer to 32 bytes and uploads
+green. The first sees the new size and green pixel, then is destroyed. The
+second must still see the 32-byte buffer and exact green pixel before deleting
+the shared objects and its context. The sequence repeats three times.
+
+Each handoff uses glFinish and explicit resource rebinding/attachment. This
+checks sequential shared-object visibility and survival of creator-context
+destruction; it does not test simultaneous rendering, cross-context fences,
+shared-object deletion while another context references it, buffer contents,
+shader/program sharing or general object generation tracking.
+
+Fresh probe builds and runs `20260907T023959-ac41857d` (29854870) and
+`20260907T023959-961f4ab9` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. Native and hybris each pass all three
+shared-context cycles on both devices. Production code is unchanged.
