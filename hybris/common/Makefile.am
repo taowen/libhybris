@@ -99,7 +99,11 @@ endif
 libhybris_common_la_CXXFLAGS = \
 	-std=gnu++11
 
+# Android linker hook pointers and TLS cleanup callbacks can outlive a frontend.
+# Keep common code/state mapped for the process lifetime; this does not make
+# Android libraries unloadable or fix their object/thread teardown.
 libhybris_common_la_LDFLAGS = \
+	-Wl,-z,nodelete \
 	-ldl \
 	-lrt \
 	-pthread \
