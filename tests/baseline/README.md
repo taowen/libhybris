@@ -1449,3 +1449,21 @@ Native/hybris read/write worker waits return ETIMEDOUT=110 after about
 100–102ms, and expired/null unlocked acquisition succeeds. VVL/SyncVal
 and both capture gates pass. Common's 130 defined dynamic exports match
 the prior build; the new hook functions have hidden visibility.
+
+
+Hook registry sorting now uses pthread_once so all sorted tables are
+published before bsearch; the custom callback still executes first. The
+old static sorted flag permitted concurrent qsort/search by direct callers.
+The internal lookup is not exported, so the initial direct-dlsym probe could
+not execute and was removed (runs `20260907T050526-1ac28fa4` and
+`20260907T050526-44a8db69` reported that probe FAIL). No public export was
+added for testing. Existing concurrent linker init and GPU lifecycle cases
+provide regression coverage, but do not independently prove first-sort
+contention: the linker itself has serialized initialization. This fix is
+based on code review; no repeatable old sorting failure is claimed. Concurrent
+callback replacement and mutable diagnostics remain outside this change.
+
+Final rebuilt runs `20260907T050734-e0b8a4ba` (29854870) and
+`20260907T050734-8e590b0e` (KB2000) each report 92 PASS, 2 UNSUPPORTED,
+including concurrent initialization, VVL/SyncVal and both capture gates.
+Common's 130 defined dynamic exports are unchanged.

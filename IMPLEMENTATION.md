@@ -512,3 +512,12 @@ using existing backing-object translation and host monotonic clock waits.
 Null deadlines use blocking operations. Independent bionic/native probes
 check cross-thread read/write timeouts and unlocked expired/null acquisition;
 shared semantics, fairness and runtime generation remain open.
+
+
+Hook registry sorting uses pthread_once instead of an unsynchronized static
+flag. Concurrent first lookups therefore cannot qsort/search the same mutable
+table simultaneously. The callback still runs before table initialization.
+Existing concurrent linker initialization and GPU cases provide regression
+coverage, not an isolated first-sort race reproduction. The internal lookup
+is not exported. Mutable lookup configuration and diagnostics are outside
+this change.

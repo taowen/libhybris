@@ -1928,9 +1928,19 @@ int strendswith(const char *str, const char *suffix, int lensuf)
     return strcmp(str + lenstr - lensuf, suffix) == 0;
 }
 
+static pthread_once_t hook_sort_once = PTHREAD_ONCE_INIT;
+
+static void sort_hook_tables(void)
+{
+    qsort(hooks_properties, HOOKS_SIZE(hooks_properties), sizeof(hooks_properties[0]), hook_cmp);
+    qsort(hooks_common, HOOKS_SIZE(hooks_common), sizeof(hooks_common[0]), hook_cmp);
+    qsort(hooks_mm, HOOKS_SIZE(hooks_mm), sizeof(hooks_mm[0]), hook_cmp);
+    qsort(hooks_n, HOOKS_SIZE(hooks_n), sizeof(hooks_n[0]), hook_cmp);
+    qsort(hooks_p, HOOKS_SIZE(hooks_p), sizeof(hooks_p[0]), hook_cmp);
+}
+
 void* hybris_get_hooked_symbol(const char *sym, const char *requester)
 {
-    static int sorted = 0;
     static intptr_t counter = -1;
     static int do_print_unhooked = -1;
     void *found = NULL;
@@ -1952,15 +1962,7 @@ void* hybris_get_hooked_symbol(const char *sym, const char *requester)
     }
 #endif
 
-    if (!sorted)
-    {
-        qsort(hooks_properties, HOOKS_SIZE(hooks_properties), sizeof(hooks_properties[0]), hook_cmp);
-        qsort(hooks_common, HOOKS_SIZE(hooks_common), sizeof(hooks_common[0]), hook_cmp);
-        qsort(hooks_mm, HOOKS_SIZE(hooks_mm), sizeof(hooks_mm[0]), hook_cmp);
-        qsort(hooks_n, HOOKS_SIZE(hooks_n), sizeof(hooks_n[0]), hook_cmp);
-        qsort(hooks_p, HOOKS_SIZE(hooks_p), sizeof(hooks_p[0]), hook_cmp);
-        sorted = 1;
-    }
+    pthread_once(&hook_sort_once, sort_hook_tables);
 
     /* Allow newer hooks to override those which are available for all versions */
     key.name = sym;
