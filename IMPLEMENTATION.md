@@ -491,3 +491,9 @@ failure (including EBUSY), and clears/frees only on success. A failed shared
 translation returns EINVAL. The independent bionic fixture checks three mutex
 types for EBUSY preservation and subsequent unlock/relock/destroy. Successful
 shared backing and concurrent destruction remain unverified.
+
+
+Legacy mutex millisecond timeout now uses an explicit monotonic host deadline
+and maps timeout to bionic EBUSY. The fixture imports the hook and exercises
+zero-timeout acquisition, a 100ms failure and reuse. LP64 native comparison,
+clock-step behavior, 32-bit overflow and process-shared operation are unverified.

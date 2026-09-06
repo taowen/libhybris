@@ -146,3 +146,20 @@ extern "C" int sync_fixture_kind(unsigned unused) { (void)unused; return sync_ki
 
 #include "stdio_fixture.h"
 extern "C" int stdio_fixture_flush(unsigned memory) { return memory < 2 ? stdio_flush_lifecycle(memory) : stdio_position_lifecycle(memory - 2); }
+
+extern "C" int pthread_mutex_lock_timeout_np(pthread_mutex_t *, unsigned);
+extern "C" int mutex_fixture_timeout(long long *elapsed) {
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    int error = pthread_mutex_lock_timeout_np(&mutex, 0);
+    if (error) return error;
+    timespec start, finish;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    int result = pthread_mutex_lock_timeout_np(&mutex, 100);
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+    *elapsed = (finish.tv_sec - start.tv_sec) * 1000000000LL + finish.tv_nsec - start.tv_nsec;
+    error = pthread_mutex_unlock(&mutex);
+    if (!error) error = pthread_mutex_lock_timeout_np(&mutex, 0);
+    if (!error) error = pthread_mutex_unlock(&mutex);
+    if (!error) error = pthread_mutex_destroy(&mutex);
+    return error ? error : result;
+}

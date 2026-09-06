@@ -21,6 +21,14 @@ int cond_clock_probe(void) {
      * upper bound: scheduling delays are not clock-semantic failures. */
     if (variant < 3 ? (error != ETIMEDOUT || elapsed < 90000000) : error != EINVAL) failed = 1;
   }
+  int (*mutex_timeout)(long long *) = sym_android(fixture, "mutex_fixture_timeout");
+  if (!mutex_timeout) failed = 1;
+  else {
+    long long elapsed = 0;
+    int error = mutex_timeout(&elapsed);
+    printf("MUTEX_TIMEOUT_NP result=%d expected=%d elapsed_ns=%lld\n", error, EBUSY, elapsed);
+    if (error != EBUSY || elapsed < 90000000) failed = 1;
+  }
   if (close_android(fixture)) failed = 1;
   printf("COND_CLOCK %s\n", failed ? "FAIL" : "PASS");
   return failed ? 2 : 0;

@@ -415,7 +415,8 @@ int _hybris_hook_pthread_mutex_lock_timeout_np(pthread_mutex_t *__mutex, unsigne
         realmutex = hybris_get_static_mutex(__mutex);
     }
 
-    clock_gettime(CLOCK_REALTIME, &tv);
+    if (clock_gettime(CLOCK_MONOTONIC, &tv))
+        return errno;
     tv.tv_sec += __msecs/1000;
     tv.tv_nsec += (__msecs % 1000) * 1000000;
     if (tv.tv_nsec >= 1000000000) {
@@ -423,7 +424,8 @@ int _hybris_hook_pthread_mutex_lock_timeout_np(pthread_mutex_t *__mutex, unsigne
       tv.tv_nsec -= 1000000000;
     }
 
-    return pthread_mutex_timedlock(realmutex, &tv);
+    int error = pthread_mutex_clocklock(realmutex, CLOCK_MONOTONIC, &tv);
+    return error == ETIMEDOUT ? EBUSY : error;
 }
 
 int _hybris_hook_pthread_mutex_timedlock(pthread_mutex_t *__mutex,

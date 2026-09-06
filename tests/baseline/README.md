@@ -1391,3 +1391,22 @@ mutex types return EBUSY=16 with preserved=1, followed by successful
 unlock/relock/final destroy. Common's 130 defined dynamic exports are unchanged.
 The old comparison stops at the first failed normal mutex; it does not
 separately reproduce old recursive/errorcheck behavior.
+
+
+The legacy `pthread_mutex_lock_timeout_np` hook now uses CLOCK_MONOTONIC
+via pthread_mutex_clocklock and maps ETIMEDOUT to EBUSY, matching bionic's
+legacy contract. The bionic DSO imports this symbol for a hybris-only check
+inside `cond-clock`: acquire an unused static mutex with zero timeout, wait
+100ms on the held normal mutex, require EBUSY and at least 90ms elapsed, then
+unlock/reacquire/unlock/destroy. No wall-clock adjustment is performed.
+The API is absent from LP64 native bionic, so this is not an AArch64 native
+comparison or 32-bit ABI validation; shared mutexes also remain unverified.
+Before the fix, `20260907T044806-0401322d` returned ETIMEDOUT=110 after
+100664271ns instead of EBUSY=16.
+Source: https://android.googlesource.com/platform/bionic/+/63860cb/libc/bionic/pthread_mutex.cpp
+
+Rebuilt runs `20260907T044949-b035cb87` (29854870) and
+`20260907T044949-b9115f54` (KB2000) each report 88 PASS, 2 UNSUPPORTED.
+The legacy mutex probe now returns EBUSY=16 after 103955677ns / 100934062ns,
+with acquisition/reuse/cleanup passing. Validation/SyncVal and both capture
+evidence gates pass. Common's 130 defined dynamic exports remain unchanged.
