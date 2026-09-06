@@ -550,3 +550,15 @@ replacement-front-end exploratory runs; the final non-direct allocator probe
 uses ordinary enumeration. This unresolved path is recorded in gaps.md.
 Resource state, multi-GPU ownership, physical-inventory OOM and arbitrary
 allocator failures remain outside this evidence.
+
+
+KHR physical-device group lookup in the replacement frontend now retains the
+backend KHR availability gate, then prefers the loader's core group wrapper.
+Some Android loaders forward the KHR name to the HAL without initializing
+returned physical-device dispatch headers; subsequent loader CreateDevice can
+read the ICD magic as a pointer. GIPA and the direct ELF KHR symbol share this
+wrapper. When no core wrapper exists, the original KHR command is retained;
+that fallback is not covered on current devices. No handle header is modified.
+The AArch64 build adds system_ext/lib64 for modern Android loader dependencies.
+See gaps.md's Redmi/X300 checkpoint for passing paths and unresolved Mali
+pipeline/concurrency failures; the full X300 baseline is not passing.

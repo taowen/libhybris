@@ -136,7 +136,7 @@ CONFIGURE_ARGS=(
     --enable-adreno-quirks
     --enable-mali-quirks
     --enable-property-cache
-    --with-default-hybris-ld-library-path=/vendor/lib64/egl:/vendor/lib64/hw:/vendor/lib64:/system/lib64
+    --with-default-hybris-ld-library-path=/vendor/lib64/egl:/vendor/lib64/hw:/vendor/lib64:/system/lib64:/system_ext/lib64
 )
 printf "%s\n" "${CONFIGURE_ARGS[@]}" > /out/configure-args.txt
 FINGERPRINT="standalone args=${CONFIGURE_ARGS[*]}"

@@ -348,7 +348,7 @@ VULKAN_IDLOAD(vkGetDeviceGroupPeerMemoryFeaturesKHR);
 VULKAN_IDLOAD(vkCmdSetDeviceMaskKHR);
 VULKAN_IDLOAD(vkCmdDispatchBaseKHR);
 VULKAN_IDLOAD(vkTrimCommandPoolKHR);
-VULKAN_IDLOAD(vkEnumeratePhysicalDeviceGroupsKHR);
+/* KHR group enumeration uses the loader-aware wrapper in vulkan.c. */
 VULKAN_IDLOAD(vkGetPhysicalDeviceExternalBufferPropertiesKHR);
 VULKAN_IDLOAD(vkGetMemoryFdKHR);
 VULKAN_IDLOAD(vkGetMemoryFdPropertiesKHR);

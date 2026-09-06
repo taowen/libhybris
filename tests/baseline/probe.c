@@ -16,7 +16,11 @@ int main(int argc, char **argv) {
 #endif
   );
   int rc;
-  if (!strcmp(mode, "egl-life"))
+  if (!strcmp(mode, "groups"))
+    rc = groups_probe(0);
+  else if (!strcmp(mode, "groups-dlsym"))
+    rc = groups_probe(1);
+  else if (!strcmp(mode, "egl-life"))
     rc = egl_lifecycle_probe();
   else if (!strcmp(mode, "dispatch"))
     rc = dispatch_probe();

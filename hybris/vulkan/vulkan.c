@@ -40,6 +40,8 @@ static void *vulkan_handle = NULL;
 static void _init_androidvulkan()
 {
     vulkan_handle = (void *) android_dlopen(getenv("LIBVULKAN") ? getenv("LIBVULKAN") : "libvulkan.so", RTLD_LAZY);
+    if (!vulkan_handle)
+        fprintf(stderr, "libhybris vulkan: Android loader open failed: %s\n", android_dlerror());
 }
 
 static inline void hybris_vulkan_initialize()
@@ -133,6 +135,23 @@ static PFN_vkVoidFunction (*_real_vkGetDeviceProcAddr)(VkDevice device, const ch
  * export stubs for unsupported commands, and GDPA excludes instance commands.
  * Ordinary calls retain the instance/device-specific downstream pointer.
  * Only commands whose semantics we implement locally substitute a wrapper. */
+/* Android loaders with a core group wrapper can still forward the KHR name
+ * straight to the HAL, skipping loader initialization of physical handles.
+ * Keep the KHR availability gate, then use the loader's equivalent core path.
+ * Never write vendor dispatch headers from this compatibility frontend. */
+VkResult vkEnumeratePhysicalDeviceGroupsKHR(VkInstance instance, uint32_t *count,
+                                           VkPhysicalDeviceGroupProperties *groups)
+{
+    if (!instance || !_vkGetInstanceProcAddr)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    PFN_vkEnumeratePhysicalDeviceGroupsKHR query = (PFN_vkEnumeratePhysicalDeviceGroupsKHR)
+        _vkGetInstanceProcAddr(instance, "vkEnumeratePhysicalDeviceGroupsKHR");
+    if (!query) return VK_ERROR_EXTENSION_NOT_PRESENT;
+    PFN_vkEnumeratePhysicalDeviceGroups core = (PFN_vkEnumeratePhysicalDeviceGroups)
+        _vkGetInstanceProcAddr(instance, "vkEnumeratePhysicalDeviceGroups");
+    return core ? core(instance, count, groups) : query(instance, count, groups);
+}
+
 PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
 {
     if (!pName)
@@ -165,6 +184,7 @@ PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
     LOCAL(vkCreateInstance);
     LOCAL(vkEnumerateInstanceExtensionProperties);
     LOCAL(vkGetDeviceProcAddr);
+    LOCAL(vkEnumeratePhysicalDeviceGroupsKHR);
 #ifdef WANT_WAYLAND
     LOCAL(vkDestroySurfaceKHR);
     LOCAL(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);

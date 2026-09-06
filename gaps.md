@@ -277,3 +277,31 @@ libvulkan 在 KHR group 枚举后使用 physical handle 时均 SIGSEGV；直接 
 不能宣称前两条路径的 KHR group 创建可用。最终 allocator 回归对 native、
 替代前端及标准 loader 使用普通物理设备枚举；直接 ICD 单独覆盖普通/core/KHR
 三种枚举。上述崩溃是保留的未解决缺口，不计作最终回归已修复项。
+
+
+### 当前推进状态（红米 / X300，2026-09-07）
+
+后续只在红米 `29854870` 和 vivo X300 `10AFA31610002QH` 验证，不使用
+一加 8T。APK 安装使用 `../../tools/install-apk.sh --serial SERIAL APK`；该脚本
+识别 X300 并处理 OriginOS USB 安装弹窗。headless runner 不安装 APK。
+
+- G02 的 KHR group 缺陷已在替代前端修复：保留 downstream KHR 可用性检查，
+  优先调用 loader 的 core group 包装，避免直接 HAL 返回的 physical handle
+  跳过 loader 初始化。GIPA 与 ELF 导出同用包装，不改写 handle 头。红米旧库
+  GIPA SIGSEGV、ELF abort；修复后两台 API 1.0+KHR / 1.1+KHR 的设备创建通过。
+  原生 Android loader 在两台仍崩溃，保留为 CRASH；没有作为 UNSUPPORTED 隐去。
+- X300 frontend 初次加载缺少 `/system_ext/lib64/libgpud_sys.so`；AArch64 构建
+  默认搜索路径补入 `/system_ext/lib64` 后通过。加载失败现在明确输出 dlerror。
+- 红米完整运行 `20260907T060132-e4dca178`：95 PASS / 4 UNSUPPORTED / 1 CRASH
+  （native-groups）；原有 validation、SyncVal、两种 capture/replay 均通过。
+- X300 完整运行 `20260907T060132-4afa862a`：79 PASS / 4 UNSUPPORTED /
+  16 CRASH / 1 FAIL。除 native-groups 外，还有 frontend vk-init/TLS、ICD
+  vk-init、ICD widget pipeline 创建及其 validation/capture 路径崩溃，另有
+  ICD core11 transfer 失败。frontend widget 通过。尚未定位这些 Mali 问题，
+  不能用此前 Adreno 的通过记录证明 X300 可用。
+
+下一验收里程碑：先打通 X300 的 ICD graphics pipeline 和并发初始化/TLS，
+完成同设备 native/frontend/ICD 定向对照；随后接最小窗口及 release/resize，
+再闭合一个真实应用故障。固定离屏通过仍不等于 G04/G06/G11/G12 完成。
+开发可用 runner 的重复 `--case BACKEND-MODE` 参数选择用例，保留 manifest、
+逐项分类与清理；默认完整运行不变，定向运行不与 capture 同用。

@@ -1521,3 +1521,37 @@ are retained and the final non-direct probe deliberately does not claim KHR
 group coverage. Physical-inventory allocation failure, multiple physical GPUs,
 trace truncation, arbitrary driver allocation failures and malformed HALs
 remain unverified. No unit-test suite was added.
+
+
+KHR groups and Redmi/X300 baseline (2026-09-07): `groups` and `groups-dlsym`
+create fresh API 1.0/1.1 instances with KHR_device_group_creation enabled, use
+KHR enumeration before any ordinary/core enumeration, query each returned
+physical device and create/destroy a device with a usable queue. The wrapper
+fix is verified on Redmi 29854870 and vivo X300 10AFA31610002QH. Old Redmi
+frontend run `20260907T060046-41db0697` reproduces SIGSEGV via GIPA and abort
+via its missing downstream ELF trampoline. Fixed targeted X300 run
+`20260907T060105-6bc4ffc2` passes frontend GIPA/ELF and ICD GIPA. Vulkan's 643
+export names are unchanged. Native and standard-loader KHR ELF symbols are
+absent on these installations (UNSUPPORTED); native GIPA crashes remain CRASH.
+The native X300 crash has x8=0x1cdc0de and faults in loader CreateDevice,
+consistent with missing physical-handle initialization. The reference Android
+loader source has core group SetData handling and no KHR group ProcHook:
+https://android.googlesource.com/platform/frameworks/native/+/refs/heads/android10-release/vulkan/libvulkan/driver.cpp
+This is supporting source evidence, not an assertion that the phone uses that
+exact source revision.
+
+Full Redmi run `20260907T060132-e4dca178`: 95 PASS, 4 UNSUPPORTED, 1 CRASH
+(native-groups). Full X300 run `20260907T060132-4afa862a`: 79 PASS,
+4 UNSUPPORTED, 16 CRASH, 1 FAIL. The latter includes frontend init/TLS, ICD
+init and graphics pipeline failures, and ICD core11 transfer failure. Capture
+and widget validation fail on X300's ICD path, while frontend widget passes.
+These are open failures, not skipped cases or proof of a new regression against
+an earlier X300 baseline. The system_ext search-path fix removed a separate
+frontend startup failure (libgpud_sys.so not found).
+
+For focused development use repeated `--case`, for example
+`--case hybris-groups --case hybris-groups-dlsym`; selected names are recorded
+in device.json. With no selection all cases run. `--capture-tools` requires a
+full run, including reference images. Future device validation is restricted
+to Redmi and X300; X300 APK installation must use `../../tools/install-apk.sh`
+from the repository root (headless probes use adb push and need no APK).

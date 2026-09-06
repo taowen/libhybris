@@ -23,6 +23,7 @@ from manifest import sha256_file, unexpected_platforms, verify_manifest  # noqa:
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
+p.add_argument('--case', action='append', dest='selected_cases', help='Run only BACKEND-MODE (repeatable); omitted runs all cases')
 p.add_argument('--hybris-lib', type=Path, help='Installed directory containing libEGL.so.1 and libhybris/')
 p.add_argument('--runtime', type=Path, help='Directory containing glibc loader and runtime dependencies')
 p.add_argument('--manifest', type=Path, help='Provenance JSON from tools/manifest.py')
@@ -34,6 +35,8 @@ p.add_argument('--validation-manifest', type=Path, help='Original layer JSON mat
 p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
 p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
 a = p.parse_args()
+if a.selected_cases and a.capture_tools:
+    p.error('--case cannot be combined with --capture-tools; capture requires the full reference workload')
 if bool(a.validation_layer) != bool(a.validation_manifest):
     p.error('--validation-layer and --validation-manifest must be supplied together')
 if a.validation_layer and not a.icd_hal:
@@ -156,6 +159,10 @@ for binary in ['probe-bionic', 'probe-glibc', 'probe-glibc-linked', 'libtls-fixt
 
 
 cases = [
+    ('native', 'groups', 'probe-bionic'),
+    ('native', 'groups-dlsym', 'probe-bionic'),
+    ('hybris', 'groups', 'probe-glibc'),
+    ('hybris', 'groups-dlsym', 'probe-glibc'),
     ('native', 'rwlock-monotonic', 'probe-bionic'),
     ('hybris', 'rwlock-monotonic', 'probe-glibc'),
     ('native', 'mutex-monotonic', 'probe-bionic'),
@@ -237,7 +244,7 @@ if a.icd_hal:
     # The manifest starts at 1.0; interface 5 queries the HAL's supported
     # instance version via vkEnumerateInstanceVersion.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
+              for mode in ('groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     if a.validation_layer:
         (stage / 'layers').mkdir()
@@ -264,6 +271,13 @@ try:
     shell('mkdir -p ' + remote, check=True)
     subprocess.run(adb + ['push', str(stage) + '/.', remote + '/'],
                    check=True, stdout=subprocess.DEVNULL)
+    if a.selected_cases:
+        available = {backend + '-' + mode for backend, mode, _ in cases}
+        unknown = set(a.selected_cases) - available
+        if unknown:
+            raise SystemExit('unknown selected cases: ' + ', '.join(sorted(unknown)))
+        cases = [case for case in cases if case[0] + '-' + case[1] in a.selected_cases]
+    metadata['selected_cases'] = a.selected_cases
     for backend, mode, binary in cases:
         if backend == 'native':
             command = (
