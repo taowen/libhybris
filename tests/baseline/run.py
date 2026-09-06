@@ -24,7 +24,11 @@ p.add_argument('--runtime', type=Path, help='Directory containing glibc loader a
 p.add_argument('--manifest', type=Path, help='Provenance JSON from tools/manifest.py')
 p.add_argument('--out', type=Path, default=Path(__file__).resolve().parent / 'build/results')
 p.add_argument('--bundle', type=Path, default=Path(__file__).resolve().parent / 'build/bundle')
+p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
+p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
 a = p.parse_args()
+if bool(a.icd_hal) != bool(a.vulkan_loader):
+    p.error('--icd-hal and --vulkan-loader must be supplied together')
 here = Path(__file__).resolve().parent
 default_out = Path(__file__).resolve().parent / 'build'
 if a.hybris_lib is None:
@@ -162,6 +166,23 @@ cases = [
     ('hybris-linked', 'vk', 'probe-glibc-linked'),
 ]
 
+if a.icd_hal:
+    adapter = stage / 'hybris/libhybris-vulkan-icd.so.0'
+    if not adapter.is_file():
+        raise SystemExit('ICD adapter missing from hybris install')
+    (stage / 'standard').mkdir()
+    shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
+    metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
+    (stage / 'driver.json').write_text(json.dumps({
+        'file_format_version': '1.0.0',
+        'ICD': {'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
+                'api_version': '1.0.0'}}))
+    # The manifest starts at 1.0; interface 5 queries the HAL's supported
+    # instance version via vkEnumerateInstanceVersion.
+    cases += [('icd', mode, 'probe-glibc')
+              for mode in ('vk', 'dispatch', 'life', 'unload', 'tls', 'caps', 'ubo')]
+    cases += [('icd-linked', 'vk', 'probe-glibc-linked')]
+
 results = []
 observed_paths = set()
 try:
@@ -185,6 +206,15 @@ try:
                 'HYBRIS_ANDROID_SDK_VERSION=' + shlex.quote(metadata['ro.build.version.sdk']) + ' '
                 './glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./' + binary + ' '
             )
+        if backend in {'icd', 'icd-linked'}:
+            command = (
+                'HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker '
+                'HYBRIS_ANDROID_SDK_VERSION=' + shlex.quote(metadata['ro.build.version.sdk']) + ' '
+                'HYBRIS_VULKAN_HAL=' + shlex.quote(a.icd_hal) + ' '
+                'VK_DRIVER_FILES=$PWD/driver.json '
+                'PROBE_VK=$PWD/standard/libvulkan.so.1 '
+                './glibc/ld-linux-aarch64.so.1 --library-path ./standard:./hybris:./glibc ./'
+                + binary + ' ')
         name = backend + '-' + mode
         metadata['commands'][name] = {'directory': remote, 'command': command + mode}
         try:

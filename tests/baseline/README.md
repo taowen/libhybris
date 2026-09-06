@@ -241,3 +241,32 @@ These are standalone smoke results, not CTS or Blender regression results.
 The final runner rerun on 29854870, `20260906T235759-0a9d4916`,
 also completed with 21 PASS / 2 UNSUPPORTED, retaining all 23 commands,
 nonempty mapping snapshots and driver/probe identities.
+
+
+## Optional standard Vulkan loader
+
+The build also produces libhybris-vulkan-icd.so.0. It calls the vendor HAL
+directly through hybris, leaving dispatchable-object headers to the standard
+glibc loader. This path is opt-in and currently headless; no system ICD JSON
+is installed. See [adapter contract](../../hybris/vulkan/icd/README.md).
+
+Supply a glibc AArch64 standard loader from the pinned builder (its package is
+libvulkan1 1.4.309.0-1). For example, copy
+/usr/lib/aarch64-linux-gnu/libvulkan.so.1 out of the image produced by
+tools/ensure-builder.sh. Then run:
+
+    python3 tests/baseline/run.py --serial 29854870 \
+      --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
+      --vulkan-loader /path/to/standard/libvulkan.so.1
+
+The runner stages that loader separately from the hybris frontend, records
+its hash and selects the ICD via VK_DRIVER_FILES. The loader path must refer
+to the standard loader, not libhybris's replacement libvulkan. HAL selection
+is explicit for this experiment. The eight extra cases cover fill/readback,
+dispatch, lifecycle, unload/thread exit, caps, widget pixels and direct linking.
+
+Verified runs: 29854870 20260907T001046-6fb3cd47 and KB2000
+20260907T001144-6f996d48, each 29 PASS / 2 UNSUPPORTED (desktop GL).
+The ICD mappings contain the standard loader and vendor HAL, without Android
+libvulkan. These results do not verify WSI, Vulkan 1.1 workloads, validation,
+capture/replay, or complete physical-device command coverage.

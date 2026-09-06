@@ -29,7 +29,7 @@ are committed and pushed separately to taowen/ardesk.
 | G01 | AArch64 baseline verified | Standalone default build, fixed inputs/toolchain, library/probe hashes and sampled runtime mappings verified on two devices; see baseline README. |
 | G02 | Partial | Pinned vk.xml coverage for direct/link/GIPA/GDPA entries, alias/enablement rules and per-device dispatch. |
 | G03 | Partial | Observe TLS allocation/destruction and generation handling; exercise GLES multiple contexts and cross-thread teardown. |
-| G04 | Open | Standard loader + ICD adapter feasibility; legal/illegal validation cases and one frame capture/replay with matching pixels. |
+| G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Still need legal/illegal validation and frame capture/replay with matching pixels. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
 | G06 | Partial | Associate an injected wrong binding with the first wrong draw and effective descriptor/resource generation. |
 | G07 | Open | Reference pixels for each supported format and upload/copy/view/subresource path; reject unsupported semantics. |
@@ -78,3 +78,11 @@ snapshots and manifests, actual target pkg-config versions, runtime maps and
 Android mapped-file hashes. Independent checkout builds and two device runs
 completed (21 PASS / 2 UNSUPPORTED each). Modified cache and executable
 checks failed as intended. Next priority is G02/G04 Vulkan loader integration.
+
+
+Standard-loader batch: optional vendor-HAL ICD, interface version 5, generated
+physical-device resolver scope from pinned Vulkan-Headers v1.4.309. Existing
+frontend remains default. Two device runs each completed 29 PASS / 2 UNSUPPORTED
+including eight ICD cases. No dispatch header rewriting or creation-chain
+stripping. Next: standard glibc validation layer and capture tooling, plus
+version/extension-dependent dispatch coverage.
