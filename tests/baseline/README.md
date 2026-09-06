@@ -1265,3 +1265,23 @@ Each native/frontend/ICD staged case logs twelve submissions across both
 sizes: eight exact good pixels and four exact alternate pixels, with four
 successful command pool resets. Both ICD VVL/SyncVal size variants report
 zero errors. Existing capture/replay remains passing.
+
+
+`ubo-template` uses Vulkan 1.1 core descriptor update templates for both UBO
+sizes. Each template has a nonzero input byte offset: the first
+VkDescriptorBufferInfo is a valid opposite descriptor, while the second is
+the intended descriptor. Ignoring the offset therefore selects the wrong
+color. One set/template and the same rendering resources survive six fenced
+submissions per size: template updates good/alternate/good accompany command
+pool reset/re-recording (reset only after the first recording); each recording
+is then submitted twice. Every pixel is checked. `ubo-template-validation`
+runs the same path under ICD VVL/SyncVal. This covers one uniform descriptor
+entry via the core API; KHR aliases, arrays/stride traversal, multiple bindings,
+push descriptor templates and update-after-bind remain unverified here.
+
+Rebuilt runs `20260907T041926-f48b71fa` (29854870) and
+`20260907T041926-c42297b8` (KB2000) each report 87 PASS, 2 UNSUPPORTED.
+Each native/frontend/ICD template case logs twelve submissions and six
+updates with payload offset=24 across both sizes, producing eight exact good
+pixels and four exact alternate pixels. Both ICD validation size variants
+report zero errors. Staged/dynamic cases and static capture/replay pass.

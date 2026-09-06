@@ -447,3 +447,11 @@ record/resubmit good, reset/re-record/resubmit alternate, then good again.
 Transfer-to-shader and resource-reuse barriers are explicit. This adds bounded
 staging and command-reuse evidence; template updates and arbitrary draw-state
 reconstruction remain open.
+
+
+The widget template probe now updates a retained descriptor set through Vulkan
+1.1 core templates, using a nonzero payload offset with a valid opposite
+prefix descriptor as a negative control. Both UBO sizes retain resources
+across good/alternate/good updates and command re-record/resubmit cycles.
+Multiple entries, descriptor arrays and dynamic capture reconstruction remain
+open.

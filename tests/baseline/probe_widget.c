@@ -36,7 +36,10 @@ _Static_assert(offsetof(struct large_widget_ubo, signed_tag) == 1216, "int offse
 _Static_assert(offsetof(struct large_widget_ubo, enabled) == 1220, "bool storage offset");
 _Static_assert(offsetof(struct large_widget_ubo, end_marker) == 1224, "end offset");
 
-static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic, int large, int staged) {
+static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic, int large, int update_mode) {
+  const int staged = update_mode == 1;
+  const int templated = update_mode == 2;
+  const int repeat = staged || templated;
   void *h =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
@@ -46,9 +49,16 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   PFN_vkGetInstanceProcAddr gip = sym(h, "vkGetInstanceProcAddr");
   VkInstance instance = VK_NULL_HANDLE;
   V(vkCreateInstance);
+  if (templated) {
+    PFN_vkEnumerateInstanceVersion version = (PFN_vkEnumerateInstanceVersion)gip(VK_NULL_HANDLE, "vkEnumerateInstanceVersion");
+    uint32_t supported = VK_API_VERSION_1_0;
+    if (!version) return 3;
+    CHECK(version(&supported));
+    if (supported < VK_API_VERSION_1_1) return 3;
+  }
   VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                            .pApplicationName = "hybris-ubo",
-                           .apiVersion = VK_API_VERSION_1_0};
+                           .apiVersion = templated ? VK_API_VERSION_1_1 : VK_API_VERSION_1_0};
   VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
                              .pApplicationInfo = &app};
   const char *layer = "VK_LAYER_KHRONOS_validation";
@@ -140,8 +150,11 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   PFN_vkResetCommandPool reset_pool = NULL;
   if (staged) {
     copy_buffer = (PFN_vkCmdCopyBuffer)gip(instance, "vkCmdCopyBuffer");
+    if (!copy_buffer) return 2;
+  }
+  if (repeat) {
     reset_pool = (PFN_vkResetCommandPool)gip(instance, "vkResetCommandPool");
-    if (!copy_buffer || !reset_pool) return 2;
+    if (!reset_pool) return 2;
   }
   uint32_t count = 0;
   CHECK(p_vkEnumeratePhysicalDevices(instance, &count, NULL));
@@ -151,6 +164,15 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   CHECK(p_vkEnumeratePhysicalDevices(instance, &count, devices));
   if (!count) { printf("No Vulkan physical devices\n"); return 2; }
   VkPhysicalDevice pd = devices[0];
+  if (templated) {
+    V(vkGetPhysicalDeviceProperties);
+    VkPhysicalDeviceProperties properties;
+    p_vkGetPhysicalDeviceProperties(pd, &properties);
+    if (properties.apiVersion < VK_API_VERSION_1_1) {
+      p_vkDestroyInstance(instance, NULL);
+      return 3;
+    }
+  }
   uint32_t qi = 0;
   if (!pick_queue(p_vkGetPhysicalDeviceQueueFamilyProperties, pd, &qi))
     return 2;
@@ -518,7 +540,24 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
                                 .descriptorCount = 1,
                                 .descriptorType = descriptor_type,
                                 .pBufferInfo = &dbi};
-  p_vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
+  VkDescriptorUpdateTemplate update_template = VK_NULL_HANDLE;
+  PFN_vkUpdateDescriptorSetWithTemplate update_with_template = NULL;
+  PFN_vkDestroyDescriptorUpdateTemplate destroy_template = NULL;
+  if (templated) {
+    V(vkCreateDescriptorUpdateTemplate);
+    update_with_template = (PFN_vkUpdateDescriptorSetWithTemplate)gip(instance, "vkUpdateDescriptorSetWithTemplate");
+    destroy_template = (PFN_vkDestroyDescriptorUpdateTemplate)gip(instance, "vkDestroyDescriptorUpdateTemplate");
+    if (!update_with_template || !destroy_template) return 2;
+    VkDescriptorUpdateTemplateEntry entry = {.dstBinding = 0, .descriptorCount = 1,
+        .descriptorType = descriptor_type, .offset = sizeof(VkDescriptorBufferInfo),
+        .stride = sizeof(VkDescriptorBufferInfo)};
+    VkDescriptorUpdateTemplateCreateInfo template_ci = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_CREATE_INFO,
+        .descriptorUpdateEntryCount = 1, .pDescriptorUpdateEntries = &entry,
+        .templateType = VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET,
+        .descriptorSetLayout = set_layout};
+    CHECK(p_vkCreateDescriptorUpdateTemplate(device, &template_ci, NULL, &update_template));
+  } else p_vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
   printf("DRAW set=%p layout=%p pipeline=%p buffer=%p range=%u inject=%d\n",
          (void *)set, (void *)pipeline_layout, (void *)pipeline,
          (void *)dbi.buffer, ubo_bytes, inject_wrong_binding);
@@ -536,18 +575,29 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   VkCommandBuffer cb;
   CHECK(p_vkAllocateCommandBuffers(device, &cba_info, &cb));
   int match_good = 0, match_bad = 0, dump_failed = 0, pixels_failed = 0;
-  for (unsigned submission = 0; submission < (staged ? 6u : 1u); ++submission) {
-    if (staged) {
+  for (unsigned submission = 0; submission < (repeat ? 6u : 1u); ++submission) {
+    if (repeat) {
       inject_wrong_binding = submission / 2 == 1;
-      printf("UBO_STAGED bytes=%u submission=%u rerecord=%u alternate=%d\n",
-             ubo_bytes, submission, submission % 2 == 0, inject_wrong_binding);
+      printf("UBO_%s bytes=%u submission=%u rerecord=%u alternate=%d\n",
+             staged ? "STAGED" : "TEMPLATE", ubo_bytes, submission,
+             submission % 2 == 0, inject_wrong_binding);
     }
-    if (!staged || submission % 2 == 0) {
+    if (!repeat || submission % 2 == 0) {
       if (submission) CHECK(reset_pool(device, cpool, 0));
+      if (templated) {
+        /* The prefix is a valid opposite descriptor. Ignoring entry.offset
+         * therefore produces a definite incorrect pixel instead of a fault. */
+        VkDescriptorBufferInfo payload[2] = {
+            {.buffer = inject_wrong_binding ? ubo_good : ubo_bad, .range = ubo_bytes},
+            {.buffer = inject_wrong_binding ? ubo_bad : ubo_good, .range = ubo_bytes}};
+        update_with_template(device, set, update_template, payload);
+        printf("UBO_TEMPLATE_UPDATE offset=%zu buffer=%p range=%u\n",
+               sizeof(payload[0]), (void *)payload[1].buffer, ubo_bytes);
+      }
       VkCommandBufferBeginInfo begin = {
           .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
       CHECK(p_vkBeginCommandBuffer(cb, &begin));
-      if (staged) {
+      if (repeat) {
         /* Cover the previous submission's UBO reads, attachment/readback use,
          * then make this copy visible to both shader stages. */
         VkMemoryBarrier reuse = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -559,6 +609,8 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
             VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
             0, 1, &reuse, 0, NULL, 0, NULL);
+      }
+      if (staged) {
         VkBufferCopy upload = {.size = ubo_bytes};
         copy_buffer(cb, inject_wrong_binding ? ubo_bad : ubo_good, uploaded_ubo, 1, &upload);
         VkMemoryBarrier ready = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -636,6 +688,7 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   p_vkDestroyFramebuffer(device, fb, NULL);
   p_vkDestroyRenderPass(device, rp, NULL);
   p_vkDestroyPipelineLayout(device, pipeline_layout, NULL);
+  if (templated) destroy_template(device, update_template, NULL);
   p_vkDestroyDescriptorPool(device, pool, NULL);
   p_vkDestroyDescriptorSetLayout(device, set_layout, NULL);
   p_vkDestroyShaderModule(device, vs, NULL);
@@ -722,6 +775,14 @@ int ubo_large_probe(int validate) {
 int ubo_staged_probe(int validate) {
   for (int large = 0; large < 2; ++large) {
     int result = ubo_draw_internal(0, validate, 0, large, 1);
+    if (result) return result;
+  }
+  return 0;
+}
+
+int ubo_template_probe(int validate) {
+  for (int large = 0; large < 2; ++large) {
+    int result = ubo_draw_internal(0, validate, 0, large, 2);
     if (result) return result;
   }
   return 0;
