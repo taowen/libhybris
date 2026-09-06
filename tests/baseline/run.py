@@ -26,7 +26,13 @@ p.add_argument('--out', type=Path, default=Path(__file__).resolve().parent / 'bu
 p.add_argument('--bundle', type=Path, default=Path(__file__).resolve().parent / 'build/bundle')
 p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
+p.add_argument('--validation-manifest', type=Path, help='Original layer JSON matching --validation-layer')
+p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
 a = p.parse_args()
+if bool(a.validation_layer) != bool(a.validation_manifest):
+    p.error('--validation-layer and --validation-manifest must be supplied together')
+if a.validation_layer and not a.icd_hal:
+    p.error('--validation-layer requires --icd-hal')
 if bool(a.icd_hal) != bool(a.vulkan_loader):
     p.error('--icd-hal and --vulkan-loader must be supplied together')
 here = Path(__file__).resolve().parent
@@ -182,6 +188,17 @@ if a.icd_hal:
     cases += [('icd', mode, 'probe-glibc')
               for mode in ('vk', 'dispatch', 'life', 'unload', 'tls', 'caps', 'ubo')]
     cases += [('icd-linked', 'vk', 'probe-glibc-linked')]
+    if a.validation_layer:
+        (stage / 'layers').mkdir()
+        shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
+        metadata['validation_layer_sha256'] = sha256_file(a.validation_layer)
+        metadata['validation_manifest_sha256'] = sha256_file(a.validation_manifest)
+        layer_json = json.loads(a.validation_manifest.read_text())
+        if layer_json['layer']['name'] != 'VK_LAYER_KHRONOS_validation':
+            raise SystemExit('expected Khronos validation layer manifest')
+        layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
+        (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
+        cases.append(('icd', 'validation', 'probe-glibc'))
 
 results = []
 observed_paths = set()
@@ -211,7 +228,7 @@ try:
                 'HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker '
                 'HYBRIS_ANDROID_SDK_VERSION=' + shlex.quote(metadata['ro.build.version.sdk']) + ' '
                 'HYBRIS_VULKAN_HAL=' + shlex.quote(a.icd_hal) + ' '
-                'VK_DRIVER_FILES=$PWD/driver.json '
+                'VK_DRIVER_FILES=$PWD/driver.json VK_LAYER_PATH=$PWD/layers '
                 'PROBE_VK=$PWD/standard/libvulkan.so.1 '
                 './glibc/ld-linux-aarch64.so.1 --library-path ./standard:./hybris:./glibc ./'
                 + binary + ' ')

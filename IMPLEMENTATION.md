@@ -29,7 +29,7 @@ are committed and pushed separately to taowen/ardesk.
 | G01 | AArch64 baseline verified | Standalone default build, fixed inputs/toolchain, library/probe hashes and sampled runtime mappings verified on two devices; see baseline README. |
 | G02 | Partial | Pinned vk.xml coverage for direct/link/GIPA/GDPA entries, alias/enablement rules and per-device dispatch. |
 | G03 | Partial | Observe TLS allocation/destruction and generation handling; exercise GLES multiple contexts and cross-thread teardown. |
-| G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Still need legal/illegal validation and frame capture/replay with matching pixels. |
+| G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Still need frame capture/replay with matching pixels and wider workload validation. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
 | G06 | Partial | Associate an injected wrong binding with the first wrong draw and effective descriptor/resource generation. |
 | G07 | Open | Reference pixels for each supported format and upload/copy/view/subresource path; reject unsupported semantics. |
@@ -86,3 +86,11 @@ frontend remains default. Two device runs each completed 29 PASS / 2 UNSUPPORTED
 including eight ICD cases. No dispatch header rewriting or creation-chain
 stripping. Next: standard glibc validation layer and capture tooling, plus
 version/extension-dependent dispatch coverage.
+
+
+Standard validation batch: pinned glibc VVL package with its original JSON,
+explicit layer/debug-utils activation and a callback-checked negative case.
+Two devices each completed 30 PASS / 2 UNSUPPORTED; legal lifecycle zero
+errors and injected zero-size buffer exactly one expected VUID, aborted
+before vendor execution. Capture/replay and validation of the full rendering
+workload remain open.

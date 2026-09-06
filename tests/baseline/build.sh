@@ -6,7 +6,7 @@ ROOT="$(cd ../.. && pwd)"
 OUT="${OUT:-$PWD/build}"
 BUNDLE="$OUT/bundle"
 SOURCES=(probe.c probe_common.c probe_egl.c probe_vulkan.c probe_dispatch.c
-         probe_lifecycle.c probe_caps.c probe_widget.c)
+         probe_lifecycle.c probe_caps.c probe_widget.c probe_validation.c)
 HYBRIS_LIB="${HYBRIS_LIB:-$OUT/install/usr/lib/hybris}"
 RUNTIME="${RUNTIME:-$OUT/runtime}"
 if [[ -z "${BIONIC_CC:-}" ]]; then

@@ -270,3 +270,36 @@ Verified runs: 29854870 20260907T001046-6fb3cd47 and KB2000
 The ICD mappings contain the standard loader and vendor HAL, without Android
 libvulkan. These results do not verify WSI, Vulkan 1.1 workloads, validation,
 capture/replay, or complete physical-device command coverage.
+
+
+## Standard validation layer
+
+Fetch the optional glibc AArch64 layer with:
+
+    bash tools/fetch-validation-layer.sh
+
+This downloads Debian vulkan-validationlayers 1.4.309.0-1 from the same fixed
+snapshot as the loader and verifies the package SHA256. It uses dpkg-deb from
+the host or the repository builder. It does not run automatically during
+ordinary builds or baseline runs.
+
+Add both options to the standard-loader command above:
+
+    --validation-layer tests/baseline/build/validation/extracted/usr/lib/aarch64-linux-gnu/libVkLayer_khronos_validation.so
+    --validation-manifest tests/baseline/build/validation/extracted/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+
+The original layer manifest is retained except for its staged library path.
+Both file hashes are recorded. The validation mode explicitly enables
+VK_LAYER_KHRONOS_validation and VK_EXT_debug_utils through the standard
+loader; it does not construct a layer chain or edit dispatchable handles.
+
+The legal instance/device/buffer lifecycle must emit zero ERROR messages.
+A zero-size buffer must emit exactly VUID-VkBufferCreateInfo-size-00912;
+the debug callback returns VK_TRUE during injection so validation stops that
+invalid call before the vendor, with VK_ERROR_VALIDATION_FAILED_EXT. Other
+errors fail the probe, as does a missing/unloadable layer.
+
+Initial verified runs: 29854870 20260907T001810-cfa7fcb1 and KB2000
+20260907T001900-e6551fc2, each 30 PASS / 2 UNSUPPORTED (desktop GL).
+This verifies the standard validation entry path for a small workload.
+It does not validate every baseline draw or close the capture/replay gate.

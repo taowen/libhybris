@@ -47,5 +47,6 @@ int init_probe(void);
 int tls_probe(void);
 int caps_probe(void);
 int ubo_probe(void);
+int validation_probe(void);
 
 #endif
