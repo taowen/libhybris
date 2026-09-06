@@ -886,3 +886,23 @@ Fresh probe builds and runs `20260907T024324-39d298a2` (29854870) and
 including VVL, SyncVal and capture/replay. Native and hybris each report six
 successful worker results across three cycles on each device. Production code
 is unchanged in this batch.
+
+## Surface capability fallback policy
+
+The surface-capability wrappers now resolve Android-loader ELF trampolines
+during frontend construction, eliminating lazy pointer writes from concurrent
+calls. Missing entries return EXTENSION_NOT_PRESENT. Capabilities2 no longer
+falls back to the legacy query, which cannot process the caller's input/output
+pNext chains, or tries GIPA(NULL) for a physical-device command.
+
+The 643 Vulkan dynamic exports remain unchanged. This is a code-review fix
+with build and headless regression coverage, not a reproduced surface query
+failure: no live WSI surface or missing-entry injection is exercised. Resolution
+still uses Android-loader ELF trampolines; physical-device-to-instance state,
+enabled-extension checks for these wrappers and live query-chain semantics
+remain unfinished.
+
+Fresh library/probe builds and runs `20260907T024657-4bc8a0d1` (29854870) and
+`20260907T024657-607726a4` (KB2000) each complete **60 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. These results preserve the existing
+headless baseline and do not close the live surface-query coverage gap.

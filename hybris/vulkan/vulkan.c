@@ -196,11 +196,8 @@ static VkResult (*_real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)(VkPhysicalDev
 
 VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pSurfaceCapabilities)
 {
-    if (!_real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR) {
-        if (!vulkan_handle) _init_androidvulkan();
-        _real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR = (VkResult (*)(VkPhysicalDevice, VkSurfaceKHR, VkSurfaceCapabilitiesKHR*))
-            android_dlsym(vulkan_handle, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
-    }
+    if (!_real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
     VkResult result = _real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, pSurfaceCapabilities);
     if (result == VK_SUCCESS) {
         ws_patchSurfaceCapabilities(surface, pSurfaceCapabilities);
@@ -225,20 +222,10 @@ static VkResult (*_real_vkGetPhysicalDeviceSurfaceCapabilities2KHR)(VkPhysicalDe
 
 VkResult vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo, VkSurfaceCapabilities2KHR* pSurfaceCapabilities)
 {
-    if (!_real_vkGetPhysicalDeviceSurfaceCapabilities2KHR) {
-        if (!vulkan_handle) _init_androidvulkan();
-        _real_vkGetPhysicalDeviceSurfaceCapabilities2KHR = (VkResult (*)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR*, VkSurfaceCapabilities2KHR*))
-            android_dlsym(vulkan_handle, "vkGetPhysicalDeviceSurfaceCapabilities2KHR");
-        if (!_real_vkGetPhysicalDeviceSurfaceCapabilities2KHR && _vkGetInstanceProcAddr) {
-            _real_vkGetPhysicalDeviceSurfaceCapabilities2KHR = (VkResult (*)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR*, VkSurfaceCapabilities2KHR*))
-                (*_vkGetInstanceProcAddr)(NULL, "vkGetPhysicalDeviceSurfaceCapabilities2KHR");
-        }
-    }
-    if (!_real_vkGetPhysicalDeviceSurfaceCapabilities2KHR) {
-        // Fall back to the non-2 variant
-        VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, pSurfaceInfo->surface, &pSurfaceCapabilities->surfaceCapabilities);
-        return result;
-    }
+    /* A legacy query cannot populate the caller's input/output pNext chains.
+     * Report the missing backend rather than returning partial success. */
+    if (!_real_vkGetPhysicalDeviceSurfaceCapabilities2KHR)
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
     VkResult result = _real_vkGetPhysicalDeviceSurfaceCapabilities2KHR(physicalDevice, pSurfaceInfo, pSurfaceCapabilities);
     if (result == VK_SUCCESS) {
         ws_patchSurfaceCapabilities(pSurfaceInfo->surface, &pSurfaceCapabilities->surfaceCapabilities);
@@ -255,6 +242,15 @@ static void _resolve_vulkan_syms(void)
         ? (PFN_vkGetInstanceProcAddr)android_dlsym(vulkan_handle, "vkGetInstanceProcAddr") : NULL;
     _real_vkGetDeviceProcAddr = vulkan_handle
         ? (PFN_vkGetDeviceProcAddr)android_dlsym(vulkan_handle, "vkGetDeviceProcAddr") : NULL;
+#ifdef WANT_WAYLAND
+    /* Resolve Android loader trampolines once, alongside the other ELF exports.
+     * Never lazily publish these pointers from concurrent physical-device calls.
+     * GIPA(NULL, ...) is not a resolver for physical-device commands. */
+    _real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR = vulkan_handle
+        ? (PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)android_dlsym(vulkan_handle, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR") : NULL;
+    _real_vkGetPhysicalDeviceSurfaceCapabilities2KHR = vulkan_handle
+        ? (PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR)android_dlsym(vulkan_handle, "vkGetPhysicalDeviceSurfaceCapabilities2KHR") : NULL;
+#endif
     hybris_vulkan_resolve_exports(vulkan_handle);
 }
 

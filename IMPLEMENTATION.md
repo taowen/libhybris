@@ -24,6 +24,14 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+Surface capability wrappers resolve their Android-loader ELF trampolines during
+frontend construction rather than racing on lazy cache writes. Missing entries
+return EXTENSION_NOT_PRESENT. The capabilities2 wrapper no longer falls back
+to the legacy query, which cannot satisfy input/output pNext chains, and no
+longer tries the invalid GIPA(NULL) scope for a physical-device command.
+Physical-device-to-instance dispatch ownership and live WSI validation remain
+open; this is not a complete per-object dispatch implementation.
+
 The isolated EGL contexts also run on two threads: both make their context
 current before a host gate releases their clear/readback loops. Each checks
 its own context/surface, buffer binding/size and exact red or green pixel for
