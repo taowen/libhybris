@@ -398,6 +398,12 @@ int _hybris_hook_pthread_mutex_lock_timeout_np(pthread_mutex_t *__mutex, unsigne
 
     realmutex = (pthread_mutex_t *) value;
 
+    if (hybris_is_pointer_in_shm((void *)value)) {
+        realmutex = hybris_get_shmpointer((hybris_shm_pointer_t)value);
+        if (!realmutex)
+            return EINVAL;
+    }
+
     if (value <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
         realmutex = hybris_get_static_mutex(__mutex);
     }
@@ -430,6 +436,12 @@ int _hybris_hook_pthread_mutex_timedlock(pthread_mutex_t *__mutex,
     }
 
     pthread_mutex_t *realmutex = (pthread_mutex_t *) value;
+    if (hybris_is_pointer_in_shm((void *)value)) {
+        realmutex = hybris_get_shmpointer((hybris_shm_pointer_t)value);
+        if (!realmutex)
+            return EINVAL;
+    }
+
     if (value <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
         realmutex = hybris_get_static_mutex(__mutex);
     }
@@ -857,8 +869,10 @@ int _hybris_hook_pthread_rwlock_destroy(pthread_rwlock_t *__rwlock)
         free(realrwlock);
     }
     else {
+        realrwlock = hybris_get_shmpointer((hybris_shm_pointer_t)value);
+        if (!realrwlock)
+            return EINVAL;
         ret = pthread_rwlock_destroy(realrwlock);
-        realrwlock = (pthread_rwlock_t *)hybris_get_shmpointer((hybris_shm_pointer_t)realrwlock);
     }
 
     return ret;

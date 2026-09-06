@@ -86,8 +86,13 @@ translator touches the shared header. Mutex/condition/rwlock initialization
 returns ENOMEM when no backing object is obtained. `shared-unavailable`
 exercises actual bionic imports when glibc's /dev/shm is absent; this does not
 implement Android ashmem support or validate working process-shared locks.
-The shared rwlock destroy path still needs handle translation before destroy,
-and the allocator's mapping/growth/concurrent-open behavior needs further work.
+Shared rwlock destruction now translates its tagged handle before calling
+glibc. Mutex timedlock and timeout_np likewise translate shared handles before
+waiting, and these three paths return EINVAL when translation has no backing.
+This is a code-path correction with build/private-path regression coverage;
+working shared-object execution is not validated on the current devices,
+which lack /dev/shm. The allocator's mapping/growth/concurrent-open behavior
+still needs further work.
 
 `common/bionic_sync.c` owns static synchronization publication, backing
 allocation, mutex/condition/rwlock ABI hooks and shared-handle translation.

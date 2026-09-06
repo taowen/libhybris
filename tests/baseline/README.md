@@ -1040,3 +1040,21 @@ After rebuilding libraries and probes, `20260907T032015-6cdbdcb6` (29854870)
 and `20260907T032015-9862e194` (KB2000) each completed **65 PASS / 2 UNSUPPORTED**,
 including native/hybris kind cases, validation/SyncVal and capture/replay.
 The 130 common and 643 Vulkan defined dynamic export sets remain unchanged.
+
+
+Shared-handle correction: mutex timedlock/timeout_np now translate a hybris
+shared-memory tag before passing it to glibc; shared rwlock destruction now
+translates before destroy rather than afterward. Missing translation returns
+EINVAL in these three paths. No shared-memory allocator, Android-native shared
+mutex no-op policy, or condition wait policy is changed.
+Current devices lack /dev/shm, and no ready proot binary was available in the
+workspace. The existing `shared-unavailable` case covers allocation/translation
+failure and failed initialization, not these successful shared-object paths.
+This change therefore has source review, build and existing private-path
+regression evidence; working process-shared timed waits/destruction remain
+unverified, as do allocator growth/remapping and cross-process coordination.
+Rebuilt libraries/probes and completed runs `20260907T032439-4c9cf97d`
+(29854870) and `20260907T032439-0e18b5ae` (KB2000), each **65 PASS /
+2 UNSUPPORTED**, including validation/SyncVal and capture/replay. The 130
+common and 643 Vulkan defined exports remain unchanged. These counts do not
+close the shared-path coverage gap described above.
