@@ -34,19 +34,15 @@ static void nullws_init_module(struct ws_vulkan_interface *vulkan_iface)
 
 static VkResult nullws_vkEnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties)
 {
-    if (_vkEnumerateInstanceExtensionProperties == NULL) {
-        _vkEnumerateInstanceExtensionProperties = (VkResult (*)(const char*, uint32_t*, VkExtensionProperties*))
-            (*_vkGetInstanceProcAddr)(NULL, "vkEnumerateInstanceExtensionProperties");
-    }
+    if (!_vkEnumerateInstanceExtensionProperties)
+        return VK_ERROR_INITIALIZATION_FAILED;
     return (*_vkEnumerateInstanceExtensionProperties)(pLayerName, pPropertyCount, pProperties);
 }
 
 VkResult nullws_vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkInstance *pInstance)
 {
-    if (_vkCreateInstance == NULL) {
-        _vkCreateInstance = (VkResult (*)(const VkInstanceCreateInfo *, const VkAllocationCallbacks *, VkInstance *))
-            (*_vkGetInstanceProcAddr)(NULL, "vkCreateInstance");
-    }
+    if (!_vkCreateInstance)
+        return VK_ERROR_INITIALIZATION_FAILED;
     return (*_vkCreateInstance)(pCreateInfo, pAllocator, pInstance);
 }
 
@@ -71,8 +67,15 @@ static void nullws_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface
 
 static void nullws_vkSetInstanceProcAddrFunc(PFN_vkVoidFunction addr)
 {
-    if (_vkGetInstanceProcAddr == NULL)
-        _vkGetInstanceProcAddr = (PFN_vkVoidFunction (*)(VkInstance, const char*))addr;
+    /* Called under the frontend's platform_proc_once before either global
+     * operation is exposed to concurrent callers. No lazy cache writes. */
+    if (_vkGetInstanceProcAddr == NULL) {
+        _vkGetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)addr;
+        _vkCreateInstance = (PFN_vkCreateInstance)
+            _vkGetInstanceProcAddr(NULL, "vkCreateInstance");
+        _vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)
+            _vkGetInstanceProcAddr(NULL, "vkEnumerateInstanceExtensionProperties");
+    }
 }
 
 struct ws_module ws_module_info = {

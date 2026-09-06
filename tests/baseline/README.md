@@ -620,3 +620,61 @@ main threads preserve the mutated first value `41` while receiving `29`.
 All 130 common dynamic exports remain unchanged. This directly verifies the
 registry callback's replay bookkeeping, not concurrent ELF loading, static slot
 reclamation or signal-safe initialization.
+
+## Concurrent first Vulkan instance operations
+
+`vk-init` loads the frontend, resolves its ELF exports, then releases four
+workers from a condition-variable gate without making a Vulkan API call on
+main. Two workers first create an instance and two first enumerate global
+extensions. Each performs four create/physical-device-count/destroy cycles,
+using both ELF and GIPA create routes. Failed thread creation cancels and joins
+every started worker. Native, hybris and standard-loader ICD run this workload.
+
+Code review found unsynchronized publication of the platform module before
+its initializer returned and lazy writes to global create/enumerate pointers.
+The frontend now serializes module initialization and proc setup with separate
+pthread_once controls. Null and Wayland plugins resolve global pointers during
+that setup. Missing global entries return initialization failure. The plugin
+initializer must not reenter the frontend's platform API while its once is
+running; the current initializers call gralloc/common setup only.
+
+This workload does not deterministically reproduce the old data race and is
+not a ThreadSanitizer result. The headless runs exercise the null platform;
+Wayland changes are build-checked only. Surface maps, surface/swapchain function
+caches, per-object dispatch and generation tracking remain separate work.
+
+The platform-only change still failed this workload on 29854870
+(`20260907T015316-00d0a8ae`, incomplete worker cycles) and KB2000
+(`20260907T015316-458817a0`, watchdog timeout), while native and ICD passed.
+Further review found that the pthread bridge could allocate multiple backing
+mutexes for the same static Android mutex and overwrite its pointer. A thread
+could then unlock a different mutex from the one it acquired. The bridge now
+guards pointer lookup/publication with a short host mutex, released before
+acquiring or waiting on the translated mutex. It rechecks before allocating.
+Four-byte-aligned bionic storage requires memcpy; a discarded pointer-atomic
+implementation triggered SIGBUS and is not part of the final change.
+
+`mutex-init` calls real pthread imports in the bionic fixture DSO. Four threads
+race to first use each of 32 static mutexes; an atomic occupancy counter checks
+mutual exclusion, all workers join, and every mutex is destroyed. The fixture
+asserts its mutex offset is four bytes to exercise Android's alignment. This
+does not touch its TLS object. It uses the existing fixture build/manifest.
+
+Fresh builds and runs `20260907T020119-b9cd6fa2` (29854870) and
+`20260907T020119-e59eacf4` (KB2000) each complete **56 PASS / 2 UNSUPPORTED**,
+including VVL, SyncVal and capture/replay. All Vulkan workers complete four
+cycles on native/hybris/ICD; all mutex workers report zero overlap/errors.
+Vulkan's 643 and common's 130 dynamic exports remain unchanged.
+
+A separate 29854870 comparison reuses the first run's staged probe/fixture and
+dependencies, replacing only the common library: archived pre-fix common
+SHA256 `f9a90d389d254959e663e93d0fa81eb817b3d084fbcc0466d0c0a124c087df43`
+times out (exit 142); final common
+`a77a96a95056c483deb8b934a5d61bb5b0dd3a12a74d10afcfd41927f017e42c`
+passes eight fresh-process repetitions. This is a mixed-artifact callback
+regression comparison, not a full old-release baseline.
+
+Remaining limits: condition-variable/rwlock lazy initialization still needs
+review, process-shared behavior is unchanged, and lookup-lock performance,
+fork/signal reentrancy, timed/recursive/errorcheck mutex semantics and allocation
+failure injection are not validated by this normal-mutex workload.

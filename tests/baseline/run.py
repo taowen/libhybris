@@ -162,6 +162,7 @@ cases = [
     ('native', '0', 'probe-bionic'),
     ('native', 'dispatch', 'probe-bionic'),
     ('native', 'life', 'probe-bionic'),
+    ('native', 'vk-init', 'probe-bionic'),
     ('native', 'unload', 'probe-bionic'),
     ('native', 'tls', 'probe-bionic'),
     ('native', 'caps', 'probe-bionic'),
@@ -178,6 +179,8 @@ cases = [
     ('hybris', '0', 'probe-glibc'),
     ('hybris', 'dispatch', 'probe-glibc'),
     ('hybris', 'life', 'probe-glibc'),
+    ('hybris', 'vk-init', 'probe-glibc'),
+    ('hybris', 'mutex-init', 'probe-glibc'),
     ('hybris', 'unload', 'probe-glibc'),
     ('hybris', 'init', 'probe-glibc'),
     ('hybris', 'tls', 'probe-glibc'),
@@ -204,7 +207,7 @@ if a.icd_hal:
     # The manifest starts at 1.0; interface 5 queries the HAL's supported
     # instance version via vkEnumerateInstanceVersion.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'unload', 'tls', 'caps', 'caps2', 'ubo')]
+              for mode in ('vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'unload', 'tls', 'caps', 'caps2', 'ubo')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     if a.validation_layer:
         (stage / 'layers').mkdir()

@@ -28,7 +28,7 @@ if WANT_DEBUG
 libvulkan_la_CXXFLAGS += -ggdb -O0
 endif
 libvulkan_la_LDFLAGS = \
-	-ldl \
+	-ldl -pthread \
 	$(top_builddir)/common/libhybris-common.la \
 	$(top_builddir)/hardware/libhardware.la \
 	-version-info 3:183:2

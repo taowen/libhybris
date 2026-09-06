@@ -156,10 +156,8 @@ static VkResult waylandws_vkEnumerateInstanceExtensionProperties(const char* pLa
 {
     VkResult res;
 
-    if (_vkEnumerateInstanceExtensionProperties == NULL) {
-        _vkEnumerateInstanceExtensionProperties = (VkResult (*)(const char*, uint32_t*, VkExtensionProperties*))
-            (*_vkGetInstanceProcAddr)(NULL, "vkEnumerateInstanceExtensionProperties");
-    }
+    if (!_vkEnumerateInstanceExtensionProperties)
+        return VK_ERROR_INITIALIZATION_FAILED;
 
     res = (*_vkEnumerateInstanceExtensionProperties)(pLayerName, pPropertyCount, pProperties);
     if (res == VK_SUCCESS && *pPropertyCount > 0 && pProperties != NULL) {
@@ -176,16 +174,13 @@ static VkResult waylandws_vkEnumerateInstanceExtensionProperties(const char* pLa
 
 VkResult waylandws_vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkInstance *pInstance)
 {
+    if (!_vkCreateInstance)
+        return VK_ERROR_INITIALIZATION_FAILED;
     VkInstanceCreateInfo createInfo = *pCreateInfo;
     VkResult result;
     // Temporary array to replace wayland surface extension with Android surface extension
     char **enabledExtensions = (char **)malloc(pCreateInfo->enabledExtensionCount * sizeof(char *));
     uint32_t i;
-
-    if (_vkCreateInstance == NULL) {
-        _vkCreateInstance = (VkResult (*)(const VkInstanceCreateInfo *, const VkAllocationCallbacks *, VkInstance *))
-            (*_vkGetInstanceProcAddr)(NULL, "vkCreateInstance");
-    }
 
     for (i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
         enabledExtensions[i] = (char *)malloc(VK_MAX_EXTENSION_NAME_SIZE * sizeof(char));
@@ -298,8 +293,15 @@ static void waylandws_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surf
 
 extern "C" void waylandws_vkSetInstanceProcAddrFunc(PFN_vkVoidFunction addr)
 {
-    if (_vkGetInstanceProcAddr == NULL)
-        _vkGetInstanceProcAddr = (PFN_vkVoidFunction (*)(VkInstance, const char*))addr;
+    /* Called under the frontend's platform_proc_once before either global
+     * operation is exposed to concurrent callers. No lazy cache writes. */
+    if (_vkGetInstanceProcAddr == NULL) {
+        _vkGetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)addr;
+        _vkCreateInstance = (PFN_vkCreateInstance)
+            _vkGetInstanceProcAddr(NULL, "vkCreateInstance");
+        _vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)
+            _vkGetInstanceProcAddr(NULL, "vkEnumerateInstanceExtensionProperties");
+    }
 }
 
 static void waylandws_patchSurfaceCapabilities(VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pSurfaceCapabilities)

@@ -26,6 +26,10 @@ int main(int argc, char **argv) {
     rc = life_probe(1);
   else if (!strcmp(mode, "init"))
     rc = init_probe();
+  else if (!strcmp(mode, "vk-init"))
+    rc = vulkan_init_probe();
+  else if (!strcmp(mode, "mutex-init"))
+    rc = mutex_init_probe();
   else if (!strcmp(mode, "tls-dtor"))
     rc = tls_destructor_probe();
   else if (!strcmp(mode, "tls-bounds"))

@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 #include <hybris/common/binding.h>
 #include <hybris/common/floating_point_abi.h>
@@ -59,25 +60,29 @@ struct ws_vulkan_interface hybris_vulkan_interface = {
 };
 
 static PFN_vkVoidFunction (*_vkGetInstanceProcAddr)(VkInstance instance, const char* pName) = NULL;
+static pthread_once_t platform_proc_once = PTHREAD_ONCE_INIT;
+
+static void initialize_platform_procs(void)
+{
+    ws_vkSetInstanceProcAddrFunc((PFN_vkVoidFunction)_vkGetInstanceProcAddr);
+}
 
 /* Use IDLOAD approach also for float functions, since vulkan uses the aapcs-vfp calling convention even on android */
 
 VkResult vkCreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
 {
-    if (_vkGetInstanceProcAddr == NULL) {
-        HYBRIS_DLSYSM(vulkan, &_vkGetInstanceProcAddr, "vkGetInstanceProcAddr");
-    }
-    ws_vkSetInstanceProcAddrFunc((PFN_vkVoidFunction)_vkGetInstanceProcAddr);
+    if (!_vkGetInstanceProcAddr)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    pthread_once(&platform_proc_once, initialize_platform_procs);
 
     return ws_vkCreateInstance(pCreateInfo, pAllocator, pInstance);
 }
 
 VkResult vkEnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties)
 {
-    if (_vkGetInstanceProcAddr == NULL) {
-        HYBRIS_DLSYSM(vulkan, &_vkGetInstanceProcAddr, "vkGetInstanceProcAddr");
-    }
-    ws_vkSetInstanceProcAddrFunc((PFN_vkVoidFunction)_vkGetInstanceProcAddr);
+    if (!_vkGetInstanceProcAddr)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    pthread_once(&platform_proc_once, initialize_platform_procs);
 
     return ws_vkEnumerateInstanceExtensionProperties(pLayerName, pPropertyCount, pProperties);
 }

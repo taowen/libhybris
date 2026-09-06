@@ -262,13 +262,45 @@ static void hybris_set_mutex_attr(unsigned int android_value, pthread_mutexattr_
     }
 }
 
-static pthread_mutex_t* hybris_alloc_init_mutex(unsigned int android_mutex)
+/* Android mutex storage is only four-byte aligned, even on AArch64. Use
+ * memcpy under a host lock: pointer-width atomics can SIGBUS on valid bionic
+ * objects. This lock protects publication only, never the user's critical
+ * section or a wait on its backing mutex. */
+static pthread_mutex_t static_mutex_guard = PTHREAD_MUTEX_INITIALIZER;
+
+static uintptr_t hybris_read_mutex_value(const void *storage)
 {
-    pthread_mutex_t *realmutex = malloc(sizeof(pthread_mutex_t));
-    pthread_mutexattr_t attr;
-    hybris_set_mutex_attr(android_mutex, &attr);
-    pthread_mutex_init(realmutex, &attr);
-    return realmutex;
+    uintptr_t value;
+    pthread_mutex_lock(&static_mutex_guard);
+    memcpy(&value, storage, sizeof(value));
+    pthread_mutex_unlock(&static_mutex_guard);
+    return value;
+}
+
+static pthread_mutex_t* hybris_get_static_mutex(void *storage)
+{
+    uintptr_t value;
+    pthread_mutex_lock(&static_mutex_guard);
+    memcpy(&value, storage, sizeof(value));
+    if (value <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
+        pthread_mutex_t *candidate = malloc(sizeof(*candidate));
+        pthread_mutexattr_t attr;
+        if (!candidate) {
+            fprintf(stderr, "HYBRIS: fatal: cannot allocate static mutex\n");
+            abort();
+        }
+        hybris_set_mutex_attr(value, &attr);
+        int error = pthread_mutex_init(candidate, &attr);
+        pthread_mutexattr_destroy(&attr);
+        if (error) {
+            fprintf(stderr, "HYBRIS: fatal: cannot initialize static mutex (%d)\n", error);
+            abort();
+        }
+        value = (uintptr_t)candidate;
+        memcpy(storage, &value, sizeof(value));
+    }
+    pthread_mutex_unlock(&static_mutex_guard);
+    return (pthread_mutex_t *)value;
 }
 
 static pthread_cond_t* hybris_alloc_init_cond(void)
@@ -728,7 +760,7 @@ static int _hybris_hook_pthread_mutex_lock(pthread_mutex_t *__mutex)
         return 0;
     }
 
-    uintptr_t value = (*(uintptr_t *) __mutex);
+    uintptr_t value = hybris_read_mutex_value(__mutex);
     if (hybris_check_android_shared_mutex(value)) {
         LOGD("Shared mutex with Android, not locking.");
         return 0;
@@ -741,8 +773,7 @@ static int _hybris_hook_pthread_mutex_lock(pthread_mutex_t *__mutex)
     if (value <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
         TRACE("value %p <= ANDROID_TOP_ADDR_VALUE_MUTEX 0x%x",
               (void*) value, ANDROID_TOP_ADDR_VALUE_MUTEX);
-        realmutex = hybris_alloc_init_mutex(value);
-        *((uintptr_t *)__mutex) = (uintptr_t) realmutex;
+        realmutex = hybris_get_static_mutex(__mutex);
     }
 
     return pthread_mutex_lock(realmutex);
@@ -750,7 +781,7 @@ static int _hybris_hook_pthread_mutex_lock(pthread_mutex_t *__mutex)
 
 static int _hybris_hook_pthread_mutex_trylock(pthread_mutex_t *__mutex)
 {
-    uintptr_t value = (*(uintptr_t *) __mutex);
+    uintptr_t value = hybris_read_mutex_value(__mutex);
 
     TRACE_HOOK("mutex %p", __mutex);
 
@@ -764,8 +795,7 @@ static int _hybris_hook_pthread_mutex_trylock(pthread_mutex_t *__mutex)
         realmutex = (pthread_mutex_t *)hybris_get_shmpointer((hybris_shm_pointer_t)value);
 
     if (value <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
-        realmutex = hybris_alloc_init_mutex(value);
-        *((uintptr_t *)__mutex) = (uintptr_t) realmutex;
+        realmutex = hybris_get_static_mutex(__mutex);
     }
 
     return pthread_mutex_trylock(realmutex);
@@ -780,7 +810,7 @@ static int _hybris_hook_pthread_mutex_unlock(pthread_mutex_t *__mutex)
         return 0;
     }
 
-    uintptr_t value = (*(uintptr_t *) __mutex);
+    uintptr_t value = hybris_read_mutex_value(__mutex);
     if (hybris_check_android_shared_mutex(value)) {
         LOGD("Shared mutex with Android, not unlocking.");
         return 0;
@@ -803,7 +833,7 @@ static int _hybris_hook_pthread_mutex_lock_timeout_np(pthread_mutex_t *__mutex, 
 {
     struct timespec tv;
     pthread_mutex_t *realmutex;
-    uintptr_t value = (*(uintptr_t *) __mutex);
+    uintptr_t value = hybris_read_mutex_value(__mutex);
 
     TRACE_HOOK("mutex %p msecs %u", __mutex, __msecs);
 
@@ -815,8 +845,7 @@ static int _hybris_hook_pthread_mutex_lock_timeout_np(pthread_mutex_t *__mutex, 
     realmutex = (pthread_mutex_t *) value;
 
     if (value <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
-        realmutex = hybris_alloc_init_mutex(value);
-        *((uintptr_t *)__mutex) = (uintptr_t) realmutex;
+        realmutex = hybris_get_static_mutex(__mutex);
     }
 
     clock_gettime(CLOCK_REALTIME, &tv);
@@ -840,7 +869,7 @@ static int _hybris_hook_pthread_mutex_timedlock(pthread_mutex_t *__mutex,
         return 0;
     }
 
-    uintptr_t value = (*(uintptr_t *) __mutex);
+    uintptr_t value = hybris_read_mutex_value(__mutex);
     if (hybris_check_android_shared_mutex(value)) {
         LOGD("Shared mutex with Android, not lock timeout np.");
         return 0;
@@ -848,8 +877,7 @@ static int _hybris_hook_pthread_mutex_timedlock(pthread_mutex_t *__mutex,
 
     pthread_mutex_t *realmutex = (pthread_mutex_t *) value;
     if (value <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
-        realmutex = hybris_alloc_init_mutex(value);
-        *((uintptr_t *)__mutex) = (uintptr_t) realmutex;
+        realmutex = hybris_get_static_mutex(__mutex);
     }
 
     return pthread_mutex_timedlock(realmutex, __abs_timeout);
@@ -984,7 +1012,7 @@ static int _hybris_hook_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t 
 {
     /* Both cond and mutex can be statically initialized, check for both */
     uintptr_t cvalue = (*(uintptr_t *) cond);
-    uintptr_t mvalue = (*(uintptr_t *) mutex);
+    uintptr_t mvalue = hybris_read_mutex_value(mutex);
 
     TRACE_HOOK("cond %p mutex %p", cond, mutex);
 
@@ -1008,8 +1036,7 @@ static int _hybris_hook_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t 
         realmutex = (pthread_mutex_t *)hybris_get_shmpointer((hybris_shm_pointer_t)mvalue);
 
     if (mvalue <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
-        realmutex = hybris_alloc_init_mutex(mvalue);
-        *((uintptr_t *) mutex) = (uintptr_t) realmutex;
+        realmutex = hybris_get_static_mutex(mutex);
     }
 
     return pthread_cond_wait(realcond, realmutex);
@@ -1020,7 +1047,7 @@ static int _hybris_hook_pthread_cond_clockwait(pthread_cond_t *cond, pthread_mut
 {
     /* Both cond and mutex can be statically initialized, check for both */
     uintptr_t cvalue = (*(uintptr_t *) cond);
-    uintptr_t mvalue = (*(uintptr_t *) mutex);
+    uintptr_t mvalue = hybris_read_mutex_value(mutex);
 
     TRACE_HOOK("cond %p mutex %p abstime %p", cond, mutex, abstime);
 
@@ -1044,8 +1071,7 @@ static int _hybris_hook_pthread_cond_clockwait(pthread_cond_t *cond, pthread_mut
         realmutex = (pthread_mutex_t *)hybris_get_shmpointer((hybris_shm_pointer_t)mvalue);
 
     if (mvalue <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
-        realmutex = hybris_alloc_init_mutex(mvalue);
-        *((uintptr_t *) mutex) = (uintptr_t) realmutex;
+        realmutex = hybris_get_static_mutex(mutex);
     }
 
     return pthread_cond_clockwait(realcond, realmutex, clock_id, abstime);
@@ -1056,7 +1082,7 @@ static int _hybris_hook_pthread_cond_timedwait(pthread_cond_t *cond,
 {
     /* Both cond and mutex can be statically initialized, check for both */
     uintptr_t cvalue = (*(uintptr_t *) cond);
-    uintptr_t mvalue = (*(uintptr_t *) mutex);
+    uintptr_t mvalue = hybris_read_mutex_value(mutex);
 
     TRACE_HOOK("cond %p mutex %p abstime %p", cond, mutex, abstime);
 
@@ -1080,8 +1106,7 @@ static int _hybris_hook_pthread_cond_timedwait(pthread_cond_t *cond,
         realmutex = (pthread_mutex_t *)hybris_get_shmpointer((hybris_shm_pointer_t)mvalue);
 
     if (mvalue <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
-        realmutex = hybris_alloc_init_mutex(mvalue);
-        *((uintptr_t *) mutex) = (uintptr_t) realmutex;
+        realmutex = hybris_get_static_mutex(mutex);
     }
 
     return pthread_cond_timedwait(realcond, realmutex, abstime);
@@ -1092,7 +1117,7 @@ static int _hybris_hook_pthread_cond_timedwait_relative_np(pthread_cond_t *cond,
 {
     /* Both cond and mutex can be statically initialized, check for both */
     uintptr_t cvalue = (*(uintptr_t *) cond);
-    uintptr_t mvalue = (*(uintptr_t *) mutex);
+    uintptr_t mvalue = hybris_read_mutex_value(mutex);
 
     TRACE_HOOK("cond %p mutex %p reltime %p", cond, mutex, reltime);
 
@@ -1116,8 +1141,7 @@ static int _hybris_hook_pthread_cond_timedwait_relative_np(pthread_cond_t *cond,
         realmutex = (pthread_mutex_t *)hybris_get_shmpointer((hybris_shm_pointer_t)mvalue);
 
     if (mvalue <= ANDROID_TOP_ADDR_VALUE_MUTEX) {
-        realmutex = hybris_alloc_init_mutex(mvalue);
-        *((uintptr_t *) mutex) = (uintptr_t) realmutex;
+        realmutex = hybris_get_static_mutex(mutex);
     }
 
     struct timespec tv;

@@ -24,6 +24,21 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+Vulkan platform loading and global function setup now each use pthread_once.
+The module is published after init_module returns; null/Wayland global create
+and enumeration pointers are resolved during setup instead of written lazily
+by concurrent API callers. `vk-init` exercises simultaneous first global
+operations and independent instance creation/query/destruction. This is an
+initialization fix, not a per-instance/device dispatch or generation table.
+The new workload exposed further first-use failures after the platform fix.
+Static Android mutex translation now serializes backing-pointer lookup and
+initialization, including four-byte-aligned bionic storage. A bionic DSO
+workload checks 32 fresh static locks with four concurrent users. Two device
+runs each complete 56 PASS / 2 UNSUPPORTED; archived pre-fix common times out
+on the mutex workload, while the new common passes eight fresh processes.
+Condition-variable/rwlock lazy initialization, process-shared semantics and
+lookup-lock performance still need separate work.
+
 Promoted TLS registration now replays every entry missing from the calling
 thread before advancing its initialization cursor. Previously a thread promoting
 a later module could skip earlier modules registered by another thread. The

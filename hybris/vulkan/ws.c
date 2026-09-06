@@ -21,10 +21,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/auxv.h>
+#include <pthread.h>
 
 static struct ws_module *ws = NULL;
+static pthread_once_t ws_once = PTHREAD_ONCE_INIT;
 
-static void _init_ws()
+static void load_ws(void)
 {
     if (ws == NULL) {
         char ws_name[2048];
@@ -49,10 +51,18 @@ static void _init_ws()
             fprintf(stderr, "ERROR: %s\n\t%s\n", ws_name, dlerror());
             assert(0);
         }
-        ws = dlsym(wsmod, "ws_module_info");
-        assert(ws != NULL);
-        ws->init_module(&hybris_vulkan_interface);
+        struct ws_module *module = dlsym(wsmod, "ws_module_info");
+        assert(module != NULL);
+        module->init_module(&hybris_vulkan_interface);
+        ws = module;
     }
+}
+
+static void _init_ws(void)
+{
+    /* Publish the module only after init_module has completed. The plugin
+     * and its interface remain resident for the frontend's lifetime. */
+    pthread_once(&ws_once, load_ws);
 }
 
 VkResult ws_vkEnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties)
