@@ -163,3 +163,12 @@ false float64 bit enabled through the same chain. Both devices complete
 `20260907T011043-11791534` (optional VVL/capture not selected). Native/frontend/ICD
 66-value feature records match. This does not close all extension chains,
 properties2 or actual shader execution; G05 remains partial.
+
+
+EGL lifecycle batch: isolated GLES2 buffer/state and exact pbuffer pixels
+survive repeated switches, main-to-worker-to-main context migration, and
+three destroy/recreate cycles. Native and hybris pass on both devices in
+`20260907T011354-4882a8fc` and `20260907T011355-938bfc04` (47 PASS /
+2 UNSUPPORTED each; optional Vulkan tools not selected). Shared contexts,
+parallel rendering, TLS destructor observation and generation tracking remain
+open. The workload is an independent probe, with no production ABI changes.

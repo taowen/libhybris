@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 ROOT="$(cd ../.. && pwd)"
 OUT="${OUT:-$PWD/build}"
 BUNDLE="$OUT/bundle"
-SOURCES=(probe.c probe_common.c probe_egl.c probe_vulkan.c probe_dispatch.c
+SOURCES=(probe.c probe_common.c probe_egl.c probe_egl_lifecycle.c probe_vulkan.c probe_dispatch.c
          probe_lifecycle.c probe_caps.c probe_caps2.c probe_widget.c probe_validation.c)
 HYBRIS_LIB="${HYBRIS_LIB:-$OUT/install/usr/lib/hybris}"
 RUNTIME="${RUNTIME:-$OUT/runtime}"

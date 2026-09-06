@@ -479,3 +479,24 @@ so the shorter features2 record cannot overwrite the format/limit snapshot.
 This is five selected core 1.1 feature structures, not every features2
 extension chain or KHR alias path, and no shader execution of these features.
 Properties2 and extended format-query chains remain unverified.
+
+
+## EGL context isolation and migration
+
+`egl-life` creates two unshared GLES2 contexts and two RGBA8 pbuffers. It
+checks that the second context initially cannot see the first context's
+buffer, then retains distinct buffer sizes/bindings and red/green clear state.
+Eight switch pairs on the main thread, eight on a worker and eight back on the
+main thread verify current context/read/draw surfaces and exact RGBA pixels.
+The main thread releases current before pthread_create; the worker unbinds and
+calls eglReleaseThread before pthread_join returns. Resources are deleted and
+contexts/surfaces destroyed, then the sequence repeats for three cycles.
+
+Runs `20260907T011354-4882a8fc` (29854870) and `20260907T011355-938bfc04` (KB2000)
+each completed **47 PASS / 2 UNSUPPORTED**, including native and hybris
+`egl-life`; optional Vulkan validation/capture were not selected. This probe
+requests GLES2 and checks buffer objects, clear state and pbuffer pixels. It
+does not prove context sharing, simultaneous rendering, shader state migration,
+actual Android TLS destructor execution, handle generation management, FD
+leak freedom or full GLES2 conformance. Failure paths terminate the isolated
+probe process rather than attempting recovery of a failed EGL context.

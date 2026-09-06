@@ -16,7 +16,9 @@ int main(int argc, char **argv) {
 #endif
   );
   int rc;
-  if (!strcmp(mode, "dispatch"))
+  if (!strcmp(mode, "egl-life"))
+    rc = egl_lifecycle_probe();
+  else if (!strcmp(mode, "dispatch"))
     rc = dispatch_probe();
   else if (!strcmp(mode, "life"))
     rc = life_probe(0);
