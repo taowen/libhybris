@@ -153,3 +153,13 @@ selected for this probe-only batch. Each native observation contains 325
 values. The frontend matches native; direct-HAL ICD differs in six device
 extensions related to Android buffer/presentation. No values are rewritten
 to force equality. Features2 extension chains and format execution remain open.
+
+
+Features2 batch: a separate probe verifies five core 1.1 feature structures,
+55 named core fields against the legacy query, intact pNext pointers, positive
+CreateDevice using the returned chain, and exact FEATURE_NOT_PRESENT for a
+false float64 bit enabled through the same chain. Both devices complete
+45 PASS / 2 UNSUPPORTED in runs `20260907T011042-0affc534` and
+`20260907T011043-11791534` (optional VVL/capture not selected). Native/frontend/ICD
+66-value feature records match. This does not close all extension chains,
+properties2 or actual shader execution; G05 remains partial.

@@ -164,6 +164,7 @@ cases = [
     ('native', 'unload', 'probe-bionic'),
     ('native', 'tls', 'probe-bionic'),
     ('native', 'caps', 'probe-bionic'),
+    ('native', 'caps2', 'probe-bionic'),
     ('native', 'ubo', 'probe-bionic'),
     ('hybris', 'vk', 'probe-glibc'),
     ('hybris', 'vk-dlsym', 'probe-glibc'),
@@ -179,6 +180,7 @@ cases = [
     ('hybris', 'init', 'probe-glibc'),
     ('hybris', 'tls', 'probe-glibc'),
     ('hybris', 'caps', 'probe-glibc'),
+    ('hybris', 'caps2', 'probe-glibc'),
     ('hybris', 'ubo', 'probe-glibc'),
     ('hybris-linked', 'dispatch', 'probe-glibc-linked'),
     ('hybris-linked', 'vk', 'probe-glibc-linked'),
@@ -198,7 +200,7 @@ if a.icd_hal:
     # The manifest starts at 1.0; interface 5 queries the HAL's supported
     # instance version via vkEnumerateInstanceVersion.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'unload', 'tls', 'caps', 'ubo')]
+              for mode in ('vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'unload', 'tls', 'caps', 'caps2', 'ubo')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     if a.validation_layer:
         (stage / 'layers').mkdir()
@@ -270,7 +272,8 @@ try:
                 _, key, value = line.split()
                 values[key] = json.loads(value)
         if values:
-            capabilities[backend] = {'values': values, 'probe_exit_code': code}
+            if mode == 'caps':
+                capabilities[backend] = {'values': values, 'probe_exit_code': code}
             (a.out / (name + '-values.json')).write_text(json.dumps(values, indent=2) + '\n')
         registry_entries = []
         for line in decoded.splitlines():

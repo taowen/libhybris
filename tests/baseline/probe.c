@@ -26,6 +26,8 @@ int main(int argc, char **argv) {
     rc = init_probe();
   else if (!strcmp(mode, "tls"))
     rc = tls_probe();
+  else if (!strcmp(mode, "caps2"))
+    rc = caps2_probe();
   else if (!strcmp(mode, "caps"))
     rc = caps_probe();
   else if (!strcmp(mode, "ubo-validation"))

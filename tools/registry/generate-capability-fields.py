@@ -30,3 +30,10 @@ for struct, prefix, expr in [('VkPhysicalDeviceFeatures', 'features', 'features'
 out = Path(__file__).resolve().parents[2] / 'tests/baseline/capability_fields.inc'
 out.write_text('\n'.join(lines) + '\n')
 print(len(lines)-1, 'named capability values')
+
+features = r.find("./types/type[@name='VkPhysicalDeviceFeatures']")
+checks = ['/* Generated from Vulkan-Headers ' + REVISION + '; do not edit. */']
+for member in features.findall('member'):
+    name = member.findtext('name')
+    checks.append('COMPARE_FEATURE(' + name + ');')
+(out.parent / 'feature_compare.inc').write_text('\n'.join(checks) + '\n')

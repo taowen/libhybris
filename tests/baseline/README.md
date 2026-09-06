@@ -456,3 +456,26 @@ the ten explicit format queries. Features2 extension chains, all devices,
 format creation/usage combinations and workaround reasons are not covered.
 Existing unsupported-feature/unknown-extension rejection and positive
 CreateDevice checks remain in the same `caps` workload.
+
+
+## Features2 chain
+
+`caps2` requests Vulkan 1.1 and queries a chain containing 16-bit storage,
+multiview, variable pointers, sampler YCbCr conversion and shader draw
+parameters (11 feature bits). It checks that the chain pointers survive the
+query, compares all 55 core features by name with the legacy query, and passes
+the returned chain to CreateDevice with pEnabledFeatures left NULL. A false
+shaderFloat64 bit is then deliberately enabled through that same chain and
+must produce VK_ERROR_FEATURE_NOT_PRESENT. Versions below 1.1 are UNSUPPORTED.
+The generated `feature_compare.inc` avoids comparing struct padding.
+
+Runs `20260907T011042-0affc534` (29854870) and `20260907T011043-11791534` (KB2000)
+each completed **45 PASS / 2 UNSUPPORTED**, without optional validation/capture.
+The native, hybris and ICD `*-caps2-values.json` files contain identical 66
+feature values on each device; all six negative creates returned -8.
+These observations are separate from the core capability difference report,
+so the shorter features2 record cannot overwrite the format/limit snapshot.
+
+This is five selected core 1.1 feature structures, not every features2
+extension chain or KHR alias path, and no shader execution of these features.
+Properties2 and extended format-query chains remain unverified.
