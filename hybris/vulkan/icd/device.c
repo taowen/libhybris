@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
 #include "device.h"
+#include "../compat/scaled_dispatch.h"
 #include <pthread.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -67,11 +68,13 @@ void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCal
     }
     pthread_mutex_unlock(&device_guard);
     if (!state) return;
+    hybris_scaled_device_destroy(device);
     state->destroy(device, allocator);
     free_state(state);
 }
 
 VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProcAddr resolver,
+    PFN_vkGetPhysicalDeviceFormatProperties query,
     uint64_t instance_generation, VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
     const VkAllocationCallbacks *allocator, VkDevice *device)
 {
@@ -101,6 +104,13 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     state->instance_generation = instance_generation;
     state->resolver = resolver;
     state->destroy = (PFN_vkDestroyDevice)resolver(*device, "vkDestroyDevice");
+    result = hybris_scaled_device_create(*device, physical, resolver, query, allocator);
+    if (result != VK_SUCCESS) {
+        state->destroy(*device, allocator);
+        *device = VK_NULL_HANDLE;
+        free_state(state);
+        return result;
+    }
     pthread_mutex_lock(&device_guard);
     state->next = devices;
     devices = state;
@@ -122,5 +132,6 @@ PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char
         return (PFN_vkVoidFunction)hybris_icd_destroy_device;
     if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
         return (PFN_vkVoidFunction)hybris_icd_device_proc;
-    return backend;
+    PFN_vkVoidFunction compat = backend ? hybris_scaled_proc(name) : NULL;
+    return compat ? compat : backend;
 }

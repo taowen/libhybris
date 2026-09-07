@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProcAddr resolver,
+    PFN_vkGetPhysicalDeviceFormatProperties query,
     uint64_t instance_generation, VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
     const VkAllocationCallbacks *allocator, VkDevice *device);
 PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char *name);

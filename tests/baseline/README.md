@@ -1968,3 +1968,70 @@ This is a responsibility split, not a new synchronization implementation.
 Existing Android-shared wait branches and the glibc-private `__wrefs` handling
 at destruction are preserved; shared waiting and destruction with live
 waiters are not validated or fixed by this batch. G03 remains open.
+
+## Experimental scaled vertex conversion
+
+`scaled-vertex` draws 12 formats (R/RG/RGBA, 8/16-bit, USCALED/SSCALED), each
+with low/high integer patterns and an intentionally wrong expected value.
+Every 16×16 RGBA component is checked: good draws are white and the negative
+control is cyan. Missing components must become 0/1. One original vertex
+module is reused across signed and unsigned pipelines. Shader and pipeline
+allocation callbacks must return to zero live allocations after teardown.
+`scaled-vertex-gdpa`, `scaled-vertex-elf` and `scaled-vertex-linked` change the
+shader/pipeline entry route; ordinary device commands still use the loader.
+`scaled-vertex-validation` and `scaled-vertex-gdpa-validation` enable VVL and
+SyncVal. These are real GPU probes, not a new unit-test framework. The existing
+allocator callback fixture is shared with `vk-alloc`.
+
+The standard ICD option `--scaled-vertex-compat missing` activates only missing
+scaled formats with supported integer replacements. `force` is a diagnostic
+control for drivers with native support. Native and replacement-frontend cases
+are unaffected by either option. The runner pulls the actual original and
+converted modules used internally, validates each with `spirv-val`, retains
+`spirv-dis --raw-id` output, matches the original hash to the probe build input,
+and verifies location zero changes from float32 vec4 to the expected signed or
+unsigned int32 vec4 without changing decorations/entry points. Each pipeline
+has a location/signedness record. This is fixed-workload evidence; it does not
+reconstruct arbitrary application pipeline or specialization history.
+
+Reproduce, adding the device's existing `--icd-hal`, `--vulkan-loader` and VVL
+arguments (Mali also requires its documented MMUD option):
+
+```sh
+python3 tests/baseline/run.py --serial DEVICE ... \
+  --scaled-vertex-compat missing \
+  --case icd-scaled-vertex --case icd-scaled-vertex-gdpa \
+  --case icd-scaled-vertex-elf --case icd-linked-scaled-vertex-linked \
+  --case icd-scaled-vertex-validation --case icd-scaled-vertex-gdpa-validation
+```
+
+2026-09-07 results for the final reviewed library:
+
+- Redmi Adreno `20260907T163310-cfc97a46`, normal missing-format fallback:
+  10 PASS (version, six scaled routes, UBO validation, device lifecycle and
+  allocator regression). All 12 formats are converted, 36 draws per scaled
+  route; VVL/SyncVal report zero errors and callback allocations return to zero.
+- X300 Mali `20260907T163310-287ed5ac`, forced diagnostic fallback: the same
+  10 cases PASS, with all 12 formats converted and the same pixel, shader and
+  allocation checks. The driver natively supports these formats.
+- Both runs retain 72 original/converted pairs apiece (12 pipelines × six
+  routes), all validated and associated with the original probe shader.
+- Disabled controls on the final library: Redmi
+  `20260907T163603-a0e86d31` has version PASS and native/replacement/ICD scaled
+  probes all UNSUPPORTED (12 missing formats). Mali
+  `20260907T163603-53a349e5` has all four cases PASS.
+- Mali normal missing-format mode `20260907T163408-f2366d30` has version and
+  scaled validation PASS, `fallback_mask=0`, and no converted modules. It
+  preserves native support rather than forcing conversion.
+
+G07/G08 remain open. The production fallback supports direct scalar/vector
+float32 Location inputs in one vertex entry point and a bounded set of pointer
+operations. General interface blocks/matrices/arrays, multi-entry modules,
+dynamic vertex input, graphics pipeline libraries, shader objects and shader
+stage extension chains are unsupported. Offline mixed scalar/vector,
+component-load and specialization-declaration rewriting passes `spirv-val`;
+that extra fixture is not GPU specialization coverage. A matrix input is
+rejected with no output module. No shader/pipeline OOM-site sweep, arbitrary
+application rendering, FormatProperties3 chain device probe, clip/cull,
+point-size, BC or software timeline emulation is claimed. See
+`hybris/vulkan/icd/README.md` for the exact opt-in and diagnostic boundaries.

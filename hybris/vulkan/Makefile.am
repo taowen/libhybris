@@ -37,7 +37,8 @@ libvulkan_la_LDFLAGS = \
 	-version-info 3:183:2
 
 # Optional standard-loader backend; no default ICD JSON is installed.
-libhybris_vulkan_icd_la_SOURCES = icd/icd.c icd/instance.c icd/instance.h icd/device.c icd/device.h icd/hwvulkan.h icd/physical_commands.inc
+libhybris_vulkan_icd_la_SOURCES = icd/icd.c icd/instance.c icd/instance.h icd/device.c icd/device.h icd/hwvulkan.h icd/physical_commands.inc \
+    compat/scaled_dump.c compat/scaled_dispatch.c compat/scaled_dispatch.h compat/scaled_spirv.c compat/scaled_vertex.h
 EXTRA_DIST = icd/README.md
 libhybris_vulkan_icd_la_CFLAGS = $(libvulkan_la_CFLAGS) -fvisibility=hidden
 libhybris_vulkan_icd_la_LDFLAGS = \

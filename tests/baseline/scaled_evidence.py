@@ -1,0 +1,79 @@
+"""Validate the modules actually submitted by experimental scaled conversion."""
+import hashlib
+import re
+import shutil
+import struct
+import subprocess
+
+
+def vertex_input(text):
+    definitions = dict(re.findall(r'^\s*(%\d+) = (.+)$', text, re.M))
+    variables = re.findall(r'OpDecorate (%\d+) Location 0$', text, re.M)
+    inputs = []
+    for variable in variables:
+        declaration = definitions[variable].split()
+        if declaration[0] != 'OpVariable' or declaration[2] != 'Input':
+            continue
+        pointer = definitions[declaration[1]].split()
+        vector = definitions[pointer[2]].split()
+        if vector[0] != 'OpTypeVector':
+            raise ValueError('fixture vertex input is not a vector')
+        inputs.append({'id': variable, 'location': 0, 'components': int(vector[2]),
+                       'scalar': definitions[vector[1]]})
+    if len(inputs) != 1:
+        raise ValueError('expected one vertex input at location zero')
+    return inputs[0]
+
+
+def scaled_evidence(directory, log, forced, source):
+    validator = shutil.which('spirv-val')
+    if not validator:
+        raise ValueError('spirv-val is required to audit converted modules')
+    disassembler = shutil.which('spirv-dis')
+    if not disassembler:
+        raise ValueError('spirv-dis is required to audit vertex interfaces')
+    words = [int(word, 16) for word in re.findall(r'0x[0-9a-fA-F]{8}', source.read_text())]
+    reference = hashlib.sha256(struct.pack('<' + 'I' * len(words), *words)).hexdigest()
+    records = re.findall(r'^HYBRIS_SCALED_DUMP id=(\d+) original=(\d) converted=(\d) attributes=(\d+)$', log, re.M)
+    masks = re.findall(r'^HYBRIS_SCALED_VERTEX experimental=1 force=[01] fallback_mask=0x([0-9a-f]+)$', log, re.M)
+    if len(masks) != 1 or len(records) != int(masks[0], 16).bit_count():
+        raise ValueError('module dump count differs from the active format fallback mask')
+    if forced:
+        summary = re.findall(r'^SCALED tested=(\d+) unsupported=(\d+) failures=(\d+) validation_errors=(\d+)$', log, re.M)
+        if len(summary) != 1 or len(records) != int(summary[0][0]):
+            raise ValueError('converted pipeline count differs from the completed fixture')
+    evidence = {'forced': forced, 'validator': subprocess.check_output([validator, '--version'], text=True), 'modules': []}
+    for index, original, converted, count in records:
+        if (original, converted, count) != ('1', '1', '1'):
+            raise ValueError('module dump failed or attribute count differs from fixture')
+        signs = re.findall(r'^HYBRIS_SCALED_ATTRIBUTE id=' + index + r' location=0 signed=([01])$', log, re.M)
+        if len(signs) != 1:
+            raise ValueError('expected one signedness record for location zero')
+        entry = {'index': int(index), 'signed': int(signs[0]), 'files': []}
+        modules = []
+        for kind in ('original', 'converted'):
+            path = directory / f'{int(index):03d}-{kind}.spv'
+            subprocess.run([validator, '--target-env', 'vulkan1.1', str(path)], check=True, capture_output=True)
+            disassembly = subprocess.check_output([disassembler, '--raw-id', str(path)], text=True)
+            path.with_suffix('.spvasm').write_text(disassembly)
+            modules.append(disassembly)
+            entry['files'].append({'name': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'spirv_val': 'PASS'})
+        if entry['files'][0]['sha256'] == entry['files'][1]['sha256']:
+            raise ValueError('converted module is identical to the original')
+        if entry['files'][0]['sha256'] != reference:
+            raise ValueError('original module differs from the probe build input')
+        before, after = [vertex_input(module) for module in modules]
+        if before['scalar'] != 'OpTypeFloat 32' or before['components'] != 4:
+            raise ValueError('unexpected original vertex interface')
+        expected = dict(before, scalar='OpTypeInt 32 ' + signs[0])
+        if after != expected:
+            raise ValueError('converted interface differs from expected integer fetch')
+        stable = r'^\s*(Op(?:Member)?Decorate .+|OpEntryPoint .+)$'
+        if sorted(re.findall(stable, modules[0], re.M)) != sorted(re.findall(stable, modules[1], re.M)):
+            raise ValueError('conversion changed decorations or entry point')
+        opcode = 'OpConvertSToF' if entry['signed'] else 'OpConvertUToF'
+        if opcode not in modules[1]:
+            raise ValueError('converted module lacks the required conversion')
+        entry['interface'] = {'original': before, 'converted': after}
+        evidence['modules'].append(entry)
+    return evidence

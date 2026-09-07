@@ -3,6 +3,7 @@
 #define VK_NO_PROTOTYPES
 #include "instance.h"
 #include "device.h"
+#include "../compat/scaled_dispatch.h"
 #include <pthread.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -215,8 +216,7 @@ static VkResult VKAPI_CALL enumerate_groups_khr(VkInstance instance, uint32_t *c
     return enumerate_groups(instance, count, groups, "vkEnumeratePhysicalDeviceGroupsKHR");
 }
 
-static VkResult VKAPI_CALL create_device(VkPhysicalDevice physical,
-    const VkDeviceCreateInfo *info, const VkAllocationCallbacks *allocator, VkDevice *device)
+static struct instance_state *find_physical(VkPhysicalDevice physical)
 {
     pthread_mutex_lock(&instance_guard);
     struct instance_state *state = instances;
@@ -226,12 +226,54 @@ static VkResult VKAPI_CALL create_device(VkPhysicalDevice physical,
         if (entry) break;
     }
     pthread_mutex_unlock(&instance_guard);
+    return state;
+}
+
+static void VKAPI_CALL format_properties(VkPhysicalDevice physical, VkFormat format,
+                                         VkFormatProperties *properties)
+{
+    struct instance_state *state = find_physical(physical);
+    if (!state) return;
+    PFN_vkGetPhysicalDeviceFormatProperties query = (PFN_vkGetPhysicalDeviceFormatProperties)
+        state->resolver(state->handle, "vkGetPhysicalDeviceFormatProperties");
+    query(physical, format, properties);
+    hybris_scaled_format(query, physical, format, properties);
+}
+static void format_properties2(VkPhysicalDevice physical, VkFormat format,
+                               VkFormatProperties2 *properties, const char *name)
+{
+    struct instance_state *state = find_physical(physical);
+    if (!state) return;
+    PFN_vkGetPhysicalDeviceFormatProperties2 query2 = (PFN_vkGetPhysicalDeviceFormatProperties2)
+        state->resolver(state->handle, name);
+    query2(physical, format, properties);
+    PFN_vkGetPhysicalDeviceFormatProperties query = (PFN_vkGetPhysicalDeviceFormatProperties)
+        state->resolver(state->handle, "vkGetPhysicalDeviceFormatProperties");
+    VkFormatFeatureFlags before = properties->formatProperties.bufferFeatures;
+    hybris_scaled_format(query, physical, format, &properties->formatProperties);
+    if (!(before & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT) &&
+        (properties->formatProperties.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT))
+        for (VkBaseOutStructure *next = properties->pNext; next; next = next->pNext)
+            if (next->sType == VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3)
+                ((VkFormatProperties3 *)next)->bufferFeatures |= VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
+}
+static void VKAPI_CALL format_properties2_core(VkPhysicalDevice physical, VkFormat format, VkFormatProperties2 *properties)
+{ format_properties2(physical, format, properties, "vkGetPhysicalDeviceFormatProperties2"); }
+static void VKAPI_CALL format_properties2_khr(VkPhysicalDevice physical, VkFormat format, VkFormatProperties2 *properties)
+{ format_properties2(physical, format, properties, "vkGetPhysicalDeviceFormatProperties2KHR"); }
+
+static VkResult VKAPI_CALL create_device(VkPhysicalDevice physical,
+    const VkDeviceCreateInfo *info, const VkAllocationCallbacks *allocator, VkDevice *device)
+{
+    struct instance_state *state = find_physical(physical);
     if (!state) return VK_ERROR_INITIALIZATION_FAILED;
     PFN_vkCreateDevice create = (PFN_vkCreateDevice)state->resolver(state->handle, "vkCreateDevice");
     PFN_vkGetDeviceProcAddr resolver = (PFN_vkGetDeviceProcAddr)
         state->resolver(state->handle, "vkGetDeviceProcAddr");
     if (!create || !resolver) return VK_ERROR_INITIALIZATION_FAILED;
-    return hybris_icd_create_device(create, resolver, state->generation, physical, info, allocator, device);
+    PFN_vkGetPhysicalDeviceFormatProperties query = (PFN_vkGetPhysicalDeviceFormatProperties)
+        state->resolver(state->handle, "vkGetPhysicalDeviceFormatProperties");
+    return hybris_icd_create_device(create, resolver, query, state->generation, physical, info, allocator, device);
 }
 
 PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *name)
@@ -257,5 +299,12 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
         return (PFN_vkVoidFunction)hybris_icd_device_proc;
     if (backend && !strcmp(name, "vkDestroyDevice"))
         return (PFN_vkVoidFunction)hybris_icd_destroy_device;
+    if (backend && hybris_scaled_enabled()) {
+        if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties")) return (PFN_vkVoidFunction)format_properties;
+        if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties2")) return (PFN_vkVoidFunction)format_properties2_core;
+        if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties2KHR")) return (PFN_vkVoidFunction)format_properties2_khr;
+        PFN_vkVoidFunction compat = hybris_scaled_proc(name);
+        if (compat) return compat;
+    }
     return backend;
 }

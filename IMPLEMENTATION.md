@@ -41,6 +41,20 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+An initial scaled vertex fallback now lives in `hybris/vulkan/compat/` and is
+wired into the standard ICD's format queries, shader modules and graphics
+pipeline creation. It is opt-in (`HYBRIS_VULKAN_COMPAT_SCALED_VERTEX=1`), applies
+to 12 R/RG/RGBA 8/16-bit scaled formats missing from the vendor, and uses integer
+fetch plus SPIR-V conversion. Redmi Adreno's missing formats now produce the
+expected pixels; Mali retains native support, with a separate forced diagnostic
+run exercising conversion. Four loader routes, VVL/SyncVal, original/converted
+module validation and callback allocation balance are covered by the fixed
+probe. This is an experimental shader/pipeline subset: G07/G08 remain open,
+including general interfaces, dynamic vertex input, shader objects and graphics
+pipeline libraries. BC, clip/cull/point-size and software timeline patches are
+still not ported. Full boundaries and evidence are in the ICD and baseline
+READMEs. Mesa remains unmodified upstream; this code connects vendor drivers.
+
 Condition-variable ABI hooks and Android futex wake helpers now live in
 `hybris/common/bionic_cond.c`; mutex/rwlock hooks and the shared static-object
 publication lock remain in `bionic_sync.c`. The original file shrinks from

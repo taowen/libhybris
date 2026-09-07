@@ -30,6 +30,7 @@ p.add_argument('--runtime', type=Path, help='Directory containing glibc loader a
 p.add_argument('--manifest', type=Path, help='Provenance JSON from tools/manifest.py')
 p.add_argument('--out', type=Path, default=Path(__file__).resolve().parent / 'build/results')
 p.add_argument('--bundle', type=Path, default=Path(__file__).resolve().parent / 'build/bundle')
+p.add_argument('--scaled-vertex-compat', choices=('missing', 'force'), help='Enable experimental scaled vertex fallback for ICD cases')
 p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
 p.add_argument('--icd-mali-loader-quirk', action='store_true', help='Opt in to the build-id-scoped Mali MMUD loader-check workaround for ICD cases')
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
@@ -37,6 +38,8 @@ p.add_argument('--validation-manifest', type=Path, help='Original layer JSON mat
 p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
 p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
 a = p.parse_args()
+if a.scaled_vertex_compat and not a.icd_hal:
+    p.error('--scaled-vertex-compat requires --icd-hal')
 if a.icd_mali_loader_quirk and not a.icd_hal:
     p.error('--icd-mali-loader-quirk requires --icd-hal')
 if a.selected_cases and a.capture_tools:
@@ -240,6 +243,7 @@ cases.extend(('hybris', mode, 'probe-glibc') for mode in ('render-owners', 'comm
 
 for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'memory-ranges', binary))
+    cases.append((backend, 'scaled-vertex', binary))
 
 timeline_queue_cases = ('timeline-queues-core', 'timeline-queues-khr')
 timeline_cases = tuple('timeline-' + family + suffix for family in ('core', 'khr')
@@ -266,7 +270,8 @@ if a.icd_hal:
     cases += [('icd', mode, 'probe-glibc')
               for mode in ('version', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
-    cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases)
+    cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf'))
+    cases.append(('icd-linked', 'scaled-vertex-linked', 'probe-glibc-linked'))
     cases.extend(('icd-linked', 'timeline-' + family + '-linked', 'probe-glibc-linked')
                  for family in ('core', 'khr'))
     cases.extend(('icd-linked', mode, 'probe-glibc-linked')
@@ -281,7 +286,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.extend([('icd', mode, 'probe-glibc') for mode in ('memory-ranges-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)
@@ -335,6 +340,12 @@ try:
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 ' + command
         if backend == 'icd' and mode == 'life':
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 HYBRIS_ICD_DEVICE_TRACE=1 ' + command
+        if backend in {'icd', 'icd-linked'} and a.scaled_vertex_compat:
+            command = 'HYBRIS_VULKAN_COMPAT_SCALED_VERTEX=' + ('force' if a.scaled_vertex_compat == 'force' else '1') + ' ' + command
+            if mode.startswith('scaled-vertex'):
+                dump_remote = remote + '/' + backend + '-' + mode + '-shaders'
+                shell('mkdir -p ' + shlex.quote(dump_remote), check=True)
+                command = 'HYBRIS_VULKAN_SCALED_DUMP_DIR=' + shlex.quote(dump_remote) + ' ' + command
         name = backend + '-' + mode
         metadata['commands'][name] = {'directory': remote, 'command': command + mode}
         try:
@@ -351,6 +362,18 @@ try:
             kill_remote()
         (a.out / (name + '.log')).write_bytes(output or b'')
         decoded = (output or b'').decode('utf-8', errors='replace')
+        if backend in {'icd', 'icd-linked'} and mode.startswith('scaled-vertex') and a.scaled_vertex_compat:
+            dump_local = a.out / (name + '-shaders')
+            dump_local.mkdir()
+            subprocess.run(adb + ['pull', dump_remote + '/.', str(dump_local)], check=True,
+                           stdout=subprocess.DEVNULL, timeout=30)
+            from scaled_evidence import scaled_evidence
+            try:
+                evidence = scaled_evidence(dump_local, decoded, a.scaled_vertex_compat == 'force', a.bundle / 'src/shaders/scaled.vert.inc')
+                (a.out / (name + '-shaders.json')).write_text(json.dumps(evidence, indent=2) + '\n')
+            except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+                print(name, 'scaled shader evidence failed:', exc, flush=True)
+                code = 2
         if backend == 'icd' and mode == 'version' and code == 0:
             versions = [m.group(1) for line in decoded.splitlines()
                         if (m := re.fullmatch(r'ICD_API_VERSION (\d+\.\d+\.\d+)', line))]

@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 ROOT="$(cd ../.. && pwd)"
 OUT="${OUT:-$PWD/build}"
 BUNDLE="$OUT/bundle"
-SOURCES=(probe_memory_ranges.c probe_timeline.c probe_timeline_queues.c render_path.c probe_render_owners.c probe.c probe_stdio.c probe_common.c probe_egl.c probe_egl_lifecycle.c probe_vulkan.c probe_dispatch.c
+SOURCES=(probe_scaled.c probe_memory_ranges.c probe_timeline.c probe_timeline_queues.c render_path.c probe_render_owners.c probe.c probe_stdio.c probe_common.c probe_egl.c probe_egl_lifecycle.c probe_vulkan.c probe_dispatch.c
          probe_icd_version.c probe_tls_mrs.c probe_groups.c probe_lifecycle.c probe_vulkan_init.c probe_alloc.c probe_lock_init.c probe_cond_init.c probe_cond_clock.c probe_shared_unavailable.c probe_tls_bounds.c probe_tls_destructor.c probe_caps.c probe_caps2.c probe_properties2.c probe_widget.c probe_validation.c)
 HYBRIS_LIB="${HYBRIS_LIB:-$OUT/install/usr/lib/hybris}"
 RUNTIME="${RUNTIME:-$OUT/runtime}"
@@ -28,9 +28,9 @@ BUNDLE="$(cd "$BUNDLE" && pwd)"
 PROBE_SRC="$BUNDLE/src"
 rm -rf "$PROBE_SRC"
 mkdir -p "$PROBE_SRC/shaders"
-cp render_path.h tls_fixture.cpp sync_fixture.h stdio_fixture.h widget_fixture.h "$PROBE_SRC/"
+cp allocation_fixture.h render_path.h tls_fixture.cpp sync_fixture.h stdio_fixture.h widget_fixture.h "$PROBE_SRC/"
 cp "${SOURCES[@]}" probe.h dispatch_commands.inc capability_fields.inc feature_compare.inc property_compare.inc "$PROBE_SRC/"
-cp shaders/widget.vert shaders/widget.frag shaders/widget.vert.inc shaders/widget.frag.inc shaders/widget-large.vert.inc shaders/widget-large.frag.inc "$PROBE_SRC/shaders/"
+cp shaders/scaled.vert shaders/scaled.frag shaders/scaled.vert.inc shaders/scaled.frag.inc shaders/widget.vert shaders/widget.frag shaders/widget.vert.inc shaders/widget.frag.inc shaders/widget-large.vert.inc shaders/widget-large.frag.inc "$PROBE_SRC/shaders/"
 
 
 # Use the pinned repository toolchain unless the caller explicitly overrides it.

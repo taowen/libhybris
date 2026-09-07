@@ -123,3 +123,50 @@ Mali option above, final X300 `20260907T070031-042f6354` and Redmi
 ordinary/dynamic capture and the version probe. Missing-HAL negative control
 `20260907T070107-1a7bcb32` reports icd-version FAIL and runs no dependent case.
 The 1.0 HAL fallback and multiple HALs in one process remain untested here.
+
+## Experimental scaled vertex fallback
+
+`HYBRIS_VULKAN_COMPAT_SCALED_VERTEX=1` enables an initial scaled vertex fallback
+in this standard ICD. It is disabled by default and ignored for secure
+execution. For R/RG/RGBA 8-bit and 16-bit USCALED/SSCALED, a missing vertex-buffer
+format is replaced with UINT/SINT only when that integer vertex format is
+supported. FormatProperties and the core/KHR FormatProperties2 queries add
+only the vertex-buffer bit; a supplied FormatProperties3 receives the matching
+bit. Image capabilities and other format features are unchanged.
+
+The adapter captures original shader code, clones affected graphics pipeline
+inputs, changes vertex fetch to integers, and creates a temporary vertex
+shader with integer-to-float conversions at the original loads. Signed minima
+remain exact. Original result IDs, shader modules, specialization data and
+unmodified pipeline state are retained. Temporary shaders and command-scoped
+copies are freed after the backend pipeline call, including failure paths.
+Application allocation callbacks cover device records, shader copies and
+pipeline work. Module destruction follows Vulkan's host external
+synchronization requirement:
+https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyShaderModule.html
+All helpers are hidden; the ICD still exports only its three loader entries.
+
+This is an experimental subset, not a conformant implementation of arbitrary
+scaled vertex pipelines. The rewriter handles one vertex entry point with
+direct Location scalar/vec2/vec3/vec4 float32 inputs, direct loads, component
+access chains and pointer copies. It rejects matrix/array/interface-block and
+unhandled pointer forms. Its conservative pointer-use scan can also reject
+otherwise valid modules when a literal equals a tracked pointer ID. Unsupported
+conversion returns `VK_ERROR_UNKNOWN`, with a diagnostic, rather than supplying
+a partially rewritten module. With an active fallback mask, graphics pipeline
+libraries and dynamic vertex input are rejected; shader objects, inline stage
+modules and shader-stage extension chains are not supported by this fallback.
+Do not enable it for applications requiring these paths. General multi-entry
+SPIR-V, extensions, specialization/cache-key evidence and full pipeline state
+coverage remain open. No clip/cull, point-size, BC texture or timeline emulation
+is included. The replacement-libvulkan frontend does not apply this fallback.
+
+For diagnosis, the value `force` converts these formats even when the vendor
+supports scaled fetch, provided the integer format is supported. It is not the
+normal workaround mode. `HYBRIS_VULKAN_SCALED_DUMP_DIR` optionally writes at most
+128 original/converted module pairs into an existing directory, with exclusive
+0600 files and per-pair location/signedness logs. It is disabled by default and
+ignored for secure execution. The baseline runner's
+`--scaled-vertex-compat missing|force` sets the option only for ICD cases and
+collects these dumps for scaled probes; host `spirv-val` and `spirv-dis` are
+required. See the baseline README for device results and reproduction.
