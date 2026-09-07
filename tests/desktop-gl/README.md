@@ -254,3 +254,82 @@ Final source-built runs `20260907T112336-d7306baf` (core-3.3 request, actual
 pass all three prepass phases and the existing draws on X300. Artifacts are
 under `build/results/`, with runtime/source hashes and full per-phase images.
 No other device or GLX execution of this new workload has been established.
+
+## Automatic procedural vertex-to-compute lowering
+
+Mesa `6bec718` adds an actual Zink conversion path behind
+`ZINK_DEBUG=vertex_prepass`. Eligible application vertex NIR is cloned and
+converted to compute; a generated read-only vertex shader replays its outputs.
+The application supplies an ordinary vertex shader, not a hand-written compute
+replacement. Shader preparation and draw orchestration live in the separate
+`zink_vertex_prepass.c` dependency module. The internal output SSBO and parameter
+UBO use reserved slot 15, and occupied slots/unsupported draws are excluded.
+The draw restores compute programs and buffer bindings, explicitly orders the
+output write/read, and uses the existing deferred resource-release mechanism.
+
+`--vertex-execution native|compute` runs the same additional application shader
+with or without conversion. It reads a 272-byte std140 widget-shaped UBO
+(parameters@0, mat4@192, vec3@256, int@268) and a default-block uniform. Three
+instanced draws use first vertex 7 and base instance 5, with two distinct,
+aligned UBO ranges. Changing the selected range makes the image magenta;
+updating its final int restores red/green halves. All 256 pixels are checked
+in every phase in both C and the host. Compute mode additionally requires
+execution markers for the original draw and all three instanced draws. Shader
+dumps are retained in both modes.
+
+For example, after the pinned build and baseline dependency build:
+
+```sh
+python3 tests/desktop-gl/run.py --serial 10AFA31610002QH \
+  --hal /vendor/lib64/hw/vulkan.mali.so --api-version 1.3.305 \
+  --mali-loader-quirk --profile core33 --vertex-execution compute \
+  --vertex-prepass \
+  --validation-layer /path/to/libVkLayer_khronos_validation.so \
+  --validation-manifest /path/to/VkLayer_khronos_validation.json
+```
+
+The optional validation arguments stage the supplied standard glibc layer and
+its matching JSON. Acceptance requires its mapped ELF, an explicit startup
+message confirming synchronization validation, and no reported validation
+errors. The Vulkan loader performs normal layer/ICD loading; no private layer
+chain is fabricated.
+
+Final clean-source X300 runs, all including the previous explicit compute
+workload, packed-input matrix and original draw:
+
+| Execution | Local result directory | Result |
+| --- | --- | --- |
+| EGL core, native | `20260907T120708-6a393bfe` | PASS |
+| EGL core, automatic compute | `20260907T120708-e70bbe07` | PASS |
+| EGL compatibility, automatic compute | `20260907T120708-3e9771cf` | PASS |
+| GLX core, automatic compute | `20260907T120708-1e054fb0` | PASS |
+
+All three procedural images match across all four paths. Khronos layer
+1.4.309 reports synchronization validation enabled and no errors in each run.
+The 9 native and 17 modules per converted run (60 total) pass
+`spirv-val --target-env vulkan1.3 --uniform-buffer-standard-layout`; the layout
+flag permits the UBO layout used by this Mesa device configuration, whose
+runtime use is also checked by validation. Per-run `spirv-validation.json`
+records tool version, commands, hashes and results, with `.spvasm` disassembly.
+Every generated vertex storage-buffer variable is decorated NonWritable.
+
+Development failures retained in local artifacts explain two lifetime fixes:
+`20260907T114252-9995beed` reports a leaked parameter buffer/allocation because
+restoring an empty UBO struct does not unbind it. Restore now passes NULL.
+`20260907T115944-72e5f374`, with a backtrace in
+`20260907T120317-64f0ef5c`, crashes when restoring old compute SSBOs after the
+application has deleted their buffers. Intermediate unbinding must preserve
+Zink's deferred ownership until original bindings are restored. The final
+combined workload covers that sequence. The initial shader-cache base-layout error was also fixed before validation.
+Temporary resource-print/backtrace diagnostics are absent from the final build.
+
+This remains a development path. It does not raise GL limits or Vulkan
+features, and full vertex SSBO support is still absent. Currently excluded
+are vertex attributes, textures/images, bindless and subgroup operations,
+clip/cull arrays, transform feedback, indexed/indirect/multidraw, geometry and
+tessellation stages, active queries and draws exceeding dispatch/storage limits.
+Native execution remains in use for excluded draws. Programs and output storage
+are created per draw; general caching, complete lowering, performance work and
+application vertex SSBO acceptance remain open. No Blender startup/rendering
+pass, full GL conformance, other-device conversion or complete G08/G10 closure
+is claimed.

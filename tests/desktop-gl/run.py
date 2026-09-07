@@ -21,7 +21,11 @@ p.add_argument('--mali-loader-quirk',action='store_true')
 p.add_argument('--profile',choices=['core32','compat32','core33'],default='core32')
 p.add_argument('--display',help='X11 DISPLAY for GLX; omit for surfaceless EGL')
 p.add_argument('--vertex-prepass',action='store_true',help='exercise explicit compute vertex prepass feasibility workload')
+p.add_argument('--vertex-execution',choices=['native','compute'],help='run procedural vertex cases, optionally through experimental Zink conversion')
+p.add_argument('--validation-layer',type=Path,help='glibc AArch64 Khronos validation layer')
+p.add_argument('--validation-manifest',type=Path,help='matching original validation JSON')
 a=p.parse_args()
+if bool(a.validation_layer)!=bool(a.validation_manifest):p.error('provide both validation layer and manifest')
 if not re.fullmatch(r'\d+\.\d+\.\d+',a.api_version):p.error('invalid API version')
 root=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(root/'tools'))
@@ -40,6 +44,14 @@ stage=out/'stage';stage.mkdir()
 shutil.copytree(build/'runtime',stage/'runtime')
 shutil.copytree(baseline/'install/usr/lib/hybris',stage/'hybris',symlinks=True)
 shutil.copy2(build/'probe',stage/'probe')
+if a.validation_layer:
+    (stage/'layers').mkdir()
+    shutil.copy2(a.validation_layer,stage/'layers/libVkLayer_khronos_validation.so')
+    layer=json.loads(a.validation_manifest.read_text())
+    if layer['layer']['name']!='VK_LAYER_KHRONOS_validation':raise ValueError('expected Khronos validation manifest')
+    layer['layer']['library_path']='./libVkLayer_khronos_validation.so'
+    (stage/'layers/validation.json').write_text(json.dumps(layer))
+    (stage/'vk_layer_settings.txt').write_text('khronos_validation.validate_sync = true\nkhronos_validation.report_flags = error,warn,info\n')
 adb=[os.environ.get('ADB','adb'),'-s',a.serial]
 def shell(command,**kwargs):return subprocess.run(adb+['shell',command],**kwargs)
 remote='/data/local/tmp/hybris-desktop-gl-'+out.name
@@ -50,6 +62,15 @@ env={'EGL_PLATFORM':'surfaceless','MESA_LOADER_DRIVER_OVERRIDE':'zink','GALLIUM_
  'HYBRIS_LINKER_DIR':remote+'/hybris/libhybris/linker','HYBRIS_ANDROID_SDK_VERSION':sdk,
  'HYBRIS_VULKAN_HAL':a.hal,'XDG_RUNTIME_DIR':remote}
 if a.vertex_prepass:env['HYBRIS_VERTEX_PREPASS']='1'
+if a.vertex_execution:
+    env['HYBRIS_PROCEDURAL_VERTEX']='1'
+    env['ZINK_DEBUG']='spirv'
+if a.vertex_execution=='compute':env['ZINK_DEBUG']='vertex_prepass,spirv'
+if a.validation_layer:
+    env['VK_INSTANCE_LAYERS']='VK_LAYER_KHRONOS_validation'
+    env['VK_LAYER_ENABLES']='VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT'
+    env['VK_LAYER_SETTINGS_PATH']=remote
+    env['ZINK_DEBUG']=env.get('ZINK_DEBUG','')+',validation'
 if a.display:
     env.pop('MESA_LOADER_DRIVER_OVERRIDE')
     env.update(DISPLAY=a.display, HYBRIS_GLX_PROBE='1', LIBGL_KOPPER_DISABLE='true',
@@ -71,7 +92,11 @@ try:
     except subprocess.TimeoutExpired as error:
         code=124;(out/'probe.log').write_bytes((error.stdout or b'')+(error.stderr or b''))
     artifacts=['maps.txt','image.rgba']
+    if a.vertex_execution:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)]
     if a.vertex_prepass:artifacts += [f'vertex-prepass-{phase}.rgba' for phase in range(3)]
+    if a.vertex_execution:
+        listing=shell('cd '+shlex.quote(remote)+' && ls dump*.spv',capture_output=True,text=True)
+        artifacts += [name for name in listing.stdout.splitlines() if re.fullmatch(r'dump[0-9]+\.spv', name)]
     for name in artifacts:
         r=shell('cat '+shlex.quote(remote+'/'+name),capture_output=True)
         if not r.returncode:(out/name).write_bytes(r.stdout)
@@ -86,6 +111,10 @@ if code==0:
         if len(packed)!=12 or {row[:4] for row in packed}!=cases or any(row[4:]!=('0','0') for row in packed):
             raise ValueError('packed vertex draw matrix incomplete or failed')
         record['packed_vertex_cases']=12
+        if (a.vertex_execution=='compute'):
+            draws=re.findall(r'ZINK_VERTEX_PREPASS draw vertices=(\d+) instances=(\d+)', (out/'probe.log').read_text())
+            if draws.count(('3','2'))<3 or ('3','1') not in draws:raise ValueError('automatic Zink vertex prepass cases incomplete')
+            record['automatic_vertex_prepass_draws']=draws
         if a.vertex_prepass:
             for phase in range(3):
                 marker=f'VERTEX_PREPASS phase={phase} PASS bad_pixels=0 guards=0 count={6*(phase+1)} ids=63 error=0x0'
@@ -97,7 +126,20 @@ if code==0:
             for phase in range(3):
                 wanted=bytes((255,0,255,255))*256 if phase==1 else expected
                 if (out/f'vertex-prepass-{phase}.rgba').read_bytes()!=wanted:raise ValueError('prepass image mismatch')
+        if a.vertex_execution:
+            for phase in range(3):
+                marker=f'PROCEDURAL_VERTEX phase={phase} PASS bad_pixels=0 error=0x0'
+                if marker not in (out/'probe.log').read_text():raise ValueError('procedural vertex case failed or missing')
+                wanted=bytes((255,0,255,255))*256 if phase==1 else expected
+                if (out/f'procedural-{phase}.rgba').read_bytes()!=wanted:raise ValueError('procedural image mismatch')
         maps=(out/'maps.txt').read_text()
+        if a.validation_layer:
+            if 'layers/libVkLayer_khronos_validation.so' not in maps:raise ValueError('validation layer not mapped')
+            if re.search(r'Validation Error|VUID-|SYNC-HAZARD', (out/'probe.log').read_text()):raise ValueError('Vulkan validation reported errors')
+            if 'Current Enables: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT' not in (out/'probe.log').read_text():raise ValueError('SyncVal activation not confirmed')
+            record['synchronization_validation']='enabled and no reported errors'
+            record['validation_layer_sha256']=sha(a.validation_layer)
+            record['validation_manifest_sha256']=sha(a.validation_manifest)
         for name in ['runtime/libgallium-', 'runtime/libvulkan.so.1', 'hybris/libhybris-vulkan-icd.so', 'vulkan.'+('mali' if 'mali' in a.hal else 'adreno')+'.so']:
             if name not in maps:raise ValueError('missing mapped backend '+name)
         if a.display and 'runtime/libGL.so.1' not in maps:raise ValueError('missing mapped GLX frontend')

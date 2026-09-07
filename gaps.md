@@ -639,3 +639,16 @@ ARB_vertex_type_2_10_10_10_rev。纠正此前“只识别 EXT 名称”的错误
 路径真机绘制通过。构建、哈希、反例与范围见 tests/desktop-gl/README.md；
 CPU 转换性能、边界值、indexed/base-instance/indirect、Zink validation、
 桌面窗口及 Blender 仍未覆盖，G07/G10/G13 未全面关闭。
+
+2026-09-07 G10 后续进展：Mesa GLX 已接入并在 Mali 验证 core/compat
+pbuffer 绘制；实际 Blender 4.3.2 在 GLX 下因顶点 SSBO 上限 0 而拒绝
+启动（片元/计算为 16，应用要求每阶段至少 12），不能算应用验收通过。
+Mesa 依赖 `6bec718` 随后加入显式开发开关下的自动程序顶点 NIR→计算→
+只读顶点回放路径，验证 272 字节 UBO、默认 uniform、非零 first vertex/
+base instance 及三阶段范围切换。原生、EGL core/compat、GLX 图像一致；
+标准 validation 确认 SyncVal 已启用且零错误，60 份 SPIR-V 校验通过。
+组合计算/自动绘制发现的解绑泄漏及已删除 SSBO 过早释放均已修复。
+该路径尚排除顶点属性、纹理、clip/cull、索引/间接、多阶段等情况，按 draw
+创建内部管线/缓冲区，未完成通用模拟或性能工作；顶点 SSBO 宣告仍为 0。
+原始失败、最终固定构建记录和具体范围见 tests/desktop-gl/README.md。
+G08/G10 与 Blender、完整窗口呈现、跨设备验收均继续开放。

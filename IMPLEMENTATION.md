@@ -765,3 +765,16 @@ submissions. This verifies a building block for vertex SSBO emulation, not the
 emulation itself. No application shader is automatically converted, no vertex
 SSBO limit is raised and Blender remains unsupported. Core/compatibility results
 and exact remaining integration work are recorded in tests/desktop-gl/README.md.
+
+Mesa dependency 6bec718 now provides an experimental automatic procedural
+vertex-NIR → compute → read-only vertex replay path. It handles the tested
+272-byte UBO/default-uniform, first-vertex/base-instance and changed-range
+workload in EGL core, compatibility and GLX, with exact native-image parity.
+Standard validation explicitly confirms SyncVal enabled with no errors; all
+60 retained SPIR-V modules validate. Combined application compute/deletion and
+automatic draws exposed and fixed UBO-unbind leakage and premature release of
+saved SSBO bindings. Details and failure evidence are in desktop-gl README.
+The development switch excludes unsupported inputs/stages/draw forms and does
+not raise advertised limits. Complete vertex SSBO support, caching/performance
+and Blender acceptance remain open; this supersedes the earlier feasibility-only
+status without declaring G08/G10 complete.
