@@ -736,3 +736,14 @@ restart；最后一项仍先经过 Gallium CPU 改写，不能算应用级纯 GP
 预期、最终结果与范围已记入桌面 GL README。client indices、多 draw
 通用处理、间接参数/自定义 restart 去除 CPU 改写、完整 SSBO/别名/robust
 语义、性能和 Blender 仍开放，未提高任何能力或关闭整项验收。
+
+
+2026-09-07 Mesa aa281c8：内部 VBO/索引/尾部取数按实际容量分配到 R32_UINT
+纹理缓冲与 SSBO，可混合绑定；输出仍保留 SSBO 15，应用 SSBO 区域不被
+内部纹理取数占用。新增按实际 32 个顶点 sampler 槽位生成的六阶段资源
+压力绘制，覆盖 16 VBO、纯纹理、SSBO 回退、16 纹理 + 1/2 SSBO 混合及
+状态恢复；另补三字节索引资源。六轮固定构建原生/计算 × EGL core/compat/
+GLX 均通过，33 张图像跨轮一致，SyncVal 零错误，495 份 SPIR-V 校验通过。
+开发时缺少 NIR 资源引用的崩溃、错误容量假设与最终记录见桌面 GL README。
+未提高 GL/Vulkan 能力；完整顶点 SSBO、组合资源极限、别名/robust、性能、
+其他绘制阶段及 Blender 仍未验收，G07/G08/G10/G13 继续开放。

@@ -7,7 +7,7 @@ surfaceless EGL pbuffers, with no X server, APK or compositor. GLX pbuffer conte
 below. A working Blender renderer and displayed desktop GL windows remain open.
 
 Build prerequisites are the parent Ardesk checkout's clean Mesa revision
-`4c609714c96e9ad8ad12a313872ec42c7e5611ea`, its AArch64 cross file, Podman and
+`aa281c88d778716dcc39b6f3d72a85b6dd832f94`, its AArch64 cross file, Podman and
 its existing GL cross-builder. The default cached builder image is
 `localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` can select an
 explicit available replacement. The script records the resolved image ID,
@@ -611,3 +611,57 @@ disassemblies. GLX uses private Xvfb :186 and a temporary ADB reverse.
 No GL/Vulkan capability is raised. All topology/stage combinations, full vertex
 SSBO semantics, cache/performance, desktop windows and Blender remain open;
 this does not close G07/G08/G10/G13.
+
+
+## Vertex input descriptor budgets (2026-09-07)
+
+Mesa `aa281c8` assigns internal VBO/index/tail reads to R32_UINT texel buffers
+when format, view count and texel range limits allow. Remaining resources use
+compact SSBO bindings after the application's SSBO range, below output slot 15.
+Both descriptor classes can be used in one draw. Internal inputs can now number
+up to PIPE_MAX_SAMPLERS; the SSBO output reservation remains independently 15.
+No GL/Vulkan limit is increased. This removes the former unconditional internal
+15-buffer bottleneck, not all possible combined resource limits.
+
+Texture instructions use NIR resource dereferences and declared buffer sampler
+variables before compiler lowering. Buffer views cover complete words only;
+a source shorter than four bytes gets a valid dummy view of its padded tail,
+while actual reads use the tail binding. Temporary sampler views are referenced,
+bound alongside application views, then restored and released. Index/vertex
+bytes remain on the GPU, including the existing partial-tail copy.
+
+`resource_draw.c` queries the actual GL vertex sampler limit (32 on this Mali).
+Its six phases exercise 16 VBOs with enough application samplers to leave exactly
+16 internal texture slots, all sampler slots occupied with one VBO (SSBO fallback),
+return to texel inputs, indexed 16-VBO draws (16 texels + 1 SSBO), a three-byte EBO
+(16 texels + 2 SSBOs including tail), and return to arrays. Nine indexed cases now
+include a separate three-byte EBO. All original attribute, compute-state, packed
+and UBO cases remain. Runner markers require the specific texel/SSBO/mixed paths.
+
+The development record `20260907T141152-db1a324f` retains the missing NIR texture
+dereference crash, fixed before final validation. `20260907T141457-4549c26f`
+retains a verifier failure: pixels passed, but 16 samplers did not exhaust the
+actual 32-slot budget. The fixture now queries the limit instead of assuming it.
+Also, GL texture units are mapped to stage-local sampler slots: the earlier
+unit-11 compute fixture verifies state restoration, not a literal driver slot 11.
+
+Strict clean-pinned builds, Mali X300, standard validation with SyncVal:
+
+| Mode | API | Result | SPIR-V modules |
+| --- | --- | --- | --- |
+| native | core | `20260907T142408-0df65dc9` PASS | 19 |
+| native | compat | `20260907T142408-04689fee` PASS | 19 |
+| native | glx | `20260907T142408-056081cc` PASS | 19 |
+| compute | core | `20260907T142408-bb383637` PASS | 146 |
+| compute | compat | `20260907T142408-61261fba` PASS | 146 |
+| compute | glx | `20260907T142408-1f9a17a5` PASS | 146 |
+
+All six manifests match the final pinned build; their 33 retained images match
+byte-for-byte. SyncVal is explicitly enabled and reports no errors. All 495
+SPIR-V modules pass Vulkan 1.3 validation with uniform buffer standard layout;
+per-result JSON retains commands, hashes, tool versions and disassemblies.
+Private Xvfb :187 and its ADB reverse were removed after GLX validation.
+
+This is still an experimental prepass. Full application vertex SSBO semantics,
+resource aliasing, robustness, all stage/draw forms, cache/performance and Blender
+remain open. Custom restart and indirect argument CPU rewrites are unchanged.

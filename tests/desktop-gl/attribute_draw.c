@@ -313,8 +313,9 @@ int attribute_draw(PFNEGLGETPROCADDRESSPROC lookup) {
       if (phase == 7)
         glMultiDrawArraysIndirectCountARB(GL_TRIANGLES, (void *)16, 0, 2, 32);
     }
-    /* The application compute sampler occupies a slot above all VS samplers.
-     * Switching back exercises restored views, samplers and trailing slots. */
+    /* The application compute shader samples a different GL texture unit.
+     * Switching back exercises restored views and samplers; GL units are mapped
+     * to stage-local descriptor slots. */
     glUseProgram(compute_program);
     glDispatchCompute(1, 1, 1);
     glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT |

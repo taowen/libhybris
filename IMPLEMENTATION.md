@@ -835,3 +835,13 @@ with no SyncVal errors. Existing indexed attribute/decoded indirect draws enter
 the new path. Desktop-gl README retains the earlier verifier failures and
 specific evidence. Full SSBO/aliasing/robustness, client indices, all draw/stage
 forms, performance and Blender are not claimed; capabilities remain unchanged.
+
+
+Mesa aa281c8 allocates vertex input reads between texel-buffer and SSBO
+bindings, preserving application SSBO slots and allowing mixed resource paths.
+Six resource-pressure phases use the queried sampler budget and verify 16 VBOs,
+SSBO fallback, indexed mixed bindings, partial tails and restoration. Together
+with the extended nine indexed cases, six pinned native/compute EGL/GLX runs
+produce 33 identical images and 495 valid SPIR-V modules without SyncVal errors.
+The desktop-gl README records the development failures and final evidence.
+Capabilities are unchanged; full SSBO semantics and application gates remain open.

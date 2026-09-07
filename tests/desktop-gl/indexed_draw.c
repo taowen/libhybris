@@ -92,13 +92,13 @@ int indexed_draw(PFNEGLGETPROCADDRESSPROC lookup) {
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
   glEnableVertexAttribArray(0);
   int failures = 0;
-  for (int phase = 0; phase < 8; phase++) {
-    unsigned width = 1u << (phase % 3);
+  for (int phase = 0; phase < 9; phase++) {
+    unsigned width = phase == 8 ? 1 : 1u << (phase % 3);
     GLenum type = width == 1   ? GL_UNSIGNED_BYTE
                   : width == 2 ? GL_UNSIGNED_SHORT
                                : GL_UNSIGNED_INT;
     int base = width == 2 ? -2 : width == 4 ? 1 : 4;
-    int restart = phase < 3 || phase >= 6;
+    int restart = phase < 3 || phase == 6 || phase == 7;
     unsigned marker = width == 1   ? 255
                       : width == 2 ? (phase == 7 ? 0x1234 : 0xffff)
                                    : UINT32_MAX;
@@ -108,17 +108,18 @@ int indexed_draw(PFNEGLGETPROCADDRESSPROC lookup) {
       order[4] = 1;
       order[5] = 3;
     }
-    unsigned count = restart ? 7 : 6;
+    unsigned count = phase == 8 ? 3 : restart ? 7 : 6;
+    unsigned prefix = phase == 8 ? 0 : 2;
     unsigned char indices[36];
     memset(indices, 0xa5, sizeof(indices));
     for (unsigned i = 0; i < count; i++) {
       uint32_t value =
           phase == 6 || order[i] == UINT32_MAX ? marker : order[i] + 4 - base;
-      memcpy(indices + (i + 2) * width, &value, width);
+      memcpy(indices + (i + prefix) * width, &value, width);
     }
     /* GPU copy produces the actual EBO; exact lengths expose partial tails. */
     glBindBuffer(GL_COPY_READ_BUFFER, buffers[1]);
-    glBufferData(GL_COPY_READ_BUFFER, (count + 2) * width, indices,
+    glBufferData(GL_COPY_READ_BUFFER, (count + prefix) * width, indices,
                  GL_STREAM_DRAW);
     /* A fresh object prevents allocation reuse from hiding a short tail. */
     if (phase) {
@@ -126,10 +127,10 @@ int indexed_draw(PFNEGLGETPROCADDRESSPROC lookup) {
       glGenBuffers(1, &buffers[2]);
     }
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[2]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (count + 2) * width, NULL,
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (count + prefix) * width, NULL,
                  GL_STREAM_DRAW);
     glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_ELEMENT_ARRAY_BUFFER, 0, 0,
-                        (count + 2) * width);
+                        (count + prefix) * width);
     if (restart)
       glEnable(GL_PRIMITIVE_RESTART);
     else
@@ -141,14 +142,16 @@ int indexed_draw(PFNEGLGETPROCADDRESSPROC lookup) {
     glClear(GL_COLOR_BUFFER_BIT);
     glDrawElementsInstancedBaseVertexBaseInstance(
         restart ? GL_TRIANGLE_STRIP : GL_TRIANGLES, count, type,
-        (void *)(uintptr_t)(2 * width), 1, base, 3);
+        (void *)(uintptr_t)(prefix * width), 1, base, 3);
     unsigned char pixels[1024];
     glReadPixels(0, 0, 16, 16, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     int bad = 0;
     for (int y = 0; y < 16; y++)
       for (int x = 0; x < 16; x++) {
         unsigned char expected[4] = {0, 0, 0, 255};
-        expected[phase == 6 || x + y == 15 ? 2 : x + y < 15 ? 0 : 1] = 255;
+        expected[phase == 6 || (phase == 8 && x + y > 15) || x + y == 15 ? 2
+                 : x + y < 15 ? 0
+                              : 1] = 255;
         bad += memcmp(pixels + (y * 16 + x) * 4, expected, 4) != 0;
       }
     char name[64];
