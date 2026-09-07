@@ -7,7 +7,7 @@ surfaceless EGL pbuffers, with no X server, APK or compositor. GLX pbuffer conte
 below. A working Blender renderer and displayed desktop GL windows remain open.
 
 Build prerequisites are the parent Ardesk checkout's clean Mesa revision
-`8986040b4cadbeb93d478d32da8cf19590af206a`, its AArch64 cross file, Podman and
+`8bb94e2dc1b156b3a766b3a36ad4352d0f02cb6d`, its AArch64 cross file, Podman and
 its existing GL cross-builder. The default cached builder image is
 `localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` can select an
 explicit available replacement. The script records the resolved image ID,
@@ -382,7 +382,93 @@ native repeat `20260907T122849-e644af24`, without the manual compute workload,
 reproduces it with GL error 0. No validation error is reported, but these are
 FAIL, not native parity passes. The intended address formula agrees with the
 [Khronos vertex-fetch specification](https://github.khronos.org/Vulkan-Site/spec/latest/chapters/fxvertex.html).
-The cause has not yet been isolated between Zink state and vendor fetch
-behavior; KHR nonzero-first-instance capability handling needs investigation.
+At that point the cause was not isolated between Zink state and vendor fetch
+behavior. The following section resolves this counterexample through KHR
+nonzero-first-instance capability handling; the original FAIL artifacts remain.
 The first native run's nine SPIR-V modules also validate, which does not prove
 runtime attribute fetching correct. Full G07/G08/G10/G13 acceptance stays open.
+
+
+## Native first-instance rebasing (2026-09-07)
+
+The native counterexample above came from an ignored device limitation.
+Diagnostic build `20260907T123701-fe4e1c58` queries KHR divisor properties:
+`maxVertexAttribDivisor=4294967295`, `supportsNonZeroFirstInstance=0`. Zink had
+copied only the maximum divisor into its EXT-compatible state. Its dynamic
+binding was correctly set to divisor 2, but it still submitted firstInstance 5.
+An instrumented attribute shader observed source indices 2,3,3,4 instead of
+5,5,6,6. Earlier `20260907T123440-6ad25b5b` records the same fetched values.
+The zero capability means that combination is unsupported, not that a different
+fetch formula is valid; see the [KHR divisor description](https://docs.vulkan.org/features/latest/features/proposals/VK_KHR_vertex_attribute_divisor.html).
+The standard validation layer did not flag the original invalid combination;
+absence of validation errors alone therefore was insufficient evidence.
+
+Mesa `8bb94e2` preserves the KHR/core capability and uses native vertex processing
+with firstInstance zero when rebasing is needed. A separate
+`zink_instance_rebase.c` shifts each instanced VBO offset by base × stride,
+preserves application BaseInstance through a push constant, and restores all
+offsets afterward. The existing InstanceID lowering still subtracts the raw
+Vulkan base. Direct draws do not map or copy vertex data. The EXT-only path and
+KHR/core devices reporting support retain their previous behavior; those device
+branches were not exercised on this Mali device.
+
+Indirect draws with a restricted divisor reuse Gallium's argument-buffer
+fallback. Mesa `6392c27` consolidates its two decoders, respects padded/zero
+stride, bounds map ranges and clamps a GPU count to the caller's maximum.
+The argument/count buffers are read synchronously and copied before issuing
+direct draws, so this path can stall; GPU-only indirect emulation and performance
+acceptance remain open. A separate pipeline-update omission became visible
+when split draws changed DrawID: `20260907T124645-8921797d` fails three native
+multidraw phases, and `20260907T124701-ce7691b0` fails the indexed phase in
+compute mode, each by 128 pixels. Including pending last-vertex-stage key
+changes in pipeline/shader-object updates fixes it in `8bb94e2`.
+
+`attribute_draw.c` now checks eight phases, all with the four direct formats
+and exact full-image readback. It checks BaseInstance, BaseVertex and DrawID
+in the shader, as well as attribute values and default components:
+
+| Phase | Draw | Base / divisor | Additional check |
+| --- | --- | --- | --- |
+| 0 | arrays, direct | 5 / 1 | Original supported control |
+| 1 | arrays, direct | 5 / 2 | Original failing combination |
+| 2 | arrays, direct | 0 / 2 | Restored offsets and push data |
+| 3 | indexed, direct | 5 / 2 | Index offset 2 bytes, base vertex 7 |
+| 4 | arrays, indirect | 5 / 2 | GPU-copied argument buffer, offset 16 |
+| 5 | arrays, multi-indirect | 5 / 2 | Two draws, stride 32, DrawID 0/1 |
+| 6 | indexed, multi-indirect | 5 / 2 | Index/base-vertex addressing and DrawID |
+| 7 | arrays, indirect-count | 5 / 2 | GPU-cleared count 3 clamped to max 2 |
+
+The third command in phase 7 would paint an invalid color over the right half
+if executed. First vertex is 7; direct phases use four instances, multidraw
+phases use two per draw. Every phase clears blue before drawing. C and host
+check all 256 pixels and retain `attributes-0.rgba` through `attributes-7.rgba`.
+The runner also requires the expected automatic conversion markers: indexed
+cases continue through native processing; eligible decoded indirect arrays can
+enter the compute path after argument decoding. This does not add general
+indexed vertex-compute conversion.
+
+Final strict pinned-build runs, all with `--vertex-prepass` and standard
+Khronos validation including explicitly enabled SyncVal:
+
+| API | Native result | Compute result |
+| --- | --- | --- |
+| EGL core 3.3 | `20260907T125241-2d09d951` PASS | `20260907T125241-852b1521` PASS |
+| EGL compatibility 3.2 | `20260907T125241-38c19fc5` PASS | `20260907T125241-1f6f32b6` PASS |
+| GLX core 3.3 | `20260907T125241-ec934de3` PASS | `20260907T125241-6831cd14` PASS |
+
+The pinned Mesa runtime and compiled probe hashes match in all six runs. Each
+passes packed inputs, manual compute/deletion, eight attribute phases and three
+procedural UBO phases. All 15 retained images match across the six runs.
+SyncVal reports no errors. Each native run has 12 SPIR-V modules and each
+compute run 85; all 291 validate with Vulkan 1.3 and uniform-buffer-standard-layout.
+Per-run disassemblies and `spirv-validation.json` retain tool versions, commands,
+module hashes and image hashes. Private Xvfb :184 and its ADB reverse were
+removed afterward; the existing Ardesk application was not changed.
+
+This resolves the reproduced valid-buffer first-instance/divisor failure and
+DrawID transition failure. It does not validate out-of-bounds/robust fetches,
+transform-feedback-count draws, all topology/stage combinations, Vulkan 1.4 or
+EXT-only devices. The rebasing helper rejects an instance-buffer base outside
+its resource instead of issuing that invalid Vulkan binding. Vertex SSBO limit
+remains 0 and Blender startup/rendering still has its separate capability gap.
+No GL/Vulkan capability was raised and no full G07/G08/G10/G13 closure is claimed.

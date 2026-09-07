@@ -791,3 +791,19 @@ this batch does not claim complete native parity. See desktop-gl README for
 exact successful and failed artifacts. No limits are raised: unaligned and
 64-bit inputs, general SSBO acceptance, caching/performance and Blender remain
 open, as does investigation of this native fetch counterexample.
+
+
+The native first-instance/divisor counterexample is now resolved by Mesa
+8bb94e2: preserve supportsNonZeroFirstInstance (false on the tested Mali), rebase
+instanced VBO offsets, use Vulkan firstInstance=0 and preserve the application's
+BaseInstance in push data. A separate helper handles direct/indexed and decoded
+indirect draws. The Gallium decoder consolidation in 6392c27 fixes padded-stride
+mapping, range checks and bounded count handling. Multidraw regression exposed
+and fixed a last-vertex-stage key change that had not triggered pipeline updates.
+Six pinned-build runs (native/compute × EGL core/compatibility/GLX) pass all eight
+attribute phases and existing packed/manual-compute/procedural workloads; their
+15 images are identical, SyncVal reports no errors and 291 SPIR-V modules
+validate. Earlier failures and diagnostic values remain in desktop-gl README.
+Indirect decoding synchronously reads GPU argument/count buffers; performance,
+out-of-bounds robust fetch behavior, other device branches, full vertex SSBO
+support and Blender remain unverified. Limits and full gap gates are unchanged.

@@ -666,3 +666,22 @@ PASS。组合原打包、UBO、显式计算/删除用例也通过，SyncVal 已�
 复现，GL error=0，保留为 FAIL。尚未隔离 Zink 状态或 vendor 取数原因，
 不得声称原生全面一致。具体记录见 tests/desktop-gl/README.md；未对齐、
 64 位、一般 SSBO 输入、性能、Blender 及整项 G07/G08/G10/G13 仍开放。
+
+
+2026-09-07 原生 base-instance/除数反例修复：诊断
+`20260907T123701-fe4e1c58` 确认 Mali 返回
+supportsNonZeroFirstInstance=false，旧 Zink 仅复制最大除数，丢弃此限制；
+动态输入除数确为 2，firstInstance=5 下实际取数索引 2/3/3/4，非预期
+5/5/6/6。Mesa `8bb94e2` 保留能力标志，通过独立 helper 重定位实例 VBO
+偏移并使用 firstInstance=0，以 push constant 保留应用 BaseInstance。
+支持本批直接/索引与已解码间接绘制，未读回顶点数据；间接参数需同步读取，
+性能未验收。`6392c27` 合并 Gallium 参数解码并修正 padding stride、
+映射范围和 count 上限。多绘制还复现了 DrawID 改变未触发管线更新的
+128 像素失败，已修正；原始失败记录保留。
+固定构建后的六轮（原生/计算 × EGL core/compat/GLX）全部通过：八阶段
+属性矩阵、原打包、显式计算/删除和 UBO 回归，15 张图像跨轮一致；SyncVal
+已启用且零错误，291 份 SPIR-V 校验通过。结果索引、shader 内
+BaseInstance/BaseVertex/DrawID 检查和 GPU 写入间接命令/count 的范围见
+桌面 GL README。只关闭上述已复现失败；robust 越界取数、全部阶段/拓扑、
+EXT-only/Vulkan 1.4 分支、性能、顶点 SSBO 和 Blender 仍未验收，未提高
+任何能力或放宽 G07/G08/G10/G13 整项门槛。
