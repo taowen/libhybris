@@ -238,6 +238,9 @@ cases = [
 
 cases.extend(('hybris', mode, 'probe-glibc') for mode in ('render-owners', 'command-alloc'))
 
+for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
+    cases.append((backend, 'memory-ranges', binary))
+
 timeline_queue_cases = ('timeline-queues-core', 'timeline-queues-khr')
 timeline_cases = tuple('timeline-' + family + suffix for family in ('core', 'khr')
                        for suffix in ('', '-gdpa', '-elf')) + timeline_queue_cases
@@ -261,7 +264,7 @@ if a.icd_hal:
     metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
     # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('version', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
+              for mode in ('version', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases)
     cases.extend(('icd-linked', 'timeline-' + family + '-linked', 'probe-glibc-linked')
@@ -278,7 +281,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.extend([('icd', mode, 'probe-glibc') for mode in ('timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('memory-ranges-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)

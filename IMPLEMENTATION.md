@@ -41,6 +41,16 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+The new Vulkan 1.0 memory-range workload requires genuinely non-coherent
+upload/readback memory and tests partial flush/invalidate with nonzero buffer
+binding offsets. Four rounds update a subrange, reuse one command buffer and
+check the copied data plus unchanged neighbors. Mali native/frontend/ICD and
+standard validation pass; atom size 64, binding offset 64 and partial ranges
+are recorded in the baseline README. Adreno vendor lacks a compatible
+non-coherent host-visible type and all four paths report unsupported. This
+adds successful finite-range coverage, not allocation-end/partial-mapping or
+concurrent-atom coverage; G09 remains partial.
+
 The timeline probe now includes two same-family queues and actual buffer
 visibility: submit the waiting consumer first, fill on the producer, then
 copy/read back 1024 exact words, repeated four times with GPU-ordered reuse.

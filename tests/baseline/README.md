@@ -1888,3 +1888,49 @@ buffer reuse and full-allocation non-coherent invalidation coverage. It does
 not prove physical GPU overlap, different-family ownership transfers,
 concurrent host submissions, partial flush/invalidate ranges or legal resource
 retirement while other work remains in flight. G09 remains open.
+
+## Partial non-coherent upload and readback (2026-09-07)
+
+`memory-ranges` is a Vulkan 1.0 workload for native, frontend and standard ICD;
+`memory-ranges-validation` adds standard validation/SyncVal. The standalone
+implementation is `probe_memory_ranges.c`. It requires compatible host-visible
+non-coherent memory for both upload and readback buffers, rather than silently
+substituting coherent memory. Both buffers have a nonzero memory binding
+offset aligned to the buffer requirement and nonCoherentAtomSize.
+
+The upload buffer is initialized once. Each of four rounds changes a smaller
+region that starts inside an atom and crosses atom boundaries, flushes the
+atom-rounded range including the binding offset, and resubmits the same
+command buffer. A GPU copy moves a larger window, including unchanged prefix
+and suffix bytes, to a different destination buffer offset. Transfer-to-host
+barriers and a fence precede partial-range invalidation and an exact comparison
+of the entire copied window. Host writes begin only after the previous round
+has finished; no queue/device wait-idle is used. The probe captures mappings
+before destroying the live objects.
+
+Range arithmetic follows [VkMappedMemoryRange](https://docs.vulkan.org/refpages/latest/refpages/source/VkMappedMemoryRange.html):
+flush/invalidate offsets are relative to the memory allocation, are atom
+aligned, and all tested finite sizes are atom multiples inside the mapping.
+This is valid-input coverage; it does not inject unflushed writes or assert
+that a particular driver must expose stale cache data for invalid input.
+
+| Device | Result directory | Results |
+|---|---|---|
+| X300 / Mali-G1-Ultra | `20260907T154415-7f579232` | 5 PASS: four memory-range paths plus ICD version |
+| Redmi 29854870 / Adreno 650 vendor | `20260907T154415-b91d1678` | ICD version PASS; four memory-range paths UNSUPPORTED |
+
+Mali selects memory type 1, flags `0xb`, for both buffers. The atom size is
+64 bytes, each buffer binds at offset 64 within a 2112-byte allocation, and
+all four rounds flush `[576,896)` and invalidate `[576,1600)`. Each compares
+1024 bytes, including unchanged neighbors, with zero mismatches across all
+four paths. The standard ICD validation run reports zero errors, including
+SyncVal. Adreno vendor exposes no compatible host-visible non-coherent memory
+for this workload; native, frontend and ICD agree. Mali uses the existing
+explicit loader quirk. The AArch64 glibc/bionic probe build, staged provenance
+and required runtime mapping checks pass.
+
+This covers partial finite aligned ranges, nonzero binding and copy offsets,
+repeated host uploads and command-buffer resubmission. It does not cover
+allocation-end partial atoms, partially mapped allocations, simultaneous
+access to different atoms, cross-process mappings, or unrelated work remaining
+in flight during resource retirement. G09 remains open.
