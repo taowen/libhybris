@@ -66,7 +66,7 @@ int caps_probe(int check_wsi_guard);
 int caps2_probe(void);
 int properties2_check(PFN_vkGetPhysicalDeviceProperties2 query, VkPhysicalDevice pd,
                       const VkPhysicalDeviceProperties *legacy);
-int scaled_vertex_probe(int validate, int route);
+int scaled_vertex_probe(int validate, int route, int multiple);
 int ubo_probe(void);
 int timeline_probe(int khr, int route, int validate, int multiple_queues);
 int timeline_queue_work(PFN_vkGetInstanceProcAddr gip, VkInstance instance,

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "scaled_vertex.h"
+#include "spirv_entry.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -8,7 +9,8 @@
  * Scaled formats are fetched as integers and converted at each original load,
  * preserving all floating-point result IDs and their uses. */
 enum {
-    OP_ENTRY_POINT = 15, OP_TYPE_INT = 21, OP_TYPE_FLOAT = 22, OP_TYPE_VECTOR = 23,
+    OP_ENTRY_POINT = 15, OP_EXECUTION_MODE = 16, OP_EXECUTION_MODE_ID = 331,
+    OP_TYPE_INT = 21, OP_TYPE_FLOAT = 22, OP_TYPE_VECTOR = 23,
     OP_TYPE_POINTER = 32, OP_FUNCTION = 54, OP_VARIABLE = 59, OP_LOAD = 61,
     OP_ACCESS_CHAIN = 65, OP_IN_BOUNDS_ACCESS_CHAIN = 66, OP_DECORATE = 71,
     OP_COPY_OBJECT = 83, OP_CONVERT_S_TO_F = 111, OP_CONVERT_U_TO_F = 112
@@ -28,7 +30,7 @@ static unsigned float_width(const struct id_info *ids, uint32_t bound, uint32_t 
            ids[type].width >= 2 && ids[type].width <= 4 ? ids[type].width : 0;
 }
 
-VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entry,
+static VkResult convert_scaled(const uint32_t *code, size_t size, const char *entry,
     const struct hybris_scaled_attribute *attributes, uint32_t attribute_count,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
     const char **reason)
@@ -48,21 +50,22 @@ VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entr
     memset(ids, 0, bound * sizeof(*ids));
     for (uint32_t i = 0; i < bound; ++i) ids[i].location = UINT32_MAX;
     VkResult status = VK_ERROR_UNKNOWN;
-    unsigned entry_count = 0;
-    int selected = 0;
+    uint32_t selected_function = 0;
+    size_t selected_entry = 0;
     size_t first_type = 0;
     for (size_t at = 5; at < words;) {
         uint32_t count = code[at] >> 16, op = code[at] & 0xffff;
         if (!count || count > words - at) goto done;
         const uint32_t *p = code + at;
         if (op == OP_ENTRY_POINT) {
-            if (count < 4) goto done;
-            ++entry_count;
+            if (count < 4 || !p[2] || p[2] >= bound) goto done;
             const char *name = (const char *)(p + 3);
             const char *end = memchr(name, 0, (count - 3) * 4);
             if (!end) goto done;
             if (p[1] == 0 && !strcmp(name, entry)) {
-                selected = 1;
+                if (selected_entry) goto done;
+                selected_entry = at;
+                selected_function = p[2];
                 size_t interfaces = 3 + ((size_t)(end - name) + 4) / 4;
                 for (size_t i = interfaces; i < count; ++i) {
                     if (p[i] >= bound) goto done;
@@ -93,8 +96,8 @@ VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entr
         if (!first_type && op >= 19 && op <= 39) first_type = at;
         at += count;
     }
-    if (entry_count != 1 || !selected || !first_type) {
-        *reason = "scaled vertex conversion requires one vertex entry point";
+    if (!selected_entry || !first_type) {
+        *reason = "scaled vertex conversion requires the named vertex entry point";
         goto done;
     }
     for (uint32_t i = 0; i < bound; ++i) {
@@ -167,6 +170,15 @@ VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entr
     for (size_t at = 5; at < words; at += code[at] >> 16) {
         uint32_t count = code[at] >> 16, op = code[at] & 0xffff;
         const uint32_t *p = code + at;
+        /* A temporary module belongs to one pipeline stage. Keeping other
+         * entry points could impose incompatible interface rules after a
+         * shared Input variable becomes integer. Functions and declarations
+         * remain available to the selected entry's call tree. */
+        if (op == OP_ENTRY_POINT && at != selected_entry) continue;
+        if (op == OP_EXECUTION_MODE || op == OP_EXECUTION_MODE_ID) {
+            if (count < 3) goto done;
+            if (p[1] != selected_function) continue;
+        }
         if (!in_function && op == OP_VARIABLE) continue;
         if (!in_function && op == OP_FUNCTION) {
             /* Reuse existing scalar/vector/pointer types to avoid illegal
@@ -230,4 +242,22 @@ done:
     hybris_scaled_free(allocator, result);
     hybris_scaled_free(allocator, ids);
     return status;
+}
+
+VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entry,
+    const struct hybris_scaled_attribute *attributes, uint32_t attribute_count,
+    const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
+    const char **reason)
+{
+    if (!hybris_spirv_multiple(code, size))
+        return convert_scaled(code, size, entry, attributes, attribute_count, allocator, output, output_size, reason);
+    uint32_t *selected = NULL;
+    size_t selected_size = 0;
+    VkResult result = hybris_spirv_entry(code, size, 0, entry, allocator, &selected, &selected_size, reason);
+    *output = NULL; *output_size = 0;
+    if (result == VK_SUCCESS)
+        result = convert_scaled(selected, selected_size, entry, attributes, attribute_count,
+                                allocator, output, output_size, reason);
+    hybris_scaled_free(allocator, selected);
+    return result;
 }

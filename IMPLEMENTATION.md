@@ -49,7 +49,11 @@ fetch plus SPIR-V conversion. Redmi Adreno's missing formats now produce the
 expected pixels; Mali retains native support, with a separate forced diagnostic
 run exercising conversion. Four loader routes, VVL/SyncVal, original/converted
 module validation and callback allocation balance are covered by the fixed
-probe. This is an experimental shader/pipeline subset: G07/G08 remain open,
+probe. Multi-entry modules now receive stage-specific temporary modules with
+reachable function/global dependencies retained; a three-entry shared module
+and helper-function push-constant reads pass on Adreno and Mali. Adreno required
+removing unreachable declarations as well as unused entry-point declarations.
+This is an experimental shader/pipeline subset: G07/G08 remain open,
 including general interfaces, dynamic vertex input, shader objects and graphics
 pipeline libraries. BC, clip/cull/point-size and software timeline patches are
 still not ported. Full boundaries and evidence are in the ICD and baseline

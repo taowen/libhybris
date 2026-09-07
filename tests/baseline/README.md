@@ -1990,7 +1990,9 @@ are unaffected by either option. The runner pulls the actual original and
 converted modules used internally, validates each with `spirv-val`, retains
 `spirv-dis --raw-id` output, matches the original hash to the probe build input,
 and verifies location zero changes from float32 vec4 to the expected signed or
-unsigned int32 vec4 without changing decorations/entry points. Each pipeline
+unsigned int32 vec4 without changing decorations or the selected entry's
+interface. Unselected entry declarations are removed from temporary modules.
+Each pipeline
 has a location/signedness record. This is fixed-workload evidence; it does not
 reconstruct arbitrary application pipeline or specialization history.
 
@@ -2025,8 +2027,8 @@ python3 tests/baseline/run.py --serial DEVICE ... \
   preserves native support rather than forcing conversion.
 
 G07/G08 remain open. The production fallback supports direct scalar/vector
-float32 Location inputs in one vertex entry point and a bounded set of pointer
-operations. General interface blocks/matrices/arrays, multi-entry modules,
+float32 Location inputs in the selected vertex entry point and a bounded set of
+pointer operations. General interface blocks/matrices/arrays and control flow,
 dynamic vertex input, graphics pipeline libraries, shader objects and shader
 stage extension chains are unsupported. Offline mixed scalar/vector,
 component-load and specialization-declaration rewriting passes `spirv-val`;
@@ -2035,3 +2037,63 @@ rejected with no output module. No shader/pipeline OOM-site sweep, arbitrary
 application rendering, FormatProperties3 chain device probe, clip/cull,
 point-size, BC or software timeline emulation is claimed. See
 `hybris/vulkan/icd/README.md` for the exact opt-in and diagnostic boundaries.
+
+### Multiple entry points and shared stage modules
+
+The `scaled-vertex-multi` family uses a single module containing two named
+vertex entries and a fragment entry. Unsigned pipelines choose `scaled_vertex`;
+signed pipelines choose `alternate_vertex`, whose output is inverted. Good and
+negative-control draws therefore prove both entry selections. The same original
+module supplies the fragment stage throughout all 12 pipelines. Each vertex
+entry calls a helper that reads the push constant, exercising retained callee
+and global-variable dependencies. Generate the assets with:
+
+```sh
+python3 tests/baseline/shaders/generate-scaled.py
+```
+
+This requires `glslangValidator`, `spirv-link` and `spirv-val`. The generated
+normal vertex/fragment and three-entry arrays are checked in and copied into
+the probe build snapshot. The ordinary single-entry fixture remains unchanged
+at the binary level.
+
+Adreno initially rejected pipeline linking even after unused entry declarations
+were removed: `20260907T164648-f30ebfb1` returned `VK_ERROR_UNKNOWN`, and the
+probe process's driver log reported a symbol-map assertion. A separate-fragment
+control `20260907T165019-8c7ce314` also failed. The entry extraction now removes
+unreachable functions, unused globals and dangling names/decorations, and
+normalizes other multi-entry stages in the affected pipeline. The same original
+module subsequently passed in `20260907T170117-21293b74`; failure and recovery
+dumps have identical original SHA256
+`fe7cc5f6808b35b62ccaf407f5dd46c8b98314082a32df98b00a0dbbb575b976`.
+This comparison isolates the original workload; the final fixture adds helper
+calls to cover the extraction pass's dependency handling.
+
+Final helper-fixture runs on 2026-09-07:
+
+- Redmi Adreno `20260907T170439-152289d9`: 11 PASS / 2 UNSUPPORTED. All six
+  multi-entry ICD routes pass in normal missing-format mode; native/replacement
+  controls lack all 12 scaled formats. Single-entry scaled validation, widget
+  UBO validation, device lifecycle and allocator regression pass.
+- X300 Mali `20260907T170439-336c2f68`: all 13 cases PASS, with forced conversion
+  for ICD routes and successful native/replacement controls.
+- Mali normal missing-format mode `20260907T170608-5b6f7fef` has version and
+  multi-entry validation PASS, `fallback_mask=0`, and no temporary dumps;
+  the native multi-entry path is preserved.
+- Every multi-entry ICD route checks 36 complete 16×16 images, zero validation
+  errors where enabled, and zero live callback allocations after teardown
+  (352 Adreno / 1060 Mali allocation calls). Each pipeline emits a vertex and
+  fragment original/temporary pair. Across six multi-entry routes and one
+  single-entry regression, each device retains 156 audited pairs: source
+  hashes, `spirv-val`, disassembly, selected entry and retained-interface
+  decoration comparisons. Fragment interfaces remain floating point; only
+  vertex inputs change to the corresponding integer type.
+
+Use the existing runner arguments with `--case icd-scaled-vertex-multi`,
+`icd-scaled-vertex-multi-gdpa`, `icd-scaled-vertex-multi-elf`,
+`icd-linked-scaled-vertex-multi-linked`, `icd-scaled-vertex-multi-validation`,
+and `icd-scaled-vertex-multi-gdpa-validation`. The compatibility option remains
+explicit. This does not establish general multi-entry normalization outside
+scaled pipelines. Unknown opcodes, function pointers, grouped/debug references,
+general interface layouts, OOM injection at each temporary-stage allocation,
+and specialization/cache-key coverage remain open. G07/G08 are not closed.

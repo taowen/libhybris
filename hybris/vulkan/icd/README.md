@@ -147,18 +147,30 @@ https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyShaderModule.ht
 All helpers are hidden; the ICD still exports only its three loader entries.
 
 This is an experimental subset, not a conformant implementation of arbitrary
-scaled vertex pipelines. The rewriter handles one vertex entry point with
-direct Location scalar/vec2/vec3/vec4 float32 inputs, direct loads, component
+scaled vertex pipelines. The rewriter selects the named vertex entry from a
+module, including modules with multiple vertex or other-stage entries. The
+temporary module exposes only that entry and its execution modes. A separate
+entry-extraction pass follows function calls and removes unreachable functions,
+unreferenced global variables, and their names/decorations. Types and constants
+are retained. Other multi-entry stages in an affected graphics pipeline also
+receive temporary modules for their selected entries; the original module can
+still supply later pipeline variants. All temporary stage modules are freed
+after the backend call. Supported inputs are direct Location
+scalar/vec2/vec3/vec4 float32 values, direct loads, component
 access chains and pointer copies. It rejects matrix/array/interface-block and
 unhandled pointer forms. Its conservative pointer-use scan can also reject
-otherwise valid modules when a literal equals a tracked pointer ID. Unsupported
+otherwise valid modules when a literal equals a tracked pointer ID. Entry
+extraction also conservatively retains global variables whose IDs equal
+literals in live functions. Function-pointer instructions, unknown opcodes,
+and grouped/nonsemantic debug references into removed code are rejected; this
+is not a general SPIR-V optimizer. Unsupported
 conversion returns `VK_ERROR_UNKNOWN`, with a diagnostic, rather than supplying
 a partially rewritten module. With an active fallback mask, graphics pipeline
 libraries and dynamic vertex input are rejected; shader objects, inline stage
 modules and shader-stage extension chains are not supported by this fallback.
-Do not enable it for applications requiring these paths. General multi-entry
-SPIR-V, extensions, specialization/cache-key evidence and full pipeline state
-coverage remain open. No clip/cull, point-size, BC texture or timeline emulation
+Do not enable it for applications requiring these paths. General SPIR-V
+interfaces/control flow, extensions, specialization/cache-key evidence and
+full pipeline state coverage remain open. No clip/cull, point-size, BC texture or timeline emulation
 is included. The replacement-libvulkan frontend does not apply this fallback.
 
 For diagnosis, the value `force` converts these formats even when the vendor
@@ -170,3 +182,13 @@ ignored for secure execution. The baseline runner's
 `--scaled-vertex-compat missing|force` sets the option only for ICD cases and
 collects these dumps for scaled probes; host `spirv-val` and `spirv-dis` are
 required. See the baseline README for device results and reproduction.
+
+The entry-extraction result-ID table is generated from the Khronos SPIR-V 1.6
+revision 7 grammar, SHA256
+`db8581272b63d232268094a47b68d18a0464fc911e06004d57419924fe660ba4`, as vendored in
+unmodified Mesa `c3b008c1ba01d455351b762253ef44c3ca19653f` at
+`src/compiler/spirv/spirv.core.grammar.json`. Reproduce with
+`python3 tools/registry/generate-spirv-results.py /path/to/spirv.core.grammar.json`.
+The generator verifies the input hash. The checked-in table needs no Mesa or
+SPIRV-Tools runtime dependency. The source grammar is available at:
+https://gitlab.freedesktop.org/mesa/mesa/-/raw/c3b008c1ba01d455351b762253ef44c3ca19653f/src/compiler/spirv/spirv.core.grammar.json

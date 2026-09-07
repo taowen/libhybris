@@ -3,6 +3,7 @@
 #define VK_NO_PROTOTYPES
 #include "scaled_dispatch.h"
 #include "scaled_vertex.h"
+#include "spirv_entry.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
@@ -158,7 +159,8 @@ struct pipeline_copy {
     VkPipelineVertexInputStateCreateInfo input;
     VkVertexInputAttributeDescription *attributes;
     VkPipelineShaderStageCreateInfo *stages;
-    VkShaderModule temporary;
+    VkShaderModule *temporary;
+    uint32_t stage_count;
 };
 static VkResult convert_pipeline(struct scaled_device *device, VkGraphicsPipelineCreateInfo *info,
     struct pipeline_copy *copy, const VkAllocationCallbacks *allocator, const char **reason)
@@ -185,8 +187,11 @@ static VkResult convert_pipeline(struct scaled_device *device, VkGraphicsPipelin
     struct hybris_scaled_attribute *attrs = hybris_scaled_alloc(allocator, count * sizeof(*attrs), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
     copy->attributes = hybris_scaled_alloc(allocator, input->vertexAttributeDescriptionCount * sizeof(*copy->attributes), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
     copy->stages = hybris_scaled_alloc(allocator, info->stageCount * sizeof(*copy->stages), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+    copy->stage_count = info->stageCount;
+    copy->temporary = hybris_scaled_alloc(allocator, info->stageCount * sizeof(*copy->temporary), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+    if (copy->temporary) memset(copy->temporary, 0, info->stageCount * sizeof(*copy->temporary));
     VkResult result = VK_ERROR_OUT_OF_HOST_MEMORY;
-    if (!attrs || !copy->attributes || !copy->stages) goto done;
+    if (!attrs || !copy->attributes || !copy->stages || !copy->temporary) goto done;
     memcpy(copy->attributes, input->pVertexAttributeDescriptions, input->vertexAttributeDescriptionCount * sizeof(*copy->attributes));
     memcpy(copy->stages, info->pStages, info->stageCount * sizeof(*copy->stages));
     count = 0;
@@ -197,37 +202,47 @@ static VkResult convert_pipeline(struct scaled_device *device, VkGraphicsPipelin
                 copy->attributes[j].format = formats[i].integer;
                 break;
             }
-    result = VK_ERROR_UNKNOWN;
+    result = VK_SUCCESS;
     for (uint32_t j = 0; j < info->stageCount; ++j) {
         VkPipelineShaderStageCreateInfo *stage = &copy->stages[j];
-        if (stage->stage != VK_SHADER_STAGE_VERTEX_BIT) continue;
+        int vertex = stage->stage == VK_SHADER_STAGE_VERTEX_BIT;
         pthread_mutex_lock(&guard);
         struct shader *shader = device->shaders;
         while (shader && shader->handle != stage->module) shader = shader->next;
         pthread_mutex_unlock(&guard);
         /* Module destruction is externally synchronized against pipeline use. */
-        if (!shader || stage->pNext) { *reason = "scaled vertex shader requires a captured module without stage extensions"; goto done; }
+        if (!vertex && (!shader || !hybris_spirv_multiple(shader->code, shader->size))) continue;
+        if (!shader || stage->pNext) {
+            *reason = "stage conversion requires a captured module without stage extensions";
+            result = VK_ERROR_UNKNOWN;
+            goto done;
+        }
         uint32_t *code = NULL;
         size_t size = 0;
-        result = hybris_scaled_spirv(shader->code, shader->size, stage->pName, attrs, count,
-                                    allocator, &code, &size, reason);
+        if (vertex) result = hybris_scaled_spirv(shader->code, shader->size, stage->pName, attrs, count,
+                                                allocator, &code, &size, reason);
+        else {
+            uint32_t model = 0;
+            while (model < 5 && (1u << model) != (uint32_t)stage->stage) ++model;
+            result = model < 5 ? hybris_spirv_entry(shader->code, shader->size, model,
+                stage->pName, allocator, &code, &size, reason) : VK_ERROR_UNKNOWN;
+        }
         if (result != VK_SUCCESS) goto done;
-        hybris_scaled_dump(shader->code, shader->size, code, size, attrs, count);
+        hybris_scaled_dump(shader->code, shader->size, code, size, vertex ? attrs : NULL, vertex ? count : 0);
         VkShaderModuleCreateInfo module = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = size, .pCode = code };
-        result = device->create_shader(device->handle, &module, allocator, &copy->temporary);
+        result = device->create_shader(device->handle, &module, allocator, &copy->temporary[j]);
         hybris_scaled_free(allocator, code);
         if (result != VK_SUCCESS) {
             /* A failed creation does not return an owned shader handle. */
-            copy->temporary = VK_NULL_HANDLE;
+            copy->temporary[j] = VK_NULL_HANDLE;
             goto done;
         }
-        stage->module = copy->temporary;
-        copy->input = *input;
-        copy->input.pVertexAttributeDescriptions = copy->attributes;
-        info->pVertexInputState = &copy->input;
-        info->pStages = copy->stages;
-        goto done;
+        stage->module = copy->temporary[j];
     }
+    copy->input = *input;
+    copy->input.pVertexAttributeDescriptions = copy->attributes;
+    info->pVertexInputState = &copy->input;
+    info->pStages = copy->stages;
 done:
     hybris_scaled_free(allocator, attrs);
     return result;
@@ -256,7 +271,9 @@ static VkResult VKAPI_CALL create_pipelines(VkDevice handle, VkPipelineCache cac
     result = device->create_pipelines(handle, cache, count, changed, allocator, pipelines);
 done:
     if (copies) for (uint32_t i = 0; i < count; ++i) {
-        if (copies[i].temporary) device->destroy_shader(handle, copies[i].temporary, allocator);
+        if (copies[i].temporary) for (uint32_t j = 0; j < copies[i].stage_count; ++j)
+            if (copies[i].temporary[j]) device->destroy_shader(handle, copies[i].temporary[j], allocator);
+        hybris_scaled_free(allocator, copies[i].temporary);
         hybris_scaled_free(allocator, copies[i].stages);
         hybris_scaled_free(allocator, copies[i].attributes);
     }

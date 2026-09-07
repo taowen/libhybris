@@ -2,6 +2,7 @@
 #include "probe.h"
 #include "allocation_fixture.h"
 #include "shaders/scaled.vert.inc"
+#include "shaders/scaled.multi.inc"
 #include "shaders/scaled.frag.inc"
 enum { kScaledImage = 16 };
 static const struct scaled_case { VkFormat format; const char *name; unsigned bits, components, sign; } cases[] = {
@@ -10,7 +11,7 @@ static const struct scaled_case { VkFormat format; const char *name; unsigned bi
  CASE(R16,16,1), CASE(R16G16,16,2), CASE(R16G16B16A16,16,4)
 #undef CASE
 };
-int scaled_vertex_probe(int validate, int route) {
+int scaled_vertex_probe(int validate, int route, int multiple) {
   struct allocation_probe allocations = {0};
   VkAllocationCallbacks callbacks = {.pUserData = &allocations,
     .pfnAllocation = instance_allocate, .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
@@ -239,12 +240,14 @@ int scaled_vertex_probe(int validate, int route) {
   CHECK(p_vkBindBufferMemory(device, readback, rmem, 0));
 
   VkShaderModuleCreateInfo vs_ci = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-    .codeSize = sizeof(kScaledVertSpv), .pCode = kScaledVertSpv};
+    .codeSize = multiple ? sizeof(kScaledMultiSpv) : sizeof(kScaledVertSpv),
+    .pCode = multiple ? kScaledMultiSpv : kScaledVertSpv};
   VkShaderModuleCreateInfo fs_ci = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = sizeof(kScaledFragSpv), .pCode = kScaledFragSpv};
   VkShaderModule vs, fs;
   CHECK(p_vkCreateShaderModule(device, &vs_ci, &callbacks, &vs));
-  CHECK(p_vkCreateShaderModule(device, &fs_ci, &callbacks, &fs));
+  if (multiple) fs = vs;
+  else CHECK(p_vkCreateShaderModule(device, &fs_ci, &callbacks, &fs));
   VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT, 0, 16};
   VkPipelineLayoutCreateInfo pl_ci = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     .pushConstantRangeCount = 1, .pPushConstantRanges = &push};
@@ -364,6 +367,8 @@ int scaled_vertex_probe(int validate, int route) {
     if (!(props.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT)) {
       printf("SCALED UNSUPPORTED format=%s\n", f->name); ++unsupported; continue;
     }
+    int alternate_entry = multiple && (c % 2);
+    stages[0].pName = multiple ? (alternate_entry ? "alternate_vertex" : "scaled_vertex") : "main";
     attribute.format = f->format;
     binding.stride = f->bits / 8 * f->components;
     VkPipeline pipeline;
@@ -427,10 +432,13 @@ int scaled_vertex_probe(int validate, int route) {
       CHECK(p_vkMapMemory(device, rmem, 0, kScaledImage*kScaledImage*4, 0, (void **)&pixels));
       unsigned bad = 0;
       for (unsigned pixel = 0; pixel < kScaledImage*kScaledImage; ++pixel)
-        for (unsigned component = 0; component < 4; ++component)
-          if (pixels[pixel*4+component] != (phase == 2 && component == 0 ? 0 : 255)) ++bad;
-      printf("SCALED format=%s phase=%u expected=%g,%g,%g,%g pixel=%u,%u,%u,%u bad=%u\n",
-        f->name, phase, expected[0], expected[1], expected[2], expected[3], pixels[0],pixels[1],pixels[2],pixels[3],bad);
+        for (unsigned component = 0; component < 4; ++component) {
+          unsigned expected_byte = phase == 2 && component == 0 ? 0 : 255;
+          if (alternate_entry) expected_byte = 255 - expected_byte;
+          if (pixels[pixel*4+component] != expected_byte) ++bad;
+        }
+      printf("SCALED format=%s entry=%s phase=%u expected=%g,%g,%g,%g pixel=%u,%u,%u,%u bad=%u\n",
+        f->name, stages[0].pName, phase, expected[0], expected[1], expected[2], expected[3], pixels[0],pixels[1],pixels[2],pixels[3],bad);
       failures += !!bad;
       p_vkUnmapMemory(device, rmem);
       p_vkDestroyFence(device, fence, NULL);
@@ -443,7 +451,7 @@ int scaled_vertex_probe(int validate, int route) {
   p_vkDestroyRenderPass(device, rp, NULL);
   p_vkDestroyPipelineLayout(device, pipeline_layout, NULL);
   p_vkDestroyShaderModule(device, vs, &callbacks);
-  p_vkDestroyShaderModule(device, fs, &callbacks);
+  if (!multiple) p_vkDestroyShaderModule(device, fs, &callbacks);
   p_vkDestroyImageView(device, view, NULL);
   p_vkDestroyImage(device, image, NULL);
   p_vkDestroyBuffer(device, readback, NULL);
