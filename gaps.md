@@ -13,8 +13,10 @@ KGSL 或定制 Zink 顶点模拟。此前 fork 的通过记录保留为历史，
 拒绝 core 3.3；core 3.2 的 packed attribute 用例失败。Mali Blender 显示
 需要 OpenGL 4.3 的对话框，启动脚本未执行；Redmi 未安装 Blender。详见
 [当前官方 Mesa 证据](tests/desktop-gl/README.md#official-upstream-results-2026-09-07)。
-后续工作沿用官方 Mesa；这些驱动能力与应用缺口仍需验收，不能通过恢复私有
-Mesa 补丁或提高宣告值来记作完成。G07/G08/G10/G13 等整项保持开放。
+后续工作沿用官方 Mesa。按用户确认，Zink 不兼容 Blender 可以接受，
+Blender 经 Zink 的启动/渲染不再作为验收条件；上述失败保留为观察记录。
+其余适用的驱动能力、标准接口和回归项继续验收，不能通过恢复私有 Mesa
+补丁或提高宣告值来记作完成。G07/G08/G10/G13 等整项保持开放。
 
 ## 1. 结论与边界
 

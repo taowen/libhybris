@@ -76,7 +76,8 @@ shows the OpenGL 4.3-or-higher requirement dialog. Its Python startup marker
 never executes; the watchdog terminates the waiting process after recording
 its window and mappings (exit 137 is this cleanup, not a spontaneous crash).
 Blender was absent from the tested Redmi rootfs; Turnip probe success does not
-prove Blender rendering. Private Xvfb :189 and both ADB reverses are removed
+prove Blender rendering. The user accepts Blender incompatibility through
+Zink, so Blender-on-Zink is not an acceptance gate. Private Xvfb :189 and both ADB reverses are removed
 after validation.
 
 The parent Ardesk build also compiles official Zink+Turnip, stages the standard

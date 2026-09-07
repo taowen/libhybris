@@ -13,7 +13,9 @@ are historical. Official Turnip passes both EGL/GLX runs with 38 identical
 images, 44 valid SPIR-V modules and no SyncVal errors. Official Mali Zink
 rejects GL 3.3 and fails the GL 3.2 packed-attribute regression; installed
 Blender waits at its OpenGL 4.3 requirement dialog. No capability is overridden.
-Desktop-gl README records the exact upstream results and remaining app gaps.
+Desktop-gl README records the exact upstream results. Per the current user
+requirement, Blender compatibility through Zink is not an acceptance gate; its
+failed startup remains an observation, not a reason to maintain a Mesa fork.
 
 ## Delivery order
 
