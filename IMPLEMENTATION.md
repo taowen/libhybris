@@ -701,3 +701,11 @@ limits and collector hash are recorded independently of image acceptance.
 This improves first-failure evidence but is not an isolated compositor, a GPU
 trace or a debugger backtrace. See tests/wsi/README.md for the actual old-library
 stall and normal-window verification and remaining limitations.
+
+Tests/wsi/compositor provides an independent debug APK and per-run process
+wrapper. The small Java/JNI host supplies a real Android Surface to anlabwc;
+its native dependency closure and xkb assets are imported from a caller-selected
+APK with recorded hashes. The separate package/UID and fresh process remove
+cross-run native-state accumulation without restarting Ardesk. Both X300 and
+Redmi now pass the same three-size screen gate on this chosen backend. This is
+not a source-built compositor or a fix for long-lived backend resource leaks.

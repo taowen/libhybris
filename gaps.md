@@ -544,3 +544,21 @@ compositor 状态和截图。文本每份最多 256 KiB，采集命令有五秒�
 回归。中断期间测试桌面已退出，重新启动后验证，未安装 APK。日志首条
 可能早于运行、PID 重启不跟随、进程退出后无法追补现场；无 GPU/backtrace/
 release-fence 证据。独立 compositor 与整体验收仍未完成。
+
+2026-09-07 独立 compositor 开发夹具：新增 tests/wsi/compositor，单独
+包名 io.taowen.hybriswsitest、UID、Activity Surface、进程和 runtime/socket，
+只运行 anlabwc，不启动 rootfs/xterm/Gladio/Vortek。JNI/Java 实际编译，
+后端及 DT_NEEDED 闭包、xkb 从明确指定的 APK 导入并记录 SHA256，不冒称
+后端源码可重现构建。两机经现有 install-apk.sh 安装独立包，未替换 Ardesk。
+每次 wrapper 只停止专用测试包，等待新 socket 和单一 PID 后执行既有
+探针，最后清空测试进程并记录前后 PID。Surface 销毁即退出测试进程，
+固定横屏；不声称后台运行或 Surface 重建恢复。
+最终 X300 probe `20260907T095812-bf739cc9`、红米
+`20260907T095812-54cb3f53` 均三尺寸 24 帧及 254,976 屏幕像素 PASS。
+两机开始时均无旧 PID，使用 29659/2198，结束无残留；compositor 日志
+16,777/16,885 字节未截断，reader 退出。此前两轮独立 wrapper 也通过。
+红米的独立后端有 android_wlegl，原 Ardesk 旧 endpoint 不支持的结论仍
+限于原 APK。后端八客户端绑定表长期回收缺口未修，文件/字体缓存仍跨轮
+存在；这是进程/native 状态隔离，不是全文件系统或 Android GPU 隔离。
+本批新 APK/夹具已实际构建验证，libhybris 本体未变，未重复冒称完整离屏
+回归；标准 ICD WSI、present 捕获回放、真实应用及 G03/G11/G12 仍未关闭。

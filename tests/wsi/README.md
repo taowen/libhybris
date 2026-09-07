@@ -237,3 +237,10 @@ new full headless baseline. The test desktops had stopped during the interrupted
 session and were started again; no APK was installed. Standalone compositor
 isolation still requires a separate Android Surface/process lifecycle and is
 not implemented by this collector.
+
+A separate [disposable compositor APK](compositor/README.md) now provides the
+same fixed-window probe with its own package, process and Android Surface.
+Its wrapper restarts only that test package for each run, avoiding pollution
+of the Ardesk desktop's native compositor state. Backend binaries are imported
+from an explicitly selected APK and hashed; this does not fix the backend's
+long-lived binding-table reclamation gap.
