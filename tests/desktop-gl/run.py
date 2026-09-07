@@ -92,7 +92,7 @@ try:
     except subprocess.TimeoutExpired as error:
         code=124;(out/'probe.log').write_bytes((error.stdout or b'')+(error.stderr or b''))
     artifacts=['maps.txt','image.rgba']
-    if a.vertex_execution:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)] + [f'attributes-{phase}.rgba' for phase in range(11)]
+    if a.vertex_execution:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)] + [f'attributes-{phase}.rgba' for phase in range(11)] + [f'indexed-{phase}.rgba' for phase in range(8)]
     if a.vertex_prepass:artifacts += [f'vertex-prepass-{phase}.rgba' for phase in range(3)]
     if a.vertex_execution:
         listing=shell('cd '+shlex.quote(remote)+' && ls dump*.spv',capture_output=True,text=True)
@@ -115,6 +115,8 @@ if code==0:
             draws=re.findall(r'ZINK_VERTEX_PREPASS draw vertices=(\d+) instances=(\d+) inputs=(\d+)', (out/'probe.log').read_text())
             if draws.count(('3','2','0'))!=3 or ('3','1','0') not in draws or draws.count(('3','2','1'))!=12 or draws.count(('3','4','4'))!=5 or draws.count(('3','4','3'))!=2 or draws.count(('3','2','4'))!=4:
                 raise ValueError('automatic Zink vertex prepass cases incomplete')
+            if draws.count(('7','1','3'))!=3 or draws.count(('7','1','2'))!=2 or draws.count(('6','1','2'))!=3:
+                raise ValueError('indexed Zink vertex prepass cases incomplete')
             record['automatic_vertex_prepass_draws']=draws
         if a.vertex_prepass:
             for phase in range(3):
@@ -136,6 +138,11 @@ if code==0:
             for phase in range(11):
                 if f'ATTRIBUTE_COMPUTE_RESTORE phase={phase} PASS rgba=17,34,51,255' not in (out/'probe.log').read_text():
                     raise ValueError('compute sampler restoration failed or missing')
+            for phase in range(8):
+                wanted=bytes(c for y in range(16) for x in range(16) for c in ((0,0,255,255) if phase==6 or x+y==15 else (255,0,0,255) if x+y<15 else (0,255,0,255)))
+                if f'INDEXED_VERTEX phase={phase} PASS bad_pixels=0 error=0x0' not in (out/'probe.log').read_text() or (out/f'indexed-{phase}.rgba').read_bytes()!=wanted:
+                    raise ValueError('indexed vertex image failed or missing')
+            record['indexed_vertex_cases']=8
             record['attribute_vertex_cases']=11
             record['compute_sampler_restore_cases']=11
             for phase in range(3):

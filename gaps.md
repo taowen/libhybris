@@ -722,3 +722,17 @@ compat/GLX）通过十一阶段属性/纹理绘制及每阶段应用 compute 采
 且零错误，324 份 SPIR-V 校验通过。完整结果索引见桌面 GL README。
 尚未覆盖一般越界/别名、所有纹理类型、64 位、完整顶点 SSBO、索引计算
 转换、性能或 Blender；没有提高能力宣告，G07/G08/G10/G13 继续开放。
+
+
+2026-09-07 索引顶点计算：Mesa `4c60971` 将原 EBO 绑定为只读 SSBO，
+支持 8/16/32 位索引、非零偏移和带符号 base vertex。计算阶段生成回放
+uint32 索引流并保留原拓扑；restart 位置跳过源 VS，回放使用 UINT32_MAX。
+取数复用尾部补齐并按 VBO 范围守卫，不在该转换内部读回索引。八个新
+用例覆盖 GPU copy 后的 EBO、正负 base、重复索引、全 restart 与自定义
+restart；最后一项仍先经过 Gallium CPU 改写，不能算应用级纯 GPU 路径。
+原直接/已解码间接的索引属性用例也进入计算转换并通过。六轮固定构建
+原生/计算 × EGL core/compat/GLX 全通过，26 张图像跨轮一致，SyncVal
+零错误，420 份 SPIR-V 校验通过。原验证器对上游改写后缓冲区布局的错误
+预期、最终结果与范围已记入桌面 GL README。client indices、多 draw
+通用处理、间接参数/自定义 restart 去除 CPU 改写、完整 SSBO/别名/robust
+语义、性能和 Blender 仍开放，未提高任何能力或关闭整项验收。

@@ -822,3 +822,16 @@ errors and 324 valid SPIR-V modules. See the desktop-gl README for result IDs
 and explicit limits. No version/limit override or whole-gap closure was added.
 The baseline now records GLES stage limits; three native/hybris comparisons
 agree. The route decision and evidence are recorded in gaps.md section 4.2.
+
+
+Mesa 4c60971 adds resource-backed indexed vertex compute: GPU index fetch,
+signed base-vertex addressing, per-VBO bounds guards and a generated uint32
+restart-preserving replay stream. Eight ordinary GL cases cover three index
+widths, exact partial tails, repeated indices, all-restart input and custom
+restart compatibility. The latter still uses Gallium's existing CPU rewrite;
+indirect argument decoding also remains synchronous. Six pinned native/compute
+EGL core/compat/GLX runs pass 26 identical images and 420 valid SPIR-V modules
+with no SyncVal errors. Existing indexed attribute/decoded indirect draws enter
+the new path. Desktop-gl README retains the earlier verifier failures and
+specific evidence. Full SSBO/aliasing/robustness, client indices, all draw/stage
+forms, performance and Blender are not claimed; capabilities remain unchanged.

@@ -7,7 +7,7 @@ surfaceless EGL pbuffers, with no X server, APK or compositor. GLX pbuffer conte
 below. A working Blender renderer and displayed desktop GL windows remain open.
 
 Build prerequisites are the parent Ardesk checkout's clean Mesa revision
-`080a97977a453a9d4b2eea59426c9ee84df19007`, its AArch64 cross file, Podman and
+`4c609714c96e9ad8ad12a313872ec42c7e5611ea`, its AArch64 cross file, Podman and
 its existing GL cross-builder. The default cached builder image is
 `localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` can select an
 explicit available replacement. The script records the resolved image ID,
@@ -536,3 +536,78 @@ GLX used private Xvfb :185 and its temporary ADB reverse.
 Full vertex SSBO support, indexed/indirect compute conversion without CPU
 argument decoding, all stages/topologies, caching/performance, desktop window
 presentation and Blender remain open. G07/G08/G10/G13 are not closed by this batch.
+
+
+## Indexed vertex compute and restart replay (2026-09-07)
+
+Mesa `4c60971` extends the experimental prepass to resource-backed 8/16/32-bit
+index buffers. The original EBO is an internal read-only SSBO, sharing a binding
+if it is also used as a VBO. Range checks cover the index byte span, and the
+existing tail buffer handles final partial words. The compute shader obtains
+the original index and adds signed base vertex for input addressing and
+VertexID; BaseVertex/FirstVertex retain their indexed-draw meaning.
+Per-vertex input loads are guarded against exceeding the physical VBO range;
+this is not a claim of full GL robustness semantics.
+
+Each compute invocation handles one index occurrence per instance. Instance 0
+also writes a uint32 replay index stream after the generated vertex records.
+Restart entries become UINT32_MAX and return before executing the original
+vertex shader. Other entries select their generated vertex record. Replay keeps
+the original topology and restart enable, and uses zero base vertex with an
+explicit index/shader-buffer barrier. This private conversion reads no indices
+back to the CPU. Client-memory indices, general direct multidraw batches and
+indirect argument decoding without CPU access are not newly implemented.
+
+Repeated vertices may execute more than once: GL allows implementation-dependent
+vertex invocation reuse/counts, so this workload does not require identical
+atomic invocation counts between native and compute execution. Full shader
+memory side effects and aliasing still require separate verification.
+See [OpenGL 4.3, section 7.12](https://registry.khronos.org/OpenGL/specs/gl/glspec43.compatibility.pdf).
+
+The ordinary application fixture `indexed_draw.c` GPU-copies uploaded indices
+into the actual EBO, then draws two triangles. VertexID, signed BaseVertex and
+BaseInstance are checked in the VS; fragment PrimitiveID distinguishes the two
+triangles and detects incorrect strip continuation. All 256 pixels are checked,
+with a blue diagonal avoiding edge-ownership ambiguity. Every case uses a fresh
+EBO so allocation reuse does not hide its short tail.
+
+| Phase | Index width | Base vertex | Topology / restart |
+| --- | --- | --- | --- |
+| 0 | 8 | +4 | Strip, fixed 255, 9-byte EBO |
+| 1 | 16 | -2 | Strip, fixed 65535, 18-byte EBO |
+| 2 | 32 | +1 | Strip, fixed UINT32_MAX |
+| 3–5 | 8 / 16 / 32 | +4 / -2 / +1 | Triangle list with repeated indices |
+| 6 | 8 | +4 | All entries restart; retain the blue clear |
+| 7 | 16 | -2 | Application restart value 0x1234 |
+
+All draws have a two-element prefix and base instance 3. Phase 7 passes through
+Gallium's existing CPU restart rewrite before reaching Zink: the actual prepass
+log shows index_size=2 and restart_index=65535. It verifies the combined path,
+not GPU-only handling of that application-level custom value. The earlier
+`20260907T134758-d6b63643` and `20260907T135052-78f7b919` remain FAIL records:
+pixels passed, but the expected tail-binding count was wrong because this
+upstream conversion produced a padded index allocation. The revised fixture
+separates fixed-restart tail cases from custom-restart compatibility.
+
+Strict pinned-build runs on Mali X300, with standard Khronos validation/SyncVal:
+
+| API | Native | Compute |
+| --- | --- | --- |
+| EGL core 3.3 | `20260907T135532-c152c3a6` PASS | `20260907T135532-ec193ca0` PASS |
+| EGL compatibility 3.2 | `20260907T135532-400bcdbf` PASS | `20260907T135532-10e7ae6f` PASS |
+| GLX core 3.3 | `20260907T135532-174351eb` PASS | `20260907T135533-d7f696c1` PASS |
+
+All six record the same clean Mesa/runtime/probe manifest and identical sets of
+26 images. Existing packed, UBO, sampled/unaligned attribute and application
+compute-state workloads pass. The original direct indexed attribute phase and
+two decoded indexed indirect draws now enter the compute path as well; their
+markers are present in all three compute runs. Indirect argument/count decoding
+still synchronously reads GPU buffers through the previously documented helper.
+SyncVal is explicitly enabled and reports no errors. Native runs each have 15
+SPIR-V modules, compute runs 125; all 420 validate with Vulkan 1.3 and uniform
+buffer standard layout. Per-result JSON records commands, hashes, versions and
+disassemblies. GLX uses private Xvfb :186 and a temporary ADB reverse.
+
+No GL/Vulkan capability is raised. All topology/stage combinations, full vertex
+SSBO semantics, cache/performance, desktop windows and Blender remain open;
+this does not close G07/G08/G10/G13.
