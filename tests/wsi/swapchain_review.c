@@ -111,12 +111,13 @@ int swapchain_review(PFN_vkGetInstanceProcAddr resolver, VkInstance instance,
     VkFence acquired;
     OK(vkCreateFence(device, &fc, NULL, &acquired));
     uint32_t indices[8], mask = 0;
+    VkFence old_fences[8];
     for (uint32_t i = 0; i < count; ++i) {
-        OK(vkAcquireNextImageKHR(device, old, 5000000000ull, VK_NULL_HANDLE, acquired, &indices[i]));
+        OK(vkCreateFence(device, &fc, NULL, &old_fences[i]));
+        OK(vkAcquireNextImageKHR(device, old, 5000000000ull, VK_NULL_HANDLE, old_fences[i], &indices[i]));
         if (indices[i] >= count || (mask & (1u << indices[i]))) return 2;
         mask |= 1u << indices[i];
-        OK(vkWaitForFences(device, 1, &acquired, VK_TRUE, 5000000000ull));
-        OK(vkResetFences(device, 1, &acquired));
+        OK(vkWaitForFences(device, 1, &old_fences[i], VK_TRUE, 5000000000ull));
     }
     uint32_t unavailable = UINT32_MAX;
     VkResult result = vkAcquireNextImageKHR(device, old, 0, VK_NULL_HANDLE, acquired, &unavailable);
@@ -155,7 +156,6 @@ int swapchain_review(PFN_vkGetInstanceProcAddr resolver, VkInstance instance,
     OK(vkAcquireNextImage2KHR(device, &ai, &fresh_index));
     if (fresh_index >= fresh_count) return 2;
     OK(vkWaitForFences(device, 1, &acquired, VK_TRUE, 5000000000ull));
-    OK(vkResetFences(device, 1, &acquired));
     VkCommandPoolCreateInfo pc = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, .queueFamilyIndex = family};
     VkCommandPool pool;
     OK(vkCreateCommandPool(device, &pc, NULL, &pool));
@@ -213,9 +213,11 @@ int swapchain_review(PFN_vkGetInstanceProcAddr resolver, VkInstance instance,
     VkSemaphoreCreateInfo sem = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     VkSemaphore ready;
     OK(vkCreateSemaphore(device, &sem, NULL, &ready));
+    VkFence submit_fence;
+    OK(vkCreateFence(device, &fc, NULL, &submit_fence));
     VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
         .pCommandBuffers = &command, .signalSemaphoreCount = 1, .pSignalSemaphores = &ready};
-    OK(vkQueueSubmit(queue, 1, &submit, acquired));
+    OK(vkQueueSubmit(queue, 1, &submit, submit_fence));
     VkSwapchainKHR chains[] = {old, fresh};
     uint32_t image_indices[] = {indices[0], fresh_index};
     VkResult results[2] = {VK_ERROR_UNKNOWN, VK_ERROR_UNKNOWN};
@@ -224,7 +226,7 @@ int swapchain_review(PFN_vkGetInstanceProcAddr resolver, VkInstance instance,
         .pSwapchains = chains, .pImageIndices = image_indices, .pResults = results};
     OK(vkQueuePresentKHR(queue, &present));
     if (results[0] != VK_SUCCESS || results[1] != VK_SUCCESS) return 2;
-    OK(vkWaitForFences(device, 1, &acquired, VK_TRUE, 5000000000ull));
+    OK(vkWaitForFences(device, 1, &submit_fence, VK_TRUE, 5000000000ull));
     unsigned char *pixels;
     OK(vkMapMemory(device, memory, 0, image_size * 2, 0, (void **)&pixels));
     for (unsigned image = 0; image < 2; ++image)
@@ -237,16 +239,20 @@ int swapchain_review(PFN_vkGetInstanceProcAddr resolver, VkInstance instance,
         }
     vkUnmapMemory(device, memory);
     OK(vkQueueWaitIdle(queue));
+    OK(vkResetFences(device, 1, &acquired));
+    OK(vkResetFences(device, 1, &submit_fence));
     // Hold every other fresh image, then present one of them. Reacquisition
     // must read the previous buffer's wl_buffer.release from the socket;
     // there is deliberately no application Wayland dispatch between calls.
-    OK(vkResetFences(device, 1, &acquired));
     uint32_t held[8];
+    VkFence held0;
+    OK(vkCreateFence(device, &fc, NULL, &held0));
     for (uint32_t i = 0; i + 1 < fresh_count; ++i) {
-        OK(vkAcquireNextImageKHR(device, fresh, 5000000000ull, VK_NULL_HANDLE, acquired, &held[i]));
+        VkFence fence = i ? acquired : held0;
+        OK(vkAcquireNextImageKHR(device, fresh, 5000000000ull, VK_NULL_HANDLE, fence, &held[i]));
         if (held[i] == fresh_index || held[i] >= fresh_count) return 2;
-        OK(vkWaitForFences(device, 1, &acquired, VK_TRUE, 5000000000ull));
-        OK(vkResetFences(device, 1, &acquired));
+        OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+        if (i) OK(vkResetFences(device, 1, &acquired));
     }
     OK(vkResetCommandPool(device, pool, 0));
     OK(vkBeginCommandBuffer(command, &begin));
@@ -265,8 +271,13 @@ int swapchain_review(PFN_vkGetInstanceProcAddr resolver, VkInstance instance,
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
         0, 0, NULL, 0, NULL, 1, &change);
     OK(vkEndCommandBuffer(command));
-    OK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));
+    submit.waitSemaphoreCount = 0; submit.pWaitSemaphores = NULL;
+    submit.signalSemaphoreCount = 0; submit.pSignalSemaphores = NULL;
+    OK(vkQueueSubmit(queue, 1, &submit, submit_fence));
+    OK(vkWaitForFences(device, 1, &submit_fence, VK_TRUE, 5000000000ull));
+    present.waitSemaphoreCount = 0; present.pWaitSemaphores = NULL;
     present.swapchainCount = 1; present.pSwapchains = &fresh; present.pImageIndices = &held[0];
+    present.pResults = NULL;
     OK(vkQueuePresentKHR(queue, &present));
     uint32_t released;
     OK(vkAcquireNextImageKHR(device, fresh, 5000000000ull, VK_NULL_HANDLE, acquired, &released));
@@ -278,6 +289,9 @@ int swapchain_review(PFN_vkGetInstanceProcAddr resolver, VkInstance instance,
     vkDestroySwapchainKHR(device, fresh, &allocator);
     vkDestroySemaphore(device, ready, NULL);
     vkDestroyFence(device, acquired, NULL);
+    vkDestroyFence(device, submit_fence, NULL);
+    vkDestroyFence(device, held0, NULL);
+    for (uint32_t i = 0; i < count; ++i) vkDestroyFence(device, old_fences[i], NULL);
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyBuffer(device, buffer, NULL);
     vkFreeMemory(device, memory, NULL);

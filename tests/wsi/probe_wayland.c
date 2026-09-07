@@ -54,6 +54,34 @@ static void frame_done(void *data, struct wl_callback *callback, uint32_t time) 
 }
 static const struct wl_callback_listener frame_listener = {.done = frame_done};
 
+static unsigned validation_errors;
+static VKAPI_ATTR VkBool32 VKAPI_CALL validation_message(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT types,
+    const VkDebugUtilsMessengerCallbackDataEXT *data, void *user)
+{
+    (void)types;
+    (void)user;
+    if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        printf("VALIDATION %s: %s\n", data->pMessageIdName ? data->pMessageIdName : "(unnamed)",
+               data->pMessage ? data->pMessage : "");
+        ++validation_errors;
+    }
+    return VK_FALSE;
+}
+
+static int has_layer(PFN_vkEnumerateInstanceLayerProperties enumerate, const char *name)
+{
+    uint32_t count = 0;
+    if (!enumerate || enumerate(&count, NULL) != VK_SUCCESS) return 0;
+    VkLayerProperties *layers = calloc(count, sizeof(*layers));
+    if (count && !layers) return 0;
+    if (enumerate(&count, layers) != VK_SUCCESS) { free(layers); return 0; }
+    int found = 0;
+    for (uint32_t i = 0; i < count; ++i) found |= !strcmp(layers[i].layerName, name);
+    free(layers);
+    return found;
+}
+
 static void dump_maps(const char *phase) {
     char path[80];
     snprintf(path, sizeof(path), "maps-%s.txt", phase);
@@ -85,9 +113,10 @@ int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "--icd-version")) return icd_version();
     if (argc != 1) return 2;
     int review = getenv("HYBRIS_WSI_SWAPCHAIN_REVIEW") != NULL;
+    int validate = getenv("HYBRIS_WSI_VALIDATION") != NULL;
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("WSI_CLIENT pid=%ld\n", (long)getpid());
-    alarm(45);
+    alarm(validate || getenv("GFXRECON_CAPTURE_FILE") ? 180 : 45);
     struct window w = {0};
     w.display = wl_display_connect(NULL);
     if (!w.display) { printf("WSI connect errno=%d\n", errno); return 2; }
@@ -112,13 +141,46 @@ int main(int argc, char **argv) {
     if (!gip) return 2;
     VkInstance instance = VK_NULL_HANDLE;
     V(vkCreateInstance);
-    const char *extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME};
+    const char *layer = "VK_LAYER_KHRONOS_validation";
+    const char *extensions[4] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME};
+    PFN_vkEnumerateInstanceLayerProperties enumerate_layers =
+        (PFN_vkEnumerateInstanceLayerProperties)gip(VK_NULL_HANDLE, "vkEnumerateInstanceLayerProperties");
+    if (validate && !has_layer(enumerate_layers, layer)) {
+        printf("WSI_VALIDATION layer=MISSING\n");
+        return 2;
+    }
+    VkValidationFeatureEnableEXT syncval = VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
+    VkDebugUtilsMessengerCreateInfoEXT debug = {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+        .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+        .pfnUserCallback = validation_message};
+    VkValidationFeaturesEXT features = {
+        .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT, .pNext = &debug,
+        .enabledValidationFeatureCount = 1, .pEnabledValidationFeatures = &syncval};
     VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = review ? VK_API_VERSION_1_1 : VK_API_VERSION_1_0};
     VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app, .enabledExtensionCount = 2, .ppEnabledExtensionNames = extensions};
+    if (validate) {
+        ci.pNext = &features;
+        ci.enabledLayerCount = 1;
+        ci.ppEnabledLayerNames = &layer;
+        ci.enabledExtensionCount = 4;
+    }
     CHECK(vkCreateInstance(&ci, NULL, &instance));
     dump_maps("instance");
     V(vkDestroyInstance); V(vkCreateWaylandSurfaceKHR); V(vkDestroySurfaceKHR);
+    VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
+    PFN_vkDestroyDebugUtilsMessengerEXT destroy_messenger = NULL;
+    if (validate) {
+        V(vkCreateDebugUtilsMessengerEXT);
+        destroy_messenger = (PFN_vkDestroyDebugUtilsMessengerEXT)gip(instance, "vkDestroyDebugUtilsMessengerEXT");
+        if (!destroy_messenger) return 2;
+        CHECK(vkCreateDebugUtilsMessengerEXT(instance, &debug, NULL, &messenger));
+    }
     V(vkEnumeratePhysicalDevices); V(vkGetPhysicalDeviceQueueFamilyProperties);
     V(vkGetPhysicalDeviceSurfaceSupportKHR); V(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
     V(vkGetPhysicalDeviceSurfaceFormatsKHR); V(vkGetPhysicalDeviceMemoryProperties);
@@ -143,6 +205,8 @@ int main(int argc, char **argv) {
             if (result == VK_SUCCESS) vkDestroySurfaceKHR(instance, rejected, NULL);
             if (result != VK_ERROR_UNKNOWN) return 2;
         }
+        if (destroy_messenger && messenger) destroy_messenger(instance, messenger, NULL);
+        printf("WSI_VALIDATION errors=%u\n", validation_errors);
         vkDestroyInstance(instance, NULL);
         xdg_toplevel_destroy(toplevel);
         xdg_surface_destroy(xdg_surface);
@@ -153,7 +217,7 @@ int main(int argc, char **argv) {
         wl_display_disconnect(w.display);
         dlclose(library);
         printf("WSI_MISSING_WLEGL rejection=PASS window=UNSUPPORTED\n");
-        return 3;
+        return validation_errors ? 2 : 3;
     }
     if (surface_lifecycle(w.display, w.compositor, instance, vkCreateWaylandSurfaceKHR, vkDestroySurfaceKHR)) return 2;
     VkSurfaceKHR surface;
@@ -291,7 +355,7 @@ int main(int argc, char **argv) {
                 .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
             vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &host, 0, NULL, 0, NULL);
             CHECK(vkEndCommandBuffer(command));
-            VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
             VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .waitSemaphoreCount = 1,
                 .pWaitSemaphores = &acquired, .pWaitDstStageMask = &wait_stage, .commandBufferCount = 1,
                 .pCommandBuffers = &command, .signalSemaphoreCount = 1, .pSignalSemaphores = &rendered[index]};
@@ -344,7 +408,11 @@ int main(int argc, char **argv) {
         free(rendered); free(images);
     }
     vkDestroySwapchainKHR(device, previous, NULL);
-    vkDestroyDevice(device, NULL); vkDestroySurfaceKHR(instance, surface, NULL); vkDestroyInstance(instance, NULL);
+    vkDestroyDevice(device, NULL); vkDestroySurfaceKHR(instance, surface, NULL);
+    if (destroy_messenger && messenger) destroy_messenger(instance, messenger, NULL);
+    printf("WSI_VALIDATION errors=%u\n", validation_errors);
+    if (validation_errors) return 2;
+    vkDestroyInstance(instance, NULL);
     xdg_toplevel_destroy(toplevel); xdg_surface_destroy(xdg_surface); wl_surface_destroy(wl_surface);
     xdg_wm_base_destroy(w.shell); wl_compositor_destroy(w.compositor); wl_registry_destroy(registry);
     wl_display_disconnect(w.display);

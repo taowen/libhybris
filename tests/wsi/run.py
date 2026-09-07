@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from manifest import sha256_file, verify_manifest
 from screen_evidence import verify_screen
 from diagnostics import Diagnostics
+from capture import stage_tools, verify_window_capture
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
@@ -33,9 +34,18 @@ p.add_argument('--icd-hal', help='standard-loader ICD path: Android Vulkan HAL')
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
 p.add_argument('--icd-mali-loader-quirk', action='store_true', help='Opt in to the build-id-scoped Mali MMUD loader workaround')
 p.add_argument('--swapchain-review', action='store_true', help='Exercise swapchain timeout, retirement, allocator and multi-present boundaries')
+p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
+p.add_argument('--validation-manifest', type=Path, help='Original layer JSON matching --validation-layer')
+p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
 a = p.parse_args()
 if a.swapchain_review and not a.icd_hal: p.error('--swapchain-review requires --icd-hal')
+if (a.validation_layer is None) != (a.validation_manifest is None):
+    p.error('--validation-layer and --validation-manifest must be supplied together')
+if a.validation_layer and not a.icd_hal: p.error('--validation-layer requires --icd-hal')
+if a.capture_tools and not a.icd_hal: p.error('--capture-tools requires --icd-hal')
 if not 5 <= a.timeout <= 300: p.error('timeout must be between 5 and 300 seconds')
+if a.timeout == 65 and (a.validation_layer or a.capture_tools):
+    a.timeout = 180
 if not re.fullmatch(r'[A-Za-z0-9_.]+', a.package): p.error('invalid package')
 if (a.icd_hal is None) != (a.vulkan_loader is None):
     p.error('--icd-hal and --vulkan-loader must be supplied together')
@@ -69,6 +79,7 @@ env = {'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker',
        'HYBRIS_ANDROID_SDK_VERSION': sdk, 'XDG_RUNTIME_DIR': files + '/runtime',
        'WAYLAND_DISPLAY': a.wayland}
 libraries = './hybris:./glibc'
+layer_meta = {}
 if a.icd_hal:
     adapter = stage / 'hybris/libhybris-vulkan-icd.so.0'
     if not adapter.is_file():
@@ -81,6 +92,28 @@ if a.icd_hal:
         env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK'] = '1'
     env['VK_DRIVER_FILES'] = remote + '/driver.json'
     libraries = './standard:./hybris:./glibc'
+    layer_dirs = []
+    if a.validation_layer:
+        (stage / 'layers').mkdir()
+        shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
+        layer_meta['validation_layer_sha256'] = sha256_file(a.validation_layer)
+        layer_meta['validation_manifest_sha256'] = sha256_file(a.validation_manifest)
+        layer_json = json.loads(a.validation_manifest.read_text())
+        if layer_json['layer']['name'] != 'VK_LAYER_KHRONOS_validation':
+            raise SystemExit('expected Khronos validation layer manifest')
+        layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
+        (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
+        env['HYBRIS_WSI_VALIDATION'] = '1'
+        layer_dirs.append(remote + '/layers')
+    if a.capture_tools:
+        stage_tools(a.capture_tools, stage, layer_meta, sha256_file)
+        env['VK_INSTANCE_LAYERS'] = 'VK_LAYER_LUNARG_gfxreconstruct'
+        env['GFXRECON_CAPTURE_FILE'] = remote + '/window.gfxr'
+        env['GFXRECON_CAPTURE_FILE_TIMESTAMP'] = 'false'
+        layer_dirs.append(remote + '/capture-tools')
+        libraries += ':./capture-tools:./capture-tools/runtime'
+    if layer_dirs:
+        env['VK_LAYER_PATH'] = ':'.join(layer_dirs)
 else:
     env['HYBRIS_EGLPLATFORM'] = 'wayland'
     env['HYBRIS_VULKANPLATFORM'] = 'wayland'
@@ -94,6 +127,7 @@ metadata = {'run_id': run_id, 'serial': a.serial, 'package': a.package,
 if a.icd_hal:
     metadata['icd_hal'] = a.icd_hal
     metadata['standard_loader_sha256'] = sha256_file(stage / 'standard/libvulkan.so.1')
+    metadata.update(layer_meta)
 apk_paths = shell('pm path ' + shlex.quote(a.package), check=True, capture_output=True, text=True).stdout.splitlines()
 metadata['package_apks'] = []
 for apk in apk_paths:
@@ -203,6 +237,21 @@ finally:
         (out / 'android-library-hashes.json').write_text(json.dumps({
             'exit_code': hashes.returncode, 'output': hashes.stdout, 'errors': hashes.stderr}, indent=2))
         if hashes.returncode and code == 0: code = 2
+    if a.capture_tools and code == 0:
+        try:
+            tool_env = {k: v for k, v in env.items()
+                        if k not in ('VK_INSTANCE_LAYERS', 'GFXRECON_CAPTURE_FILE',
+                                     'GFXRECON_CAPTURE_FILE_TIMESTAMP', 'HYBRIS_WSI_VALIDATION',
+                                     'VK_LAYER_PATH')}
+            tool_prefix = ' '.join(k + '=' + shlex.quote(v) for k, v in tool_env.items())
+            tool_prefix += ' ./glibc/ld-linux-aarch64.so.1 --library-path ' + libraries + ' '
+            log_text = (out / 'probe.log').read_text()
+            metadata['window_capture'] = verify_window_capture(
+                app, remote, tool_prefix, out, log_text)
+            (out / 'device.json').write_text(json.dumps(metadata, indent=2))
+        except (ValueError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+            (out / 'capture-error.txt').write_text(str(error))
+            code = 2
     app('rm -rf ' + shlex.quote(remote), check=True)
     if archive.exists(): archive.unlink()
     diagnostics.finish()
@@ -213,12 +262,20 @@ if code == 0:
         evidence = {'status': 'FAIL', 'error': str(error)}
         code = 2
     (out / 'screen-evidence.json').write_text(json.dumps(evidence, indent=2))
+if code == 0 and a.validation_layer:
+    log_text = (out / 'probe.log').read_text()
+    counts = re.findall(r'^WSI_VALIDATION errors=(\d+)$', log_text, re.M)
+    if len(counts) != 1 or int(counts[0]) != 0:
+        code = 2
+        (out / 'validation-error.txt').write_text('expected one WSI_VALIDATION errors=0 record')
 if code not in (0, 3):
     diagnostics.screen('failure-screen.png')
     (out / 'diagnostics.json').write_text(json.dumps(diagnostics.records, indent=2))
 status = 'PASS' if code == 0 else 'UNSUPPORTED' if code == 3 else 'TIMEOUT' if code in (124, 142) else 'CRASH' if code >= 128 else 'FAIL'
 (out / 'result.json').write_text(json.dumps({'status': status, 'exit_code': code,
-    'scope': 'icd-presentation' if a.icd_hal else 'frontend-presentation'}, indent=2))
+    'scope': ('icd-presentation' +
+              ('-validation' if a.validation_layer else '') +
+              ('-capture' if a.capture_tools else '') if a.icd_hal else 'frontend-presentation')}, indent=2))
 print(out)
 print(status, code)
 raise SystemExit(0 if code in (0, 3) else 1)

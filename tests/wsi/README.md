@@ -269,7 +269,8 @@ Acquire uses a timed native-window dequeue rather than the blocking
 ANativeWindow path. It advertises `VK_KHR_surface`/`VK_KHR_wayland_surface`
 itself and strips those names before HAL `vkCreateInstance`; `VK_KHR_swapchain`
 is advertised on the device and replaced with `VK_ANDROID_native_buffer` for
-the HAL. Windowed validation and capture/replay remain open.
+the HAL. Standard-loader window validation and presented-frame capture are
+opt-in on the ICD path; they are not implied by a presentation PASS.
 
 ```sh
 python3 tests/wsi/run.py --serial SERIAL \
@@ -280,8 +281,30 @@ python3 tests/wsi/run.py --serial SERIAL \
 That ICD path stages `libhybris-vulkan-icd.so.0` and the standard loader,
 runs the same `probe-wayland` window/readback/screenshot gate, and records
 screen evidence. Missing `android_wlegl` still requires eight
-`VK_ERROR_UNKNOWN` rejections. This is not windowed validation or
-capture/replay coverage.
+`VK_ERROR_UNKNOWN` rejections.
+
+Windowed Khronos validation and GFXReconstruct capture are separate ICD-only
+options. They use the existing standard layer/tools, do not build a private
+layer chain, and do not rewrite dispatch headers:
+
+```sh
+python3 tests/wsi/compositor/run.py --serial 192.168.1.28:5555 \
+  --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
+  --vulkan-loader /path/to/standard/libvulkan.so.1 --swapchain-review \
+  --validation-layer tests/baseline/build/validation/extracted/usr/lib/aarch64-linux-gnu/libVkLayer_khronos_validation.so \
+  --validation-manifest tests/baseline/build/validation/extracted/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+python3 tests/wsi/compositor/run.py --serial 192.168.1.28:5555 \
+  --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
+  --vulkan-loader /path/to/standard/libvulkan.so.1 \
+  --capture-tools tests/baseline/build/gfxreconstruct/install
+```
+
+Validation enables `VK_LAYER_KHRONOS_validation` plus SyncVal through
+`CreateInstance` and a live debug-utils messenger; any ERROR fails the probe.
+Capture records the live window probe, then dumps the 24 `vkCmdCopyImageToBuffer`
+commands through `gfxrecon-replay --swapchain virtual` and compares the six
+saved readbacks. That is not a second present, and it does not implement
+swapchain image aliasing unless replay actually requires it.
 
 The frontend destroys the Android Vulkan surface before releasing the owner's
 native-window reference, then destroys the window before its protocol objects.
@@ -308,7 +331,9 @@ cleanup. Raw logs, staged ELF provenance and screenshot evidence remain under
 `tests/wsi/build/isolated/`. These historical runs were replacement-frontend regressions. They did not
 establish ICD swapchain/present or timeout behavior. Subsequent surface review
 is recorded below; current swapchain results are in
-[swapchain review](swapchain-review.md). Presented frame capture remains open.
+[swapchain review](swapchain-review.md). Windowed Khronos validation and
+GFXReconstruct virtual-swapchain capture of the three-size copies now have
+OnePlus 8T and Mali evidence there; that dump is not a second present.
 
 
 ## ICD surface review (2026-09-07)

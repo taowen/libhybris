@@ -21,8 +21,15 @@ p.add_argument('--icd-hal')
 p.add_argument('--vulkan-loader', type=Path)
 p.add_argument('--icd-mali-loader-quirk', action='store_true')
 p.add_argument('--swapchain-review', action='store_true', help='Exercise swapchain timeout, retirement, allocator and multi-present boundaries')
+p.add_argument('--validation-layer', type=Path)
+p.add_argument('--validation-manifest', type=Path)
+p.add_argument('--capture-tools', type=Path)
 a = p.parse_args()
 if a.swapchain_review and not a.icd_hal: p.error('--swapchain-review requires --icd-hal')
+if (a.validation_layer is None) != (a.validation_manifest is None):
+    p.error('--validation-layer and --validation-manifest must be supplied together')
+if a.validation_layer and not a.icd_hal: p.error('--validation-layer requires --icd-hal')
+if a.capture_tools and not a.icd_hal: p.error('--capture-tools requires --icd-hal')
 if (a.icd_hal is None) != (a.vulkan_loader is None):
     p.error('--icd-hal and --vulkan-loader must be supplied together')
 if a.icd_mali_loader_quirk and not a.icd_hal:
@@ -86,6 +93,10 @@ try:
             command += ['--icd-hal', a.icd_hal, '--vulkan-loader', str(a.vulkan_loader)]
         if a.icd_mali_loader_quirk: command += ['--icd-mali-loader-quirk']
         if a.swapchain_review: command += ['--swapchain-review']
+        if a.validation_layer:
+            command += ['--validation-layer', str(a.validation_layer),
+                        '--validation-manifest', str(a.validation_manifest)]
+        if a.capture_tools: command += ['--capture-tools', str(a.capture_tools)]
         code = subprocess.run(command).returncode
         entry = {'iteration': index + 1, 'runner_exit': code}
         record['runs'].append(entry)

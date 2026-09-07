@@ -3,7 +3,8 @@
 The user's implementation is preserved in commit `5a2e72d`. The corrective
 change retains its real FIFO swapchain path and fixes ownership, synchronization
 and capability errors. This is an experimental subset, not full Vulkan WSI
-conformance or windowed validation/capture coverage.
+conformance. Windowed Khronos validation and GFXReconstruct capture of the
+existing three-size copies now have device evidence.
 
 ## Corrections
 
@@ -135,13 +136,42 @@ stability check before launching a client; it remains recorded as ERROR, not an
 ICD failure or PASS. Its completed retry passed. Intermediate successful window
 runs remain in the result archive but do not supersede the final fan-out runs.
 
+## Windowed validation and capture
+
+The existing window probe, not a private layer chain, is the validation and
+capture client. Khronos VVL 1.4.309.0 plus SyncVal covers create, render,
+client-initiated resize, old-swapchain retirement and destroy, including the
+`--swapchain-review` boundary workload. The first validation runs failed with
+12 probe-side acquire-wait / SyncVal errors; after waiting acquire at
+`VK_PIPELINE_STAGE_ALL_COMMANDS_BIT` and giving the review presents dedicated
+fences, both devices reported `WSI_VALIDATION errors=0`.
+
+GFXReconstruct 1.0.5 captures that same three-size window, then
+`gfxrecon-replay --swapchain virtual` dumps the 24 `vkCmdCopyImageToBuffer`
+commands. The six saved live readbacks match the replayed copies byte-for-byte.
+The first capture attempts recorded the window and replayed 24 buffers, then
+failed because dump-resources JSON pads earlier `transferCommands` slots with
+null; flattening those arrays counted 300 entries. The verifier now indexes
+non-null commands by `cmdIndex`. Replay did not use `VkImageSwapchainCreateInfoKHR`;
+swapchain image alias remains unsupported.
+
+| Path / device | Isolated run / client run | Result |
+| --- | --- | --- |
+| ICD + VVL + boundaries / OnePlus 8T | `20260907T225316-dcafbe9f` / `20260907T225317-d03a43fc` | PASS; `WSI_VALIDATION errors=0` |
+| ICD + VVL + boundaries / Mali | `20260907T225316-bf0c6ea9` / `20260907T225316-633801ff` | PASS; `WSI_VALIDATION errors=0` |
+| ICD + capture / OnePlus 8T | `20260907T230116-0e424415` / `20260907T230117-6e85604f` | PASS; 24 copies / 24 presents; six readbacks match |
+| ICD + capture / Mali | `20260907T230116-2c517ce0` / `20260907T230117-bdcd72bc` | PASS; 24 copies / 24 presents; six readbacks match |
+
+Capture is a virtual-swapchain dump of the probe copies, not a second present
+or an application replay. Both compositor identities stayed stable.
+
 ## Remaining gaps
 
-No windowed validation, presented-frame capture/replay, complete image-alias
-support, protected/multi-device presentation, presentation extensions, arbitrary
-application conformance, compositor restart/minimize recovery, full allocation
-failure sweep or comprehensive FD/resource leak accounting is claimed. The two
-swapchains in the boundary workload share one surface; this is not a two-window
-screen comparison. The native-window constructor still has pre-existing
-allocation assertions. Native dequeue currently supplies -1 fences; unsignaled
-import-FD waiting and GPU execution overlap are not established by these tests.
+Complete image-alias support, protected/multi-device presentation, presentation
+extensions, arbitrary application conformance, compositor restart/minimize
+recovery, full allocation failure sweep or comprehensive FD/resource leak
+accounting is not claimed. The two swapchains in the boundary workload share
+one surface; this is not a two-window screen comparison. The native-window
+constructor still has pre-existing allocation assertions. Native dequeue
+currently supplies -1 fences; unsignaled import-FD waiting and GPU execution
+overlap are not established by these tests.

@@ -62,7 +62,12 @@ implemented. Protected/multi-device modes and swapchain-backed image alias
 creation/binding remain unsupported; alias handles are explicitly rejected
 rather than forwarded to a HAL that cannot interpret them. This is not full
 Vulkan 1.1 swapchain conformance. Missing android_wlegl maps to VK_ERROR_UNKNOWN.
-Windowed validation and capture/replay remain open. See the
+The WSI runner can enable the standard Khronos validation layer and
+GFXReconstruct on this window path; see tests/wsi/README.md. OnePlus 8T and
+Mali have device evidence for create/render/resize/retirement/destroy under
+VVL+SyncVal, and for capture/replay of the three-size window copies via
+`--swapchain virtual`. Swapchain-backed image alias creation/binding remains
+unsupported; this replay path did not require it. See the
 [swapchain review and device evidence](../../../tests/wsi/swapchain-review.md).
 
 ## Sources
