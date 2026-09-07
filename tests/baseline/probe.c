@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
     rc = caps_probe(1);
   else if (!strncmp(mode, "scaled-vertex", 13))
     rc = scaled_vertex_probe(strstr(mode, "validation") != NULL,
-      strstr(mode, "gdpa") ? 1 : strstr(mode, "elf") ? 2 : strstr(mode, "linked") ? 3 : 0, strstr(mode, "literal") ? 2 : strstr(mode, "multi") != NULL);
+      strstr(mode, "gdpa") ? 1 : strstr(mode, "elf") ? 2 : strstr(mode, "linked") ? 3 : 0, strstr(mode, "matarray") ? 6 : strstr(mode, "nested") ? 5 : strstr(mode, "array") ? 4 : strstr(mode, "matrix") ? 3 : strstr(mode, "literal") ? 2 : strstr(mode, "multi") != NULL);
   else if (!strcmp(mode, "ubo-template"))
     rc = ubo_template_probe(0);
   else if (!strcmp(mode, "ubo-template-validation"))

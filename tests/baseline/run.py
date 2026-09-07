@@ -246,6 +246,7 @@ for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'scaled-vertex', binary))
     cases.append((backend, 'scaled-vertex-multi', binary))
     cases.append((backend, 'scaled-vertex-literal', binary))
+    cases.extend((backend, 'scaled-vertex-' + shape, binary) for shape in ('matrix', 'array', 'nested', 'matarray'))
 
 timeline_queue_cases = ('timeline-queues-core', 'timeline-queues-khr')
 timeline_cases = tuple('timeline-' + family + suffix for family in ('core', 'khr')
@@ -273,6 +274,7 @@ if a.icd_hal:
               for mode in ('version', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
+    cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray'))
     cases.append(('icd-linked', 'scaled-vertex-linked', 'probe-glibc-linked'))
     cases.append(('icd-linked', 'scaled-vertex-multi-linked', 'probe-glibc-linked'))
     cases.append(('icd-linked', 'scaled-vertex-literal-linked', 'probe-glibc-linked'))
@@ -290,6 +292,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
+        cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray'))
         cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
@@ -373,7 +376,12 @@ try:
                            stdout=subprocess.DEVNULL, timeout=30)
             from scaled_evidence import scaled_evidence
             try:
-                evidence = scaled_evidence(dump_local, decoded, a.scaled_vertex_compat == 'force', a.bundle / ('src/shaders/scaled.multi.inc' if 'multi' in mode else 'src/shaders/scaled.literal.inc' if 'literal' in mode else 'src/shaders/scaled.vert.inc'))
+                shape = next((shape for shape in ('matarray', 'matrix', 'nested', 'array') if shape in mode), None)
+                if shape:
+                    from aggregate_evidence import aggregate_evidence
+                    evidence = aggregate_evidence(dump_local, decoded, a.bundle / ('src/shaders/scaled.' + shape + '.inc'))
+                else:
+                    evidence = scaled_evidence(dump_local, decoded, a.scaled_vertex_compat == 'force', a.bundle / ('src/shaders/scaled.multi.inc' if 'multi' in mode else 'src/shaders/scaled.literal.inc' if 'literal' in mode else 'src/shaders/scaled.vert.inc'))
                 (a.out / (name + '-shaders.json')).write_text(json.dumps(evidence, indent=2) + '\n')
             except (ValueError, OSError, subprocess.CalledProcessError) as exc:
                 print(name, 'scaled shader evidence failed:', exc, flush=True)

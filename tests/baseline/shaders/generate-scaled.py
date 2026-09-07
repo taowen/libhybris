@@ -31,10 +31,16 @@ with tempfile.TemporaryDirectory(prefix='hybris-scaled-shaders-') as temporary:
     subprocess.run(['spirv-as', '--target-env', 'spv1.0', '--preserve-numeric-ids', str(assembly_path), '-o', str(literal)], check=True)
     multiple = output / 'multiple.spv'
     subprocess.run(['spirv-link', '--target-env', 'vulkan1.1', str(alternate), str(fragment), str(selected), '-o', str(multiple)], check=True)
+    aggregates = []
+    for variant, name in enumerate(('matrix', 'array', 'nested', 'matarray'), 3):
+        target = output / (name + '.spv')
+        subprocess.run(['glslangValidator', '-V', '-DHYBRIS_AGGREGATE=' + str(variant),
+                        str(here / 'scaled.aggregate.vert'), '-o', str(target)], check=True)
+        aggregates.append((target, 'scaled.' + name + '.inc', 'kScaled' + name.title() + 'Spv'))
     for path, filename, symbol in ((vertex, 'scaled.vert.inc', 'kScaledVertSpv'),
                                    (fragment, 'scaled.frag.inc', 'kScaledFragSpv'),
                                    (multiple, 'scaled.multi.inc', 'kScaledMultiSpv'),
-                                   (literal, 'scaled.literal.inc', 'kScaledLiteralSpv')):
+                                   (literal, 'scaled.literal.inc', 'kScaledLiteralSpv'), *aggregates):
         subprocess.run(['spirv-val', '--target-env', 'vulkan1.1', str(path)], check=True)
         binary = path.read_bytes()
         words = struct.unpack('<' + 'I' * (len(binary) // 4), binary)

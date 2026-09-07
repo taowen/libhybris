@@ -157,8 +157,17 @@ receive temporary modules for their selected entries; the original module can
 still supply later pipeline variants. All temporary stage modules are freed
 after the backend call. Supported inputs are direct Location
 scalar/vec2/vec3/vec4 float32 values, direct loads, component
-access chains and pointer copies. It rejects matrix/array/interface-block and
-unhandled pointer forms. Grammar-derived masks exclude definite literal operands
+access chains and pointer copies. Float32 matrices and fixed-size arrays
+(including nested arrays and arrays of matrices) with a root Location are
+lowered by a separate aggregate pass. Each leaf becomes an input at its own
+Location; entry initialization reconstructs the original float aggregate in
+Private storage. Only leaves with an active scaled attribute become integer
+fetches, so native float columns can coexist with signed and unsigned scaled
+columns. Dynamic access chains and whole-aggregate value loads preserve their
+float types. SPIR-V 1.4+ entries retain the used Private global in the interface;
+earlier versions list only the new Input leaves.
+Interface blocks/member Locations, specialization-sized arrays, affected
+float16/float64 aggregates and unhandled Input pointer forms remain unsupported. Grammar-derived masks exclude definite literal operands
 such as shuffle/extract indices and parameter-free enums from pointer/liveness
 scans. Ambiguous or variable-width operand sequences still use conservative
 scanning: a literal can cause rejection or retain an extra global declaration

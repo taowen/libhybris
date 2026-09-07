@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "scaled_vertex.h"
 #include "spirv_entry.h"
+#include "spirv_aggregate.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -249,15 +250,22 @@ VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entr
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
     const char **reason)
 {
-    if (!hybris_spirv_multiple(code, size))
-        return convert_scaled(code, size, entry, attributes, attribute_count, allocator, output, output_size, reason);
-    uint32_t *selected = NULL;
-    size_t selected_size = 0;
-    VkResult result = hybris_spirv_entry(code, size, 0, entry, allocator, &selected, &selected_size, reason);
+    uint32_t *selected = NULL, *flat = NULL;
+    size_t selected_size = 0, flat_size = 0;
+    VkResult result = VK_SUCCESS;
     *output = NULL; *output_size = 0;
-    if (result == VK_SUCCESS)
-        result = convert_scaled(selected, selected_size, entry, attributes, attribute_count,
-                                allocator, output, output_size, reason);
+    if (hybris_spirv_multiple(code, size)) {
+        result = hybris_spirv_entry(code, size, 0, entry, allocator, &selected, &selected_size, reason);
+        if (result != VK_SUCCESS) goto done;
+        code = selected; size = selected_size;
+    }
+    result = hybris_spirv_aggregate(code, size, entry, attributes, attribute_count,
+                                    allocator, &flat, &flat_size, reason);
+    if (result != VK_SUCCESS) goto done;
+    if (flat) { code = flat; size = flat_size; }
+    result = convert_scaled(code, size, entry, attributes, attribute_count, allocator, output, output_size, reason);
+done:
+    hybris_scaled_free(allocator, flat);
     hybris_scaled_free(allocator, selected);
     return result;
 }

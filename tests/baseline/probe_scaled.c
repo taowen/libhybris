@@ -5,6 +5,10 @@
 #include "shaders/scaled.multi.inc"
 #include "shaders/scaled.literal.inc"
 #include "shaders/scaled.frag.inc"
+#include "shaders/scaled.matrix.inc"
+#include "shaders/scaled.array.inc"
+#include "shaders/scaled.nested.inc"
+#include "shaders/scaled.matarray.inc"
 enum { kScaledImage = 16 };
 static const struct scaled_case { VkFormat format; const char *name; unsigned bits, components, sign; } cases[] = {
 #define CASE(n,b,c) {VK_FORMAT_##n##_USCALED, #n "_USCALED", b,c,0}, {VK_FORMAT_##n##_SSCALED, #n "_SSCALED",b,c,1}
@@ -13,7 +17,7 @@ static const struct scaled_case { VkFormat format; const char *name; unsigned bi
 #undef CASE
 };
 int scaled_vertex_probe(int validate, int route, int variant) {
-  const int multiple = variant == 1, literal = variant == 2;
+  const int multiple = variant == 1, literal = variant == 2, aggregate = variant >= 3;
   struct allocation_probe allocations = {0};
   VkAllocationCallbacks callbacks = {.pUserData = &allocations,
     .pfnAllocation = instance_allocate, .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
@@ -165,7 +169,7 @@ int scaled_vertex_probe(int validate, int route, int variant) {
   VkPhysicalDeviceMemoryProperties mp;
   p_vkGetPhysicalDeviceMemoryProperties(pd, &mp);
   void *mapped;
-  uint16_t indices[12] = {0};
+  unsigned char indices[192] = {0};
   VkBufferCreateInfo ib_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                               .size = sizeof(indices),
                               .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT};
@@ -244,13 +248,18 @@ int scaled_vertex_probe(int validate, int route, int variant) {
   VkShaderModuleCreateInfo vs_ci = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = multiple ? sizeof(kScaledMultiSpv) : literal ? sizeof(kScaledLiteralSpv) : sizeof(kScaledVertSpv),
     .pCode = multiple ? kScaledMultiSpv : literal ? kScaledLiteralSpv : kScaledVertSpv};
+  if (aggregate) {
+    const uint32_t *codes[] = {kScaledMatrixSpv, kScaledArraySpv, kScaledNestedSpv, kScaledMatarraySpv};
+    const size_t sizes[] = {sizeof(kScaledMatrixSpv), sizeof(kScaledArraySpv), sizeof(kScaledNestedSpv), sizeof(kScaledMatarraySpv)};
+    vs_ci.pCode = codes[variant - 3]; vs_ci.codeSize = sizes[variant - 3];
+  }
   VkShaderModuleCreateInfo fs_ci = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = sizeof(kScaledFragSpv), .pCode = kScaledFragSpv};
   VkShaderModule vs, fs;
   CHECK(p_vkCreateShaderModule(device, &vs_ci, &callbacks, &vs));
   if (multiple) fs = vs;
   else CHECK(p_vkCreateShaderModule(device, &fs_ci, &callbacks, &fs));
-  VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT, 0, 16};
+  VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT, 0, aggregate ? 64 : 16};
   VkPipelineLayoutCreateInfo pl_ci = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     .pushConstantRangeCount = 1, .pPushConstantRanges = &push};
   VkPipelineLayout pipeline_layout;
@@ -341,9 +350,12 @@ int scaled_vertex_probe(int validate, int route, int variant) {
       .layout = pipeline_layout,
       .renderPass = rp};
   VkVertexInputBindingDescription binding = {.binding = 0, .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
-  VkVertexInputAttributeDescription attribute = {.location = 0, .binding = 0};
+  VkVertexInputAttributeDescription attributes[4] = {
+    {.location = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT},
+    {.location = 1, .offset = 16}, {.location = 2, .offset = 32},
+    {.location = 3, .offset = 48, .format = VK_FORMAT_R32G32B32A32_SFLOAT}};
   vi.vertexBindingDescriptionCount = 1; vi.pVertexBindingDescriptions = &binding;
-  vi.vertexAttributeDescriptionCount = 1; vi.pVertexAttributeDescriptions = &attribute;
+  vi.vertexAttributeDescriptionCount = aggregate ? 4 : 1; vi.pVertexAttributeDescriptions = attributes;
   VkCommandPoolCreateInfo cpc = {.sType =
                                      VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                                  .queueFamilyIndex = qi};
@@ -371,25 +383,38 @@ int scaled_vertex_probe(int validate, int route, int variant) {
     }
     int alternate_entry = multiple && (c % 2);
     stages[0].pName = multiple ? (alternate_entry ? "alternate_vertex" : "scaled_vertex") : "main";
-    attribute.format = f->format;
-    binding.stride = f->bits / 8 * f->components;
+    const struct scaled_case *second = &cases[((c + 6) % 12) ^ 1];
+    attributes[aggregate ? 1 : 0].format = f->format;
+    attributes[2].format = second->format;
+    binding.stride = aggregate ? 64 : f->bits / 8 * f->components;
     VkPipeline pipeline;
     CHECK(p_vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gp, &callbacks, &pipeline));
     for (unsigned phase = 0; phase < 3; ++phase) {
-      float expected[4] = {0,0,0,1};
-      unsigned char data[24] = {0};
-      for (unsigned component = 0; component < f->components; ++component) {
-        int high = f->sign ? (1 << (f->bits - 1)) - 1 : (1 << f->bits) - 1;
-        int low = f->sign ? -(1 << (f->bits - 1)) : 0;
-        int value = (component + phase) % 2 ? high : low;
-        expected[component] = value;
-        for (unsigned vertex = 0; vertex < 3; ++vertex) {
-          unsigned offset = vertex * binding.stride + component * f->bits / 8;
-          if (f->bits == 8) data[offset] = (uint8_t)value;
-          else { uint16_t v = value; memcpy(data + offset, &v, 2); }
+      float expected[16] = {0};
+      unsigned char data[192] = {0};
+      for (unsigned col = 0; col < (aggregate ? 4u : 1u); ++col) {
+        const struct scaled_case *format = aggregate && col == 2 ? second : f;
+        expected[col * 4 + 3] = 1;
+        for (unsigned component = 0; component < 4; ++component) {
+          if (aggregate && (col == 0 || col == 3)) {
+            float value = (float)(col * 7 + component + phase) + 0.25f;
+            expected[col * 4 + component] = value;
+            for (unsigned vertex = 0; vertex < 3; ++vertex)
+              memcpy(data + vertex * binding.stride + col * 16 + component * 4, &value, 4);
+          } else if (component < format->components) {
+            int high = format->sign ? (1 << (format->bits - 1)) - 1 : (1 << format->bits) - 1;
+            int low = format->sign ? -(1 << (format->bits - 1)) : 0;
+            int value = (component + phase + col) % 2 ? high : low;
+            expected[col * 4 + component] = value;
+            for (unsigned vertex = 0; vertex < 3; ++vertex) {
+              unsigned offset = vertex * binding.stride + (aggregate ? col * 16 : 0) + component * format->bits / 8;
+              if (format->bits == 8) data[offset] = (uint8_t)value;
+              else { uint16_t v = value; memcpy(data + offset, &v, 2); }
+            }
+          }
         }
       }
-      if (phase == 2) expected[0] += 1;
+      if (phase == 2) expected[aggregate ? 4 : 0] += 1;
       CHECK(p_vkMapMemory(device, imem, 0, sizeof(data), 0, &mapped));
       memcpy(mapped, data, sizeof(data));
       p_vkUnmapMemory(device, imem);
@@ -410,7 +435,7 @@ int scaled_vertex_probe(int validate, int route, int variant) {
       p_vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
       VkDeviceSize offset = 0;
       p_vkCmdBindVertexBuffers(cb, 0, 1, &ibo, &offset);
-      p_vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, expected);
+      p_vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, push.size, expected);
       p_vkCmdDraw(cb, 3, 1, 0, 0);
       p_vkCmdEndRenderPass(cb);
       VkBufferImageCopy copy = {
