@@ -75,6 +75,7 @@ void WaylandNativeWindow::destroyWlEGLWindow()
 int WaylandNativeWindow::apiDisconnect(int api)
 {
     (void)api;
+    HYBRIS_TRACE_BEGIN("wayland-platform", "producer_disconnect", "window=%p", this);
     lock();
     readQueue(false);
     // Android Vulkan reconnects before allocating a replacement swapchain.
@@ -94,7 +95,8 @@ int WaylandNativeWindow::apiDisconnect(int api)
         wl_callback_destroy(frame_callback);
         frame_callback = NULL;
     }
-    TRACE("disconnected producer; retained %u displayed buffers", retained);
+    HYBRIS_TRACE_COUNTER("wayland-platform", "retired_buffers", "%u", retained);
+    HYBRIS_TRACE_END("wayland-platform", "producer_disconnect", "");
     unlock();
     return NO_ERROR;
 }

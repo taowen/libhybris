@@ -20,7 +20,7 @@ python3 tests/baseline/run.py --serial 29854870
 builder is owned by this repository: `tools/ensure-builder.sh` uses
 `tools/container/Containerfile.aarch64`, a digest-pinned Debian base and
 the 2026-08-01 package snapshot. Host prerequisites are x86_64 Linux,
-Podman, Git, tar, Python 3.10+, sha256sum and file; running also needs adb.
+Podman, Git, tar, Python 3.10+, sha256sum, file and flock; running also needs adb.
 The first build downloads the compiler and dependencies.
 
 `tools/fetch-android-headers.sh` fetches Halium Android 11 headers at
@@ -29,6 +29,28 @@ The default cache is `build/deps`; `HYBRIS_DEPS_DIR` may override it.
 Use `--headers` for custom headers or `BUILDER_IMAGE` for a custom image.
 Overrides record actual inputs but do not inherit the default recipe's
 reproducibility claim.
+
+For a local edit/build loop, add `--incremental` (and keep `--debug` if the
+cache was built in debug mode). A successful build seeds the next compiler
+cache; C/C++/assembly source edits are synchronized by content, even when a
+checkout or editor preserves an old mtime. GNU make still visits the full
+configured dependency graph, compiling/relinking only affected targets. This
+avoids a hand-maintained list of dependent libraries or an unsafe target-only
+shortcut. Headers, build rules/generators, added/removed files, builder/config
+changes and build-script changes force a clean rebuild. `--clean` overrides
+`--incremental`; omitting `--incremental` retains the clean-build behavior.
+
+`inputs/` is the clean pre-build source snapshot; `src/` also holds generated
+files and cached objects. Each build starts with empty `install/` and `runtime/`
+directories and creates a new complete ELF manifest. The manifest records
+`build_mode`; `build-report.json` records the cache decision, changed input
+paths and elapsed time. Cache provenance is published only after a successful
+build. The previous manifest/cache marker is withdrawn when preparation starts;
+a failed/interrupted build is not a completed cache. A per-output flock rejects
+concurrent builds into the same directory; use different `--out` directories
+for independent configurations. This is a trusted local compiler cache, not
+an independent source-to-binary reproducibility proof. Run a clean build and
+applicable probes before accepting a compatibility change.
 
 Fresh source/header snapshots are taken before compilation. The library
 manifest contains their file hashes, the container image ID, compiler
@@ -1730,3 +1752,36 @@ The separate [Wayland window probe](../wsi/README.md) now verifies an actual
 fixed X300 window, including swapchain readback and ICC-aware screen pixels.
 Redmi's current compositor lacks android_wlegl, so that optional gate is
 UNSUPPORTED. This does not supply standard-loader WSI or presented-frame replay.
+
+
+Incremental-build checkpoint (2026-09-07): `--incremental` preserves the
+completed local compiler cache while staging a fresh install/runtime bundle.
+Initial debug cold/no-change builds took 48.475/9.230 seconds. Two Wayland
+source edits with deliberately preserved old mtimes rebuilt exactly three
+objects (the common source is compiled into both EGL and Vulkan plugins),
+changed only those two plugin ELFs, and completed in 11.936 seconds. X300
+`20260907T085347-860b2245` passed the three-size/24-frame screen gate with
+that incrementally rebuilt debug bundle. Tracepoints retain disconnect counts
+and retired releases without per-hook debug arguments: 2,081 lines / 164,904
+bytes versus the earlier verbose run's 153,855 lines / 12,813,149 bytes for
+the same workload. This is an observed reduction, not a general size bound.
+
+Final release cold/no-change builds took 46.868/9.437 seconds; all 75 deployed
+ELF entries have identical hashes. X300 `20260907T085914-d8c8a645` passes
+24 frames and 254,976 screen pixels; Redmi `20260907T085914-8f94a259` passes
+eight missing-protocol rejections but remains window-UNSUPPORTED. Concurrent
+same-output builds were rejected while the first build was running. Switching
+debug/configuration/scripts forced a clean rebuild; the current output's
+header snapshot was successfully reused as --headers input. Local build
+reports, manifests, logs and object comparisons are retained under
+`build/incremental-evidence`. Header/edit/add/delete and failure fallback
+branches were reviewed but not separately exercised with full builds in this
+batch. Compiler cache contents are trusted local state; no reproducibility
+or arbitrary cache corruption guarantee is claimed. Independent compositor
+isolation and automatic two-process failure capture remain unfinished.
+
+Final full baseline: X300 `20260907T090014-cd3e02ef` is
+135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi `20260907T090014-d22fcaa8` is
+98 PASS / 47 UNSUPPORTED / 1 CRASH. Native-groups remains the sole crash on
+both. Validation, SyncVal and both headless capture/replay gates pass; X300
+ICD uses the scoped Mali option. No new compositor or APK was installed.

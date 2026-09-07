@@ -19,10 +19,12 @@ and binary hash/build-id. Host dependencies are adb, Python 3 and Pillow with
 LittleCMS support. The compositor app must permit `run-as`. `--package` and
 `--wayland` select another existing endpoint; `--build`, `--probe` and `--out`
 select local build/results directories. This is not an APK installer. For existing native-window trace statements,
-build with `tools/build-aarch64.sh --debug --out tests/wsi/build/debug` and run
+build with `tools/build-aarch64.sh --debug --incremental --out tests/wsi/build/debug` and run
 with `--build tests/wsi/build/debug --trace`. This enables the upstream debug
 and trace configure options; runtime tracing alone cannot enable macros omitted
-from a release build. The selected flags and ELF hashes remain in the manifest.
+from a release build. `--trace` uses warning-level ordinary logs plus compiled
+tracepoints, including producer disconnect counts and retired-buffer releases;
+it does not turn on verbose per-hook argument logging. The selected flags and ELF hashes remain in the manifest.
 
 The runner stages a separate directory under the app's files, validates the
 hybris/runtime and probe manifests, and retains the exact command, phone
@@ -182,7 +184,8 @@ at 08:39; both final runs above use that fresh session. No APK was installed or
 modified. This dependency leak remains open: the runner does not restart the
 app automatically and must not hide exhausted-compositor failures as PASS.
 A process-isolated test compositor and bounded cross-process diagnostics are
-still needed for repeated development; full debug logging is currently verbose.
+still needed for repeated development. The trace runner now avoids the verbose
+per-hook debug logs recorded in that initial diagnosis.
 
 Full release-build baseline: X300 `20260907T084136-0606339b` has
 135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi `20260907T084044-c173adc0` has

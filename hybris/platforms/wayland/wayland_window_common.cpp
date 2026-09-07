@@ -267,8 +267,9 @@ void WaylandNativeWindow::releaseBuffer(struct wl_buffer *buffer)
     if (it == m_bufList.end()) {
         // A prior producer connection still owned this displayed buffer.
         // Its release must not increase the current pool's free count.
-        TRACE("released retired buffer %p", wnb);
+        HYBRIS_TRACE_BEGIN("wayland-platform", "release_retired", "window=%p buffer=%p", this, wnb);
         destroyBuffer(wnb, false);
+        HYBRIS_TRACE_END("wayland-platform", "release_retired", "");
         return;
     }
     HYBRIS_TRACE_BEGIN("wayland-platform", "releaseBuffer", "-%p", wnb);

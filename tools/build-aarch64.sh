@@ -8,11 +8,12 @@ OUT="$ROOT/tests/baseline/build"
 HEADERS=""
 CLEAN=0
 DEBUG_BUILD=0
+INCREMENTAL=0
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-podman}"
 
 usage() {
     cat <<'EOF'
-Usage: tools/build-aarch64.sh [--headers DIR] [--out DIR] [--clean] [--debug]
+Usage: tools/build-aarch64.sh [--headers DIR] [--out DIR] [--clean] [--debug] [--incremental]
 
 Builds libhybris for aarch64 glibc and stages:
   $OUT/install   installed hybris libraries
@@ -24,6 +25,10 @@ tools/fetch-android-headers.sh. tools/ensure-builder.sh builds the pinned
 Debian cross-toolchain recipe. BUILDER_IMAGE may explicitly override it.
 Build snapshots, header/compiler identities and ELF hashes are recorded.
 --debug enables existing libhybris logging/trace macros (runtime opt-in).
+--incremental reuses a completed compiler cache for C/C++/assembly edits.
+Headers, build rules, file additions/deletions and toolchain/config changes
+force a clean rebuild. The deployable install/runtime are always staged fresh.
+--clean overrides --incremental. Default builds remain clean.
 EOF
 }
 
@@ -33,10 +38,19 @@ while [[ $# -gt 0 ]]; do
         --out) OUT="$2"; shift 2 ;;
         --clean) CLEAN=1; shift ;;
         --debug) DEBUG_BUILD=1; shift ;;
+        --incremental) INCREMENTAL=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
+
+mkdir -p "$OUT"
+exec 9>"$OUT/.build.lock"
+if ! flock -n 9; then
+    echo "another build owns $OUT; use a separate --out or wait for it" >&2
+    exit 2
+fi
+BUILD_STARTED="$(python3 -c 'import time; print(time.monotonic())')"
 
 if [[ -z "$HEADERS" ]]; then
     HEADERS="$(HYBRIS_DEPS_DIR="${HYBRIS_DEPS_DIR:-$OUT/deps}" "$ROOT/tools/fetch-android-headers.sh")"
@@ -55,24 +69,15 @@ SRC_COPY="$OUT/src"
 HEADERS_COPY="$OUT/headers"
 INSTALL="$OUT/install"
 RUNTIME="$OUT/runtime"
-LOG="$OUT/hybris-build.log"
 
-if [[ "$CLEAN" = 1 ]]; then
-    rm -rf "$SRC_COPY" "$INSTALL" "$RUNTIME" "$LOG"
-fi
+BUILDER_ID="$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$BUILDER_IMAGE")"
+CACHE_OPTIONS=()
+if [[ "$INCREMENTAL" = 1 && "$CLEAN" != 1 ]]; then CACHE_OPTIONS+=(--incremental); fi
+if [[ "$DEBUG_BUILD" = 1 ]]; then CACHE_OPTIONS+=(--debug); fi
+python3 "$ROOT/tools/prepare-build.py" prepare --root "$ROOT" --out "$OUT" \
+    --headers "$HEADERS" --builder "$BUILDER_ID" --started "$BUILD_STARTED" "${CACHE_OPTIONS[@]}"
+CACHE_MODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mode"])' "$OUT/build-report.json")"
 
-# Copy only build inputs; custom output directories inside the checkout cannot
-# recursively copy themselves. A fresh install/runtime avoids stale artifacts.
-rm -rf "$SRC_COPY" "$HEADERS_COPY" "$INSTALL" "$RUNTIME"
-mkdir -p "$SRC_COPY"
-cp -a "$ROOT/hybris" "$SRC_COPY/"
-cp -a "$ROOT/compat" "$SRC_COPY/"
-mkdir -p "$SRC_COPY/tools"
-cp "$ROOT/tools/stage-runtime.py" "$SRC_COPY/tools/"
-
-# Snapshot headers so external edits during compilation cannot change inputs.
-cp -a "$HEADERS" "$HEADERS_COPY"
-rm -rf "$HEADERS_COPY/.git"
 HEADERS_ABS="$(cd "$HEADERS_COPY" && pwd)"
 OUT_ABS="$(cd "$OUT" && pwd)"
 SRC_ABS="$(cd "$SRC_COPY" && pwd)"
@@ -82,8 +87,7 @@ SOURCE_DIRTY=()
 if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null || true)" ]]; then
     SOURCE_DIRTY=(--source-dirty)
 fi
-BUILDER_ID="$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$BUILDER_IMAGE")"
-python3 "$ROOT/tools/build_inputs.py" --source "$SRC_COPY" --headers "$HEADERS_COPY" \
+python3 "$ROOT/tools/build_inputs.py" --source "$OUT/inputs" --headers "$HEADERS_COPY" \
     --recipe "$ROOT/tools/container/Containerfile.aarch64" --image-id "$BUILDER_ID" \
     --build-script "$ROOT/tools/build-aarch64.sh" \
     --out "$OUT/build-inputs.json"
@@ -93,6 +97,7 @@ python3 "$ROOT/tools/build_inputs.py" --source "$SRC_COPY" --headers "$HEADERS_C
     --volume "$HEADERS_ABS:/headers:ro,Z" \
     --volume "$OUT_ABS:/out:Z" \
     --env HYBRIS_STANDALONE_DEBUG="$DEBUG_BUILD" \
+    --env HYBRIS_STANDALONE_CACHE="$CACHE_MODE" \
     --workdir /src \
     "$BUILDER_ID" bash -eu -c '
 set -euo pipefail
@@ -165,12 +170,14 @@ fi
 DIRS="include properties libsync platforms hardware ui gralloc egl glesv1 glesv2 hwc2 vulkan utils"
 JOBS="$(nproc)"
 echo "==> make + install"
-for relink in platforms/common egl/platforms/common egl/platforms/x11 \
-              egl/platforms/wayland vulkan/platforms; do
-    if [[ -f "$BUILD_DIR/$relink/Makefile" ]]; then
-        run_logged make -C "$BUILD_DIR/$relink" clean
-    fi
-done
+if [[ "$HYBRIS_STANDALONE_CACHE" != incremental ]]; then
+    for relink in platforms/common egl/platforms/common egl/platforms/x11 \
+                  egl/platforms/wayland vulkan/platforms; do
+        if [[ -f "$BUILD_DIR/$relink/Makefile" ]]; then
+            run_logged make -C "$BUILD_DIR/$relink" clean
+        fi
+    done
+fi
 run_logged make -C "$BUILD_DIR/common" -j"$JOBS" SUBDIRS=. libhybris-common.la
 run_logged make -C "$BUILD_DIR/common" install-libLTLIBRARIES DESTDIR="$OUT_DIR"
 run_logged make -C "$BUILD_DIR/common/q" -j"$JOBS"
@@ -245,6 +252,7 @@ python3 "$ROOT/tools/manifest.py" \
     --runtime "$RUNTIME" \
     --out "$OUT/manifest.json" \
     --source-commit "$SOURCE_COMMIT" \
+    --build-mode "$CACHE_MODE" \
     --inputs "$OUT/build-inputs.json" \
     --packages "$OUT/builder-packages.txt" \
     "${SOURCE_DIRTY[@]}" \
@@ -252,6 +260,7 @@ python3 "$ROOT/tools/manifest.py" \
     --compiler "$COMPILER" \
     --configure-args "$CONFIGURE_ARGS"
 
+python3 "$ROOT/tools/prepare-build.py" finish --out "$OUT"
 echo "$INSTALL_LIB"
 echo "$RUNTIME"
 echo "$OUT/manifest.json"

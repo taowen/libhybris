@@ -21,7 +21,7 @@ from screen_evidence import verify_screen
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
-p.add_argument('--trace', action='store_true', help='record native-window debug and trace messages')
+p.add_argument('--trace', action='store_true', help='record compiled native-window tracepoints without verbose hook logs')
 p.add_argument('--package', default='io.taowen.ardesk')
 p.add_argument('--wayland', default='wayland-0')
 p.add_argument('--build', type=Path, default=ROOT / 'tests/baseline/build')
@@ -55,7 +55,7 @@ env = {'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker',
        'HYBRIS_EGLPLATFORM': 'wayland', 'HYBRIS_VULKANPLATFORM': 'wayland',
        'HYBRIS_ANDROID_SDK_VERSION': sdk, 'XDG_RUNTIME_DIR': files + '/runtime',
        'WAYLAND_DISPLAY': a.wayland}
-if a.trace: env.update(HYBRIS_TRACE='1', HYBRIS_LOGGING_LEVEL='debug')
+if a.trace: env.update(HYBRIS_TRACE='1', HYBRIS_LOGGING_LEVEL='warn')
 command = ' '.join(k + '=' + shlex.quote(v) for k, v in env.items())
 command += ' ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-wayland'
 metadata = {'run_id': run_id, 'serial': a.serial, 'package': a.package,

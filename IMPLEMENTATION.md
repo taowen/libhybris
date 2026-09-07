@@ -680,3 +680,16 @@ names are unchanged. Tests/wsi now verifies same-window 320x240 → 448x288 →
 separate compositor GPU binding-table exhaustion indicated by source review
 and runtime recovery after a restart remains open,
 as do in-flight/failure recovery and compositor-driven resize semantics.
+
+
+The standalone builder has an opt-in incremental compiler cache. Preparation
+and cache publication live in tools/prepare-build.py; inputs/ records the clean
+source snapshot separately from generated src/ objects. C/C++/assembly changes
+are synchronized by content, with refreshed mtimes; conservative header/rule/
+configuration/file-set changes trigger a fresh build. Make visits the complete
+dependency graph, and install/runtime are always recreated before manifest
+publication. A nonblocking per-output lock prevents concurrent mutation.
+The manifest records clean/incremental mode; build-report.json records the
+actual decision and elapsed time. Failed preparation withdraws prior completion
+markers. This accelerates the edit/build loop but does not replace clean-build
+regression acceptance or provide a tamper-proof compiler cache.
