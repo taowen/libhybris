@@ -1934,3 +1934,37 @@ repeated host uploads and command-buffer resubmission. It does not cover
 allocation-end partial atoms, partially mapped allocations, simultaneous
 access to different atoms, cross-process mappings, or unrelated work remaining
 in flight during resource retirement. G09 remains open.
+
+## Condition-variable production split (2026-09-07)
+
+`hybris/common/bionic_cond.c` now owns condition init/destroy, signal/broadcast,
+wait/clockwait, monotonic/relative aliases and Android futex wake helpers.
+`bionic_sync.c` retains the single publication lock shared by conditions and
+mutexes, plus mutex/rwlock hooks; it shrinks from 1003 to 660 lines. The shared
+Android mutex predicate moves to the private header as an inline helper.
+Condition hook and futex helper bodies were checked verbatim against the
+original source. The central hook table and private declarations are unchanged.
+
+A clean `tools/build-aarch64.sh` build succeeds. The defined dynamic symbol
+names, types, bindings and visibility of libhybris-common match the previous
+build (133 entries); condition hook entry points remain hidden. The existing
+probe binaries exercise the newly built library without changing workloads.
+
+| Device | Result directory | Results |
+|---|---|---|
+| X300 / Mali | `20260907T155138-14652fa8` | 19 PASS |
+| Redmi 29854870 / Adreno vendor | `20260907T155138-efb59546` | 19 PASS |
+
+Cases include cond-init/cond-clock, mutex/rwlock first publication, static
+synchronization destruction, concurrent linker/Vulkan initialization, TLS,
+unload, device lifecycle, EGL context lifecycle, GLES3 and UBO rendering.
+Native sync-destroy/egl-life/vk-init provide comparisons. Standard ICD
+validation retains its expected invalid-buffer diagnostic; the legal UBO
+validation/SyncVal path also passes. Both runners verify freshly staged
+library provenance and required mappings. Mali retains the scoped loader
+quirk. Local `build/cond-split/audit.json` records symbol and source-body checks.
+
+This is a responsibility split, not a new synchronization implementation.
+Existing Android-shared wait branches and the glibc-private `__wrefs` handling
+at destruction are preserved; shared waiting and destruction with live
+waiters are not validated or fixed by this batch. G03 remains open.

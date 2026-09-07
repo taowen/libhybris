@@ -16,6 +16,20 @@
 #define ANDROID_PTHREAD_COND_INITIALIZER             0
 #define ANDROID_PTHREAD_RWLOCK_INITIALIZER           0
 
+#define ANDROID_MUTEX_SHARED_MASK 0x2000
+
+static inline int hybris_check_android_shared_mutex(uintptr_t mutex_addr)
+{
+    /* If not initialized or initialized by Android, it should contain a low
+     * address, which is basically just the int values for Android's own
+     * pthread_mutex_t */
+    if ((mutex_addr <= ANDROID_TOP_ADDR_VALUE_MUTEX) &&
+                    (mutex_addr & ANDROID_MUTEX_SHARED_MASK))
+        return 1;
+
+    return 0;
+}
+
 /* Private common-library helpers; not a linker plugin or public ABI. */
 __attribute__((visibility("hidden")))
 uintptr_t hybris_read_sync_value(const void *storage);

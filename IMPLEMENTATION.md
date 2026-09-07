@@ -41,6 +41,16 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+Condition-variable ABI hooks and Android futex wake helpers now live in
+`hybris/common/bionic_cond.c`; mutex/rwlock hooks and the shared static-object
+publication lock remain in `bionic_sync.c`. The original file shrinks from
+1003 to 660 lines. The moved hook/helper bodies are preserved, the shared
+mutex predicate is a private inline helper, and all 133 defined dynamic
+symbols retain their names, types, bindings and visibility. A clean AArch64
+build and 19 existing cases on each of Mali and Adreno pass. This structural
+change does not validate shared-condition waiting or destruction with waiters;
+those existing semantics remain open under G03.
+
 The new Vulkan 1.0 memory-range workload requires genuinely non-coherent
 upload/readback memory and tests partial flush/invalidate with nonzero buffer
 binding offsets. Four rounds update a subrange, reuse one command buffer and
