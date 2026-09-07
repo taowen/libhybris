@@ -7,11 +7,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/tests/baseline/build"
 HEADERS=""
 CLEAN=0
+DEBUG_BUILD=0
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-podman}"
 
 usage() {
     cat <<'EOF'
-Usage: tools/build-aarch64.sh [--headers DIR] [--out DIR] [--clean]
+Usage: tools/build-aarch64.sh [--headers DIR] [--out DIR] [--clean] [--debug]
 
 Builds libhybris for aarch64 glibc and stages:
   $OUT/install   installed hybris libraries
@@ -22,6 +23,7 @@ Without --headers, fetch the pinned Android headers using this repository's
 tools/fetch-android-headers.sh. tools/ensure-builder.sh builds the pinned
 Debian cross-toolchain recipe. BUILDER_IMAGE may explicitly override it.
 Build snapshots, header/compiler identities and ELF hashes are recorded.
+--debug enables existing libhybris logging/trace macros (runtime opt-in).
 EOF
 }
 
@@ -30,6 +32,7 @@ while [[ $# -gt 0 ]]; do
         --headers) HEADERS="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
         --clean) CLEAN=1; shift ;;
+        --debug) DEBUG_BUILD=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -89,6 +92,7 @@ python3 "$ROOT/tools/build_inputs.py" --source "$SRC_COPY" --headers "$HEADERS_C
     --volume "$SRC_ABS:/src:Z" \
     --volume "$HEADERS_ABS:/headers:ro,Z" \
     --volume "$OUT_ABS:/out:Z" \
+    --env HYBRIS_STANDALONE_DEBUG="$DEBUG_BUILD" \
     --workdir /src \
     "$BUILDER_ID" bash -eu -c '
 set -euo pipefail
@@ -140,6 +144,7 @@ CONFIGURE_ARGS=(
     --enable-property-cache
     --with-default-hybris-ld-library-path=/vendor/lib64/egl:/vendor/lib64/hw:/vendor/lib64:/system/lib64:/system_ext/lib64
 )
+if [[ "$HYBRIS_STANDALONE_DEBUG" = 1 ]]; then CONFIGURE_ARGS+=(--enable-debug --enable-trace); fi
 printf "%s\n" "${CONFIGURE_ARGS[@]}" > /out/configure-args.txt
 FINGERPRINT="standalone args=${CONFIGURE_ARGS[*]}"
 STAMP="$BUILD_DIR/.standalone-configure-stamp"

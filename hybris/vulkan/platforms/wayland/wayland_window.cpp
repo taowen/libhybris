@@ -27,6 +27,7 @@
 #include <android-config.h>
 #include <hardware/gralloc.h>
 #include "wayland_window.h"
+#include <algorithm>
 #include <wayland-egl-backend.h>
 #include <assert.h>
 #include <errno.h>
@@ -69,6 +70,33 @@ static const struct wl_callback_listener frame_listener = {
 void WaylandNativeWindow::destroyWlEGLWindow()
 {
     wl_egl_window_destroy(m_window);
+}
+
+int WaylandNativeWindow::apiDisconnect(int api)
+{
+    (void)api;
+    lock();
+    readQueue(false);
+    // Android Vulkan reconnects before allocating a replacement swapchain.
+    // A displayed buffer may not be released until a NEW buffer is committed.
+    // Retire those buffers outside the new producer pool; never wait for them
+    // here and never return them to a producer from the new connection.
+    unsigned retained = 0;
+    for (auto *buffer : m_bufList) {
+        if (std::find(fronted.begin(), fronted.end(), buffer) != fronted.end())
+            ++retained;
+        else
+            destroyBuffer(buffer);
+    }
+    m_bufList.clear();
+    m_freeBufs = 0;
+    if (frame_callback) {
+        wl_callback_destroy(frame_callback);
+        frame_callback = NULL;
+    }
+    TRACE("disconnected producer; retained %u displayed buffers", retained);
+    unlock();
+    return NO_ERROR;
 }
 
 int WaylandNativeWindow::dequeueBuffer(BaseNativeWindowBuffer **buffer, int *fenceFd){

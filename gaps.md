@@ -482,3 +482,31 @@ X300 `20260907T082144-8ee218a3` 的 128 对并发 surface、client FD 7→7、
 为 98 PASS / 47 UNSUPPORTED / 1 CRASH，均仅 native-groups 崩溃。
 校验、SyncVal 与两种离屏 capture/replay 均通过，X300 ICD 仍用限定 Mali
 选项；此次窗口仍走替代前端。
+
+
+2026-09-07 同窗口 resize / oldSwapchain：旧前端
+`20260907T082626-c5caa97e` 第二次 CreateSwapchainKHR 超时 142；调试构建
+`20260907T083148-f82d7506` 定位 native-window disconnect 空操作导致旧
+显示 buffer 占槽，新链取完三个后卡在第四次 dequeue。Vulkan Wayland
+现断开旧 producer 池，保留呈现中的 buffer 直到 wl_buffer.release，并使
+其 release 不增加新池可用计数。新增 C++ virtual hook / 私有 helper 签名
+要求完整重建平台包，其他平台默认行为不变，Vulkan 643 导出名称不变。
+X300 发布构建 `20260907T084008-36e56a41` 同窗口三个尺寸
+320×240→448×288→256×192，24 帧及三对完整屏幕颜色转换通过，
+合计 254,976 像素。用旧 320×240 截图替换大尺寸截图时 checker 正确拒绝。
+调试构建 `20260907T084042-7f9dc528` 同样通过，观测每次断开保留一个
+旧显示 buffer，随后新呈现触发它的退休 release。红米
+`20260907T083436-db561ef3` 八次缺协议拒绝通过，窗口仍 UNSUPPORTED。
+所查 compositor 源码的 GPU binding 表仅八个 PID 槽，客户端退出后不回收；
+多进程迭代后旧/新前端都曾读回正确但屏幕透明。08:39 确认只有测试
+xterm 后重启测试桌面清空该表，上述最终窗口结果基于新会话，未安装 APK。
+现象与表耗尽一致，但未插桩测量运行 APK 的确切槽数。此依赖回收缺口与
+独立测试 compositor 仍待修；不能靠重启声称泄漏门槛通过。
+重建边界使用 wait-idle，未证明未完成 GPU 工作时重建、失败恢复、
+compositor 拖动/out-of-date、release-fence、swapchain FD 无泄漏、标准
+ICD WSI 或 present capture/replay；G03/G11/G12 继续开放。
+最终发布构建完整回归：X300 `20260907T084136-0606339b` 为
+135 PASS / 10 UNSUPPORTED / 1 CRASH；红米 `20260907T084044-c173adc0`
+为 98 PASS / 47 UNSUPPORTED / 1 CRASH，均仅 native-groups 崩溃。
+VVL、SyncVal 与两种离屏 capture/replay 均通过，X300 ICD 仍用限定 Mali
+选项，不能据此覆盖标准 ICD 的窗口路径。

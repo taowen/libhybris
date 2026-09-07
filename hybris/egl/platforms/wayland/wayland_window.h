@@ -88,7 +88,7 @@ protected:
 
 private:
     WaylandNativeWindowBuffer *addBuffer();
-    void destroyBuffer(WaylandNativeWindowBuffer *);
+    void destroyBuffer(WaylandNativeWindowBuffer *, bool counted = true);
     void destroyBuffers();
     int readQueue(bool block);
 

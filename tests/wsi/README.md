@@ -18,7 +18,11 @@ the manifest records generated sources, compiler/package versions, script hash
 and binary hash/build-id. Host dependencies are adb, Python 3 and Pillow with
 LittleCMS support. The compositor app must permit `run-as`. `--package` and
 `--wayland` select another existing endpoint; `--build`, `--probe` and `--out`
-select local build/results directories. This is not an APK installer.
+select local build/results directories. This is not an APK installer. For existing native-window trace statements,
+build with `tools/build-aarch64.sh --debug --out tests/wsi/build/debug` and run
+with `--build tests/wsi/build/debug --trace`. This enables the upstream debug
+and trace configure options; runtime tracing alone cannot enable macros omitted
+from a release build. The selected flags and ELF hashes remain in the manifest.
 
 The runner stages a separate directory under the app's files, validates the
 hybris/runtime and probe manifests, and retains the exact command, phone
@@ -37,23 +41,27 @@ shared display and requires the client process FD count to return to its warmed
 baseline. These extra surfaces have no xdg roles or swapchains: this checks
 surface metadata lifetime, not multiple displayed windows or GPU buffer release.
 
-The fixed 320x240 window submits eight alternating green/red frames using
-FIFO presentation. Each acquired swapchain image is cleared, copied to coherent
+The same window renders at 320x240, then 448x288, then 256x192. Each size
+submits eight alternating green/red frames using FIFO presentation. Rebuilds
+pass the preceding swapchain as oldSwapchain and destroy it after successful
+replacement. The probe changes xdg window geometry and checks capabilities
+for each size; this is client-initiated resizing, not a compositor drag test. Each acquired swapchain image is cleared, copied to coherent
 host memory, checked pixel by pixel, then presented. Acquire semaphores are
 reused only after their consuming submit completes; present-wait semaphores are
 allocated per swapchain image. Each frame waits for a compositor callback.
-QueueWaitIdle is used only at teardown. The first/final frames are deliberately
-held for screenshots; this is not a frame-rate or nonblocking-presentation test.
+QueueWaitIdle is used at rebuild and teardown boundaries. The first/final
+frames of each size are deliberately held for screenshots; this is not a frame-rate or nonblocking-presentation test.
 
 The result directory includes:
 
 - `probe.log`: API results, chosen format/color space, image indices and frame callbacks.
-- `image-0.rgba`, `image-7.rgba`: tightly packed RGBA8 readback, normalized from BGRA when necessary.
-- `screen-0.png`, `screen-7.png`: actual Android screenshots, with their color profiles preserved.
-- `screen-evidence.json`: verifies both complete readbacks, transforms the expected sRGB primaries
-  into each screenshot's embedded ICC profile, and checks the same complete 320x240 screen region
+- `image-{epoch}-{frame}.rgba` (epochs 0/1/2, frames 0/7): tightly packed RGBA8 readback, normalized from BGRA when necessary.
+- `screen-{epoch}-{frame}.png`: actual Android screenshots, with their color profiles preserved.
+- `screen-evidence.json`: verifies all six complete readbacks, transforms the expected sRGB primaries
+  into each screenshot's embedded ICC profile, and checks that each size occupies its complete expected screen rectangle and
   changes from the expected green to red. It records profile/checker/image hashes and library versions.
-  Unknown screenshot profiles, scaling/movement or incomplete matches fail this fixed gate.
+  Unknown profiles, scaling, movement within a size pair, or incomplete matches fail.
+  Expected dimensions are fixed independently of the probe log.
 - `device.json`, `maps-*.txt`, `android-library-hashes.json`, `stage/`: provenance and loaded-library evidence.
 - `result.json`: PASS, UNSUPPORTED, FAIL, CRASH or TIMEOUT. PASS requires screen evidence as well as probe exit 0.
 
@@ -63,8 +71,9 @@ would misclassify this display. The comparison uses the actual embedded profile,
 not these hard-coded values. A frame callback alone is not proof of release or
 correct displayed pixels.
 
-This first gate does not cover resize/minimize/out-of-date, multiple windows,
-multiple surface generations, release-fence retirement, FD leak accounting,
+This gate does not cover compositor-initiated resize/minimize/out-of-date,
+multiple windows, full surface generation tracking, release-fence retirement,
+swapchain FD leak accounting,
 scaled outputs, arbitrary image contents, standard-loader WSI, validation-layer
 chaining on this frontend, or capture/replay of a presented frame. A compositor
 that lacks `android_wlegl` now exercises eight surface creation attempts. Each
@@ -136,3 +145,48 @@ Full baseline on the final build: X300 `20260907T082214-6907c912` has
 98 PASS / 47 UNSUPPORTED / 1 CRASH. Both remaining crashes are native-groups.
 Validation, SyncVal and both headless capture/replay gates pass. X300 ICD
 continues to use the scoped Mali option.
+
+
+Resize / reconnect checkpoint (2026-09-07): old frontend
+`20260907T082626-c5caa97e` times out (142) during the second CreateSwapchainKHR.
+Debug/trace build `20260907T083148-f82d7506` shows native-window disconnect
+was a no-op: the new swapchain dequeues three buffers, then waits for the fourth
+which the compositor still displays. Vulkan's native window now disconnects
+the producer pool. Displayed buffers stay outside the new pool until their
+wl_buffer.release; their release does not add a free slot to the new pool.
+Other platform implementations retain their default disconnect behavior.
+This adds a C++ virtual hook and changes a private buffer helper signature,
+so rebuild the complete platform bundle; do not mix old/new platform libraries.
+The public Vulkan export set stays at 643 symbols.
+
+Final release-build X300 `20260907T084008-36e56a41` passes 24 frames and screen
+rectangles [1219,501,1539,741], [1219,501,1667,789], [1219,501,1475,693].
+That is 76,800 + 129,024 + 49,152 = 254,976 matched pixels across three
+green-to-red pairs, plus all six full readbacks. The checker rejects a copied
+320x240 pair substituted for the larger epoch even with correct larger readback.
+Debug build `20260907T084042-7f9dc528` also passes; each reconnect retains one
+displayed buffer, followed by its retired-buffer release after new presentation.
+This proves the observed Wayland release sequence, not GPU release-fence
+retirement, arbitrary in-flight recreation, resize failure recovery or FD
+leak freedom for swapchains. Redmi `20260907T083436-db561ef3` passes eight
+missing-protocol rejections; its overall window result remains UNSUPPORTED.
+
+The screen gate initially failed after many separate probe processes, including
+on the old frontend. The checked compositor source has an eight-slot GPU binding table keyed by
+client PID and does not reclaim exited clients. The observed failure and
+restart recovery are consistent with exhaustion; the installed APK was not
+instrumented to measure its exact live slot count. The API/readback
+continued to pass while the displayed content became transparent. After checking
+that the test session held only its startup xterm, the X300 test app was restarted
+at 08:39; both final runs above use that fresh session. No APK was installed or
+modified. This dependency leak remains open: the runner does not restart the
+app automatically and must not hide exhausted-compositor failures as PASS.
+A process-isolated test compositor and bounded cross-process diagnostics are
+still needed for repeated development; full debug logging is currently verbose.
+
+Full release-build baseline: X300 `20260907T084136-0606339b` has
+135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi `20260907T084044-c173adc0` has
+98 PASS / 47 UNSUPPORTED / 1 CRASH. Both crashes remain native-groups.
+Validation, SyncVal and both headless capture/replay gates pass; X300 ICD
+still uses the scoped Mali option. No real-window capture or standard ICD
+WSI coverage is inferred from those headless checks.

@@ -80,10 +80,11 @@ protected:
     virtual int setBuffersFormat(int format);
     virtual int setBuffersDimensions(int width, int height);
     virtual int setBufferCount(int cnt);
+    int apiDisconnect(int api) override;
 
 private:
     WaylandNativeWindowBuffer *addBuffer();
-    void destroyBuffer(WaylandNativeWindowBuffer *);
+    void destroyBuffer(WaylandNativeWindowBuffer *, bool counted = true);
     void destroyBuffers();
     void presentBuffer(WaylandNativeWindowBuffer *wnb);
     int readQueue(bool block);

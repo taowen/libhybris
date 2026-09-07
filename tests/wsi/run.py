@@ -21,6 +21,7 @@ from screen_evidence import verify_screen
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
+p.add_argument('--trace', action='store_true', help='record native-window debug and trace messages')
 p.add_argument('--package', default='io.taowen.ardesk')
 p.add_argument('--wayland', default='wayland-0')
 p.add_argument('--build', type=Path, default=ROOT / 'tests/baseline/build')
@@ -54,6 +55,7 @@ env = {'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker',
        'HYBRIS_EGLPLATFORM': 'wayland', 'HYBRIS_VULKANPLATFORM': 'wayland',
        'HYBRIS_ANDROID_SDK_VERSION': sdk, 'XDG_RUNTIME_DIR': files + '/runtime',
        'WAYLAND_DISPLAY': a.wayland}
+if a.trace: env.update(HYBRIS_TRACE='1', HYBRIS_LOGGING_LEVEL='debug')
 command = ' '.join(k + '=' + shlex.quote(v) for k, v in env.items())
 command += ' ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-wayland'
 metadata = {'run_id': run_id, 'serial': a.serial, 'package': a.package,
@@ -105,10 +107,11 @@ try:
                 while b'\n' in pending:
                     line, pending = pending.split(b'\n', 1)
                     print(line.decode(errors='replace'), flush=True)
-                    match = re.search(rb'WSI_FRAME frame=(0|7)\b', line)
-                    if match and match[1] not in screenshots:
-                        screenshots.add(match[1])
-                        with (out / ('screen-' + match[1].decode() + '.png')).open('wb') as picture:
+                    match = re.search(rb'WSI_FRAME epoch=([0-2]) frame=(0|7)\b', line)
+                    if match and match.groups() not in screenshots:
+                        screenshots.add(match.groups())
+                        name = 'screen-' + match[1].decode() + '-' + match[2].decode() + '.png'
+                        with (out / name).open('wb') as picture:
                             subprocess.run(adb + ['exec-out', 'screencap', '-p'], stdout=picture, check=True, timeout=10)
     code = process.wait(timeout=5)
 except subprocess.TimeoutExpired:
@@ -123,7 +126,8 @@ finally:
         stop_owned_process()
         try: process.communicate(timeout=5)
         except subprocess.TimeoutExpired: process.kill(); process.communicate()
-    for name in ('maps-instance.txt', 'maps-surface.txt', 'maps-frame.txt', 'image-0.rgba', 'image-7.rgba'):
+    for name in ['maps-instance.txt', 'maps-surface.txt', 'maps-frame.txt'] + [
+            f'image-{epoch}-{frame}.rgba' for epoch in range(3) for frame in (0, 7)]:
         saved = app('cat ' + shlex.quote(remote + '/' + name), capture_output=True)
         if saved.returncode == 0: (out / name).write_bytes(saved.stdout)
     paths = set()

@@ -663,3 +663,20 @@ The independent probe exercises repeated missing-protocol rejection on Redmi
 and the existing successful concurrent surfaces and window on X300. Allocation
 failure, display disconnect, vendor creation failure and heap reclamation have
 not been fault-injected; those branches are code-reviewed only.
+
+
+Vulkan Wayland reconnect now retires the old producer buffer pool. Android
+Vulkan disconnects/reconnects when recreating a used native-window swapchain
+([AOSP implementation](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/vulkan/libvulkan/swapchain.cpp)).
+The previous default no-op left the currently displayed buffer unavailable,
+blocking replacement allocation. The Vulkan override drops its references to non-displayed pool buffers
+and retains displayed ones in the existing fronted list until Wayland release.
+A retired release frees its reference without changing the new pool's free
+count; window teardown also cleans remaining retired proxies. Other backends
+keep the default disconnect behavior. Rebuild the complete C++ platform bundle
+for the added virtual hook/private helper signature; Vulkan's 643 exported
+names are unchanged. Tests/wsi now verifies same-window 320x240 → 448x288 →
+256x192 oldSwapchain replacement and actual screen pixels at each size. The
+separate compositor GPU binding-table exhaustion indicated by source review
+and runtime recovery after a restart remains open,
+as do in-flight/failure recovery and compositor-driven resize semantics.

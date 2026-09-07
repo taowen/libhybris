@@ -83,9 +83,6 @@ int main(void) {
     xdg_toplevel_add_listener(toplevel, &toplevel_listener, &w);
     xdg_toplevel_set_title(toplevel, "libhybris WSI probe");
     xdg_toplevel_set_app_id(toplevel, "libhybris-wsi-probe");
-    const uint32_t width = 320, height = 240;
-    xdg_toplevel_set_min_size(toplevel, width, height);
-    xdg_toplevel_set_max_size(toplevel, width, height);
     wl_surface_commit(wl_surface);
     while (!w.configured && !w.closed) if (wl_display_dispatch(w.display) < 0) return 2;
     if (w.closed) return 2;
@@ -169,152 +166,163 @@ int main(void) {
     CHECK(vkCreateDevice(physical, &dc, NULL, &device));
     VkQueue queue;
     vkGetDeviceQueue(device, family, 0, &queue);
-    VkSurfaceCapabilitiesKHR caps;
-    CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps));
-    const VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if ((caps.supportedUsageFlags & usage) != usage) { printf("UNSUPPORTED transfer swapchain usage=%x\n", caps.supportedUsageFlags); return 3; }
-    count = 0;
-    CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, NULL));
-    VkSurfaceFormatKHR *formats = calloc(count, sizeof(*formats));
-    if (!formats) return 2;
-    CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, formats));
-    VkSurfaceFormatKHR format = {0};
-    for (uint32_t i = 0; i < count; ++i)
-        if (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR &&
-            (formats[i].format == VK_FORMAT_R8G8B8A8_UNORM || formats[i].format == VK_FORMAT_B8G8R8A8_UNORM)) { format = formats[i]; break; }
-    free(formats);
-    if (!format.format) return 3;
-    printf("WSI format=%u colorSpace=%u image-count-min=%u max=%u\n", format.format, format.colorSpace, caps.minImageCount, caps.maxImageCount);
-    uint32_t image_count = caps.minImageCount + 1;
-    if (caps.maxImageCount && image_count > caps.maxImageCount) image_count = caps.maxImageCount;
-    VkCompositeAlphaFlagBitsKHR alpha = caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
-        ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
-    VkSwapchainCreateInfoKHR sc = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface = surface, .minImageCount = image_count, .imageFormat = format.format,
-        .imageColorSpace = format.colorSpace, .imageExtent = {width, height}, .imageArrayLayers = 1,
-        .imageUsage = usage, .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .preTransform = caps.currentTransform, .compositeAlpha = alpha, .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-        .clipped = VK_TRUE};
-    VkSwapchainKHR swapchain;
-    CHECK(vkCreateSwapchainKHR(device, &sc, NULL, &swapchain));
-    CHECK(vkGetSwapchainImagesKHR(device, swapchain, &image_count, NULL));
-    VkImage *images = calloc(image_count, sizeof(*images));
-    VkSemaphore *rendered = calloc(image_count, sizeof(*rendered));
-    if (!images || !rendered) return 2;
-    CHECK(vkGetSwapchainImagesKHR(device, swapchain, &image_count, images));
-    VkSemaphoreCreateInfo sem = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    VkSemaphore acquired;
-    CHECK(vkCreateSemaphore(device, &sem, NULL, &acquired));
-    for (uint32_t i = 0; i < image_count; ++i) CHECK(vkCreateSemaphore(device, &sem, NULL, &rendered[i]));
-    VkBufferCreateInfo bc = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = width * height * 4,
-        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
-    VkBuffer buffer;
-    CHECK(vkCreateBuffer(device, &bc, NULL, &buffer));
-    VkMemoryRequirements requirements;
-    vkGetBufferMemoryRequirements(device, buffer, &requirements);
-    VkPhysicalDeviceMemoryProperties memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties);
-    uint32_t memory_type = UINT32_MAX;
-    for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i)
-        if ((requirements.memoryTypeBits & (1u << i)) &&
-            (memory_properties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
-             (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) { memory_type = i; break; }
-    if (memory_type == UINT32_MAX) return 3;
-    VkMemoryAllocateInfo ma = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = requirements.size, .memoryTypeIndex = memory_type};
-    VkDeviceMemory memory;
-    CHECK(vkAllocateMemory(device, &ma, NULL, &memory));
-    CHECK(vkBindBufferMemory(device, buffer, memory, 0));
-    VkCommandPoolCreateInfo pc = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, .queueFamilyIndex = family};
-    VkCommandPool pool;
-    CHECK(vkCreateCommandPool(device, &pc, NULL, &pool));
-    VkCommandBufferAllocateInfo ca = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1};
-    VkCommandBuffer command;
-    CHECK(vkAllocateCommandBuffers(device, &ca, &command));
-    VkFenceCreateInfo fc = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-    VkFence fence;
-    CHECK(vkCreateFence(device, &fc, NULL, &fence));
-    for (unsigned frame = 0; frame < 8; ++frame) {
-        uint32_t index;
-        CHECK(vkAcquireNextImageKHR(device, swapchain, 5000000000ull, acquired, VK_NULL_HANDLE, &index));
-        CHECK(vkResetCommandBuffer(command, 0));
-        VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-        CHECK(vkBeginCommandBuffer(command, &begin));
-        VkImageMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .image = images[index],
-            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-            0, 0, NULL, 0, NULL, 1, &barrier);
-        VkClearColorValue color = {.float32 = {frame & 1 ? 1 : 0, frame & 1 ? 0 : 1, 0, 1}};
-        vkCmdClearColorImage(command, images[index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &barrier.subresourceRange);
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
-        VkBufferImageCopy copy = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, .imageExtent = {width, height, 1}};
-        vkCmdCopyImageToBuffer(command, images[index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &copy);
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT; barrier.dstAccessMask = 0;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
-        VkMemoryBarrier host = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
-        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &host, 0, NULL, 0, NULL);
-        CHECK(vkEndCommandBuffer(command));
-        VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &acquired, .pWaitDstStageMask = &wait_stage, .commandBufferCount = 1,
-            .pCommandBuffers = &command, .signalSemaphoreCount = 1, .pSignalSemaphores = &rendered[index]};
-        CHECK(vkQueueSubmit(queue, 1, &submit, fence));
-        CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
-        unsigned char *pixels;
-        CHECK(vkMapMemory(device, memory, 0, width * height * 4, 0, (void **)&pixels));
-        const unsigned char expected[4] = {frame & 1 ? (format.format == VK_FORMAT_B8G8R8A8_UNORM ? 0 : 255) : 0,
-            frame & 1 ? 0 : 255, frame & 1 && format.format == VK_FORMAT_B8G8R8A8_UNORM ? 255 : 0, 255};
-        unsigned mismatch = 0;
-        for (uint32_t pixel = 0; pixel < width * height; ++pixel) mismatch += memcmp(pixels + pixel * 4, expected, 4) != 0;
-        if (frame == 0 || frame == 7) {
-            char path[80];
-            snprintf(path, sizeof(path), "image-%u.rgba", frame);
-            FILE *image = fopen(path, "wb");
-            if (!image) return 2;
-            int written = 1;
-            if (format.format == VK_FORMAT_B8G8R8A8_UNORM) {
-                for (uint32_t i = 0; i < width * height; ++i) {
-                    unsigned char rgba[] = {pixels[i * 4 + 2], pixels[i * 4 + 1], pixels[i * 4], pixels[i * 4 + 3]};
-                    written &= fwrite(rgba, 1, 4, image) == 4;
-                }
-            } else written = fwrite(pixels, 1, width * height * 4, image) == width * height * 4;
-            if (fclose(image) || !written) return 2;
+    const VkExtent2D sizes[] = {{320, 240}, {448, 288}, {256, 192}};
+    VkSwapchainKHR previous = VK_NULL_HANDLE;
+    for (unsigned epoch = 0; epoch < sizeof(sizes) / sizeof(sizes[0]); ++epoch) {
+        const uint32_t width = sizes[epoch].width, height = sizes[epoch].height;
+        xdg_surface_set_window_geometry(xdg_surface, 0, 0, width, height);
+        printf("WSI_RESIZE epoch=%u size=%ux%u old-swapchain=%d\n", epoch, width, height, previous != VK_NULL_HANDLE);
+        VkSurfaceCapabilitiesKHR caps;
+        CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps));
+        if (width < caps.minImageExtent.width || width > caps.maxImageExtent.width ||
+            height < caps.minImageExtent.height || height > caps.maxImageExtent.height) return 3;
+        const VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        if ((caps.supportedUsageFlags & usage) != usage) { printf("UNSUPPORTED transfer swapchain usage=%x\n", caps.supportedUsageFlags); return 3; }
+        count = 0;
+        CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, NULL));
+        VkSurfaceFormatKHR *formats = calloc(count, sizeof(*formats));
+        if (!formats) return 2;
+        CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, formats));
+        VkSurfaceFormatKHR format = {0};
+        for (uint32_t i = 0; i < count; ++i)
+            if (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR &&
+                (formats[i].format == VK_FORMAT_R8G8B8A8_UNORM || formats[i].format == VK_FORMAT_B8G8R8A8_UNORM)) { format = formats[i]; break; }
+        free(formats);
+        if (!format.format) return 3;
+        printf("WSI format=%u colorSpace=%u image-count-min=%u max=%u\n", format.format, format.colorSpace, caps.minImageCount, caps.maxImageCount);
+        uint32_t image_count = caps.minImageCount + 1;
+        if (caps.maxImageCount && image_count > caps.maxImageCount) image_count = caps.maxImageCount;
+        VkCompositeAlphaFlagBitsKHR alpha = caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
+            ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+        VkSwapchainCreateInfoKHR sc = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            .surface = surface, .minImageCount = image_count, .imageFormat = format.format,
+            .imageColorSpace = format.colorSpace, .imageExtent = {width, height}, .imageArrayLayers = 1,
+            .imageUsage = usage, .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .preTransform = caps.currentTransform, .compositeAlpha = alpha, .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+            .clipped = VK_FALSE, .oldSwapchain = previous};
+        VkSwapchainKHR swapchain;
+        CHECK(vkCreateSwapchainKHR(device, &sc, NULL, &swapchain));
+        if (previous) vkDestroySwapchainKHR(device, previous, NULL);
+        previous = swapchain;
+        CHECK(vkGetSwapchainImagesKHR(device, swapchain, &image_count, NULL));
+        VkImage *images = calloc(image_count, sizeof(*images));
+        VkSemaphore *rendered = calloc(image_count, sizeof(*rendered));
+        if (!images || !rendered) return 2;
+        CHECK(vkGetSwapchainImagesKHR(device, swapchain, &image_count, images));
+        VkSemaphoreCreateInfo sem = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        VkSemaphore acquired;
+        CHECK(vkCreateSemaphore(device, &sem, NULL, &acquired));
+        for (uint32_t i = 0; i < image_count; ++i) CHECK(vkCreateSemaphore(device, &sem, NULL, &rendered[i]));
+        VkBufferCreateInfo bc = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = width * height * 4,
+            .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+        VkBuffer buffer;
+        CHECK(vkCreateBuffer(device, &bc, NULL, &buffer));
+        VkMemoryRequirements requirements;
+        vkGetBufferMemoryRequirements(device, buffer, &requirements);
+        VkPhysicalDeviceMemoryProperties memory_properties;
+        vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties);
+        uint32_t memory_type = UINT32_MAX;
+        for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i)
+            if ((requirements.memoryTypeBits & (1u << i)) &&
+                (memory_properties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
+                 (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) { memory_type = i; break; }
+        if (memory_type == UINT32_MAX) return 3;
+        VkMemoryAllocateInfo ma = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = requirements.size, .memoryTypeIndex = memory_type};
+        VkDeviceMemory memory;
+        CHECK(vkAllocateMemory(device, &ma, NULL, &memory));
+        CHECK(vkBindBufferMemory(device, buffer, memory, 0));
+        VkCommandPoolCreateInfo pc = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, .queueFamilyIndex = family};
+        VkCommandPool pool;
+        CHECK(vkCreateCommandPool(device, &pc, NULL, &pool));
+        VkCommandBufferAllocateInfo ca = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1};
+        VkCommandBuffer command;
+        CHECK(vkAllocateCommandBuffers(device, &ca, &command));
+        VkFenceCreateInfo fc = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        VkFence fence;
+        CHECK(vkCreateFence(device, &fc, NULL, &fence));
+        for (unsigned frame = 0; frame < 8; ++frame) {
+            uint32_t index;
+            CHECK(vkAcquireNextImageKHR(device, swapchain, 5000000000ull, acquired, VK_NULL_HANDLE, &index));
+            CHECK(vkResetCommandBuffer(command, 0));
+            VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+            CHECK(vkBeginCommandBuffer(command, &begin));
+            VkImageMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .image = images[index],
+                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+            vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0, 0, NULL, 0, NULL, 1, &barrier);
+            VkClearColorValue color = {.float32 = {frame & 1 ? 1 : 0, frame & 1 ? 0 : 1, 0, 1}};
+            vkCmdClearColorImage(command, images[index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &barrier.subresourceRange);
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+            VkBufferImageCopy copy = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, .imageExtent = {width, height, 1}};
+            vkCmdCopyImageToBuffer(command, images[index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &copy);
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT; barrier.dstAccessMask = 0;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+            VkMemoryBarrier host = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+            vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &host, 0, NULL, 0, NULL);
+            CHECK(vkEndCommandBuffer(command));
+            VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &acquired, .pWaitDstStageMask = &wait_stage, .commandBufferCount = 1,
+                .pCommandBuffers = &command, .signalSemaphoreCount = 1, .pSignalSemaphores = &rendered[index]};
+            CHECK(vkQueueSubmit(queue, 1, &submit, fence));
+            CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+            unsigned char *pixels;
+            CHECK(vkMapMemory(device, memory, 0, width * height * 4, 0, (void **)&pixels));
+            const unsigned char expected[4] = {frame & 1 ? (format.format == VK_FORMAT_B8G8R8A8_UNORM ? 0 : 255) : 0,
+                frame & 1 ? 0 : 255, frame & 1 && format.format == VK_FORMAT_B8G8R8A8_UNORM ? 255 : 0, 255};
+            unsigned mismatch = 0;
+            for (uint32_t pixel = 0; pixel < width * height; ++pixel) mismatch += memcmp(pixels + pixel * 4, expected, 4) != 0;
+            if (frame == 0 || frame == 7) {
+                char path[80];
+                snprintf(path, sizeof(path), "image-%u-%u.rgba", epoch, frame);
+                FILE *image = fopen(path, "wb");
+                if (!image) return 2;
+                int written = 1;
+                if (format.format == VK_FORMAT_B8G8R8A8_UNORM) {
+                    for (uint32_t i = 0; i < width * height; ++i) {
+                        unsigned char rgba[] = {pixels[i * 4 + 2], pixels[i * 4 + 1], pixels[i * 4], pixels[i * 4 + 3]};
+                        written &= fwrite(rgba, 1, 4, image) == 4;
+                    }
+                } else written = fwrite(pixels, 1, width * height * 4, image) == width * height * 4;
+                if (fclose(image) || !written) return 2;
+            }
+            vkUnmapMemory(device, memory);
+            if (mismatch) { printf("WSI readback mismatches=%u\n", mismatch); return 2; }
+            w.frame = 0;
+            struct wl_callback *callback = wl_surface_frame(wl_surface);
+            wl_callback_add_listener(callback, &frame_listener, &w);
+            VkPresentInfoKHR present = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                .waitSemaphoreCount = 1, .pWaitSemaphores = &rendered[index], .swapchainCount = 1,
+                .pSwapchains = &swapchain, .pImageIndices = &index};
+            CHECK(vkQueuePresentKHR(queue, &present));
+            while (!w.frame && !w.closed) if (wl_display_dispatch(w.display) < 0) return 2;
+            if (w.closed) return 2;
+            printf("WSI_FRAME epoch=%u frame=%u image=%u size=%ux%u rgba=%s readback=exact callback=1\n",
+                epoch, frame, index, width, height, frame & 1 ? "255,0,0,255" : "0,255,0,255");
+            CHECK(vkResetFences(device, 1, &fence));
+            if (frame == 0 && epoch == 0) dump_maps("frame");
+            if (frame == 0 || frame == 7) sleep(2);
         }
-        vkUnmapMemory(device, memory);
-        if (mismatch) { printf("WSI readback mismatches=%u\n", mismatch); return 2; }
-        w.frame = 0;
-        struct wl_callback *callback = wl_surface_frame(wl_surface);
-        wl_callback_add_listener(callback, &frame_listener, &w);
-        VkPresentInfoKHR present = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-            .waitSemaphoreCount = 1, .pWaitSemaphores = &rendered[index], .swapchainCount = 1,
-            .pSwapchains = &swapchain, .pImageIndices = &index};
-        CHECK(vkQueuePresentKHR(queue, &present));
-        while (!w.frame && !w.closed) if (wl_display_dispatch(w.display) < 0) return 2;
-        if (w.closed) return 2;
-        printf("WSI_FRAME frame=%u image=%u size=%ux%u rgba=%s readback=exact callback=1\n",
-            frame, index, width, height, frame & 1 ? "255,0,0,255" : "0,255,0,255");
-        CHECK(vkResetFences(device, 1, &fence));
-        if (frame == 0) { dump_maps("frame"); sleep(1); }
+        /* Rebuild/teardown boundary; no wait-idle in the per-frame path. */
+        CHECK(vkQueueWaitIdle(queue));
+        vkDestroyFence(device, fence, NULL);
+        vkDestroyCommandPool(device, pool, NULL);
+        vkDestroyBuffer(device, buffer, NULL); vkFreeMemory(device, memory, NULL);
+        vkDestroySemaphore(device, acquired, NULL);
+        for (uint32_t i = 0; i < image_count; ++i) vkDestroySemaphore(device, rendered[i], NULL);
+        free(rendered); free(images);
     }
-    /* Teardown only; no wait-idle is used in the per-frame path. */
-    CHECK(vkQueueWaitIdle(queue));
-    sleep(2);
-    vkDestroyFence(device, fence, NULL);
-    vkDestroyCommandPool(device, pool, NULL);
-    vkDestroyBuffer(device, buffer, NULL); vkFreeMemory(device, memory, NULL);
-    vkDestroySemaphore(device, acquired, NULL);
-    for (uint32_t i = 0; i < image_count; ++i) vkDestroySemaphore(device, rendered[i], NULL);
-    vkDestroySwapchainKHR(device, swapchain, NULL);
-    free(rendered); free(images);
+    vkDestroySwapchainKHR(device, previous, NULL);
     vkDestroyDevice(device, NULL); vkDestroySurfaceKHR(instance, surface, NULL); vkDestroyInstance(instance, NULL);
     xdg_toplevel_destroy(toplevel); xdg_surface_destroy(xdg_surface); wl_surface_destroy(wl_surface);
     xdg_wm_base_destroy(w.shell); wl_compositor_destroy(w.compositor); wl_registry_destroy(registry);

@@ -264,7 +264,13 @@ void WaylandNativeWindow::releaseBuffer(struct wl_buffer *buffer)
         if ((*it) == wnb)
             break;
     }
-    assert(it != m_bufList.end());
+    if (it == m_bufList.end()) {
+        // A prior producer connection still owned this displayed buffer.
+        // Its release must not increase the current pool's free count.
+        TRACE("released retired buffer %p", wnb);
+        destroyBuffer(wnb, false);
+        return;
+    }
     HYBRIS_TRACE_BEGIN("wayland-platform", "releaseBuffer", "-%p", wnb);
     wnb->busy = 0;
 
@@ -429,7 +435,7 @@ int WaylandNativeWindow::setBuffersFormat(int format) {
     return NO_ERROR;
 }
 
-void WaylandNativeWindow::destroyBuffer(WaylandNativeWindowBuffer* wnb)
+void WaylandNativeWindow::destroyBuffer(WaylandNativeWindowBuffer* wnb, bool counted)
 {
     TRACE("wnb:%p", wnb);
 
@@ -448,7 +454,7 @@ void WaylandNativeWindow::destroyBuffer(WaylandNativeWindowBuffer* wnb)
         wl_buffer_destroy(wnb->wlbuffer);
     wnb->wlbuffer = NULL;
     wnb->common.decRef(&wnb->common);
-    m_freeBufs--;
+    if (counted) m_freeBufs--;
 }
 
 void WaylandNativeWindow::destroyBuffers()
@@ -458,9 +464,15 @@ void WaylandNativeWindow::destroyBuffers()
     std::list<WaylandNativeWindowBuffer*>::iterator it = m_bufList.begin();
     for (; it!=m_bufList.end(); ++it)
     {
+        fronted.remove(*it);
         destroyBuffer(*it);
     }
     m_bufList.clear();
+    // Remaining displayed buffers belong to disconnected producer pools.
+    // Destroy their proxies at window teardown; the compositor retains its
+    // imported backing storage until it is finished using the image.
+    for (auto *buffer : fronted) destroyBuffer(buffer, false);
+    fronted.clear();
     m_freeBufs = 0;
 }
 
