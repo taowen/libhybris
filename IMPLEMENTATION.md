@@ -709,3 +709,14 @@ APK with recorded hashes. The separate package/UID and fresh process remove
 cross-run native-state accumulation without restarting Ardesk. Both X300 and
 Redmi now pass the same three-size screen gate on this chosen backend. This is
 not a source-built compositor or a fix for long-lived backend resource leaks.
+
+The compositor wrapper now has `--repeat N` to exercise sequential clients in
+one compositor lifetime. It checks PID plus process start time before/after
+each client, records client PIDs and compositor FD listings, and requires every
+requested runner result to be PASS. Unsupported presentation is not a passing
+repeat run. Actual repeated-client failure is now directly reproducible on both
+phones: eight clients pass and the ninth fails screen-color transition despite
+24 exact readbacks and completed frame callbacks. This is a regression detector,
+not a binding-table retirement fix or proof that remaining compositor references
+and FDs are released. The backend source/build dependency has been located;
+production library behavior is unchanged in this batch.

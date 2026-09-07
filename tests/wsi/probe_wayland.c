@@ -67,6 +67,7 @@ static void dump_maps(const char *phase) {
 
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
+    printf("WSI_CLIENT pid=%ld\n", (long)getpid());
     alarm(45);
     struct window w = {0};
     w.display = wl_display_connect(NULL);

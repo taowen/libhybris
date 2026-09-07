@@ -244,3 +244,10 @@ Its wrapper restarts only that test package for each run, avoiding pollution
 of the Ardesk desktop's native compositor state. Backend binaries are imported
 from an explicitly selected APK and hashed; this does not fix the backend's
 long-lived binding-table reclamation gap.
+
+For client-exit retirement regression, build the latest probe and run
+`python3 tests/wsi/compositor/run.py --serial SERIAL --repeat 10`. The dedicated
+compositor remains alive while sequential probe processes exit and reconnect;
+all requested runs must pass, with unchanged compositor PID/start time. Each
+probe logs its PID, and the wrapper saves compositor FD snapshots between
+clients. See [the fixture](compositor/README.md) for failure evidence and scope.

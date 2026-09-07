@@ -13,7 +13,10 @@ python3 tests/wsi/compositor/build.py --backend-apk /path/to/ardesk-debug.apk \
     --sdk /path/to/Android/Sdk
 /path/to/ardesk/tools/install-apk.sh --serial SERIAL \
     tests/wsi/build/compositor/hybris-wsi-test.apk
+tests/wsi/build.sh
 python3 tests/wsi/compositor/run.py --serial SERIAL
+# Keep the compositor alive across ten sequential client processes:
+python3 tests/wsi/compositor/run.py --serial SERIAL --repeat 10
 ```
 
 The build compiles the small JNI host and Java Activity with the SDK/NDK,
@@ -33,7 +36,15 @@ the existing WSI runner with the test package's UID. The API probe remains
 responsible for verifying the actual connection and protocol. A per-device
 host lock prevents overlapping wrapper runs. Afterward the wrapper stops the
 test package and records previous/new/remaining PIDs in isolation.json. It
-passes --build and --trace through. Installation is separate and explicit;
+passes --build and --trace through. `--repeat N` (1–100, default 1) starts
+N sequential clients without restarting the compositor between them. Each
+iteration requires the same compositor PID and `/proc/PID/stat` start time,
+records the probe PID and compositor FD listing/count, and references the
+full runner result. It stops at the first non-PASS result (including
+UNSUPPORTED); the wrapper succeeds only when every requested client passes.
+Rebuild the WSI probe for its `WSI_CLIENT` PID evidence. FD snapshots are
+observations, not a leak-freedom gate: startup and driver work may affect them.
+The run ends with the same package cleanup even on failure. Installation is separate and explicit;
 it never replaces the Ardesk package. Closing the test Surface terminates
 its process, so the fixture does not reuse a destroyed Surface or native
 globals. This also means backgrounding the test Activity may end a run.
@@ -43,7 +54,8 @@ For interactive inspection, start the test Activity manually and use
 Repeated manual runs share native state; prefer the wrapper for isolated
 iterations. The eight-client binding-table limit in the imported backend is
 not fixed here. A new process prevents its state from accumulating across
-wrapper invocations, without pretending that long-lived compositor operation
+wrapper invocations; the repeat option deliberately retains that state within
+one invocation, without pretending that long-lived compositor operation
 is leak-free. Files/font caches persist; isolation is of process and native
 GPU state, not a hermetic filesystem or Android graphics stack.
 
@@ -71,3 +83,31 @@ PID as well as a socket, because a short-lived same-name child was observed
 on X300 during startup. The per-device host lock is present but competing
 wrapper invocations were not separately exercised. Original Ardesk packages
 were not replaced; foreground Surface availability is still shared with Android.
+
+Repeated-client validation on 2026-09-07: the rebuilt probe and `--repeat 10`
+produce FAIL on both X300 (`20260907T100827-ad521e8a`, compositor PID 31403,
+start time 1532942) and Redmi (`20260907T100827-f9d18538`, PID 5364, start time
+4831129). Each uses nine distinct client PIDs, passes clients 1–8 with three
+sizes and 254,976 screen pixels per client, then fails client 9's screen gate:
+`no expected green-to-red window transition`. Client 9 still reports 24 exact
+readbacks and completed frame callbacks. No tenth client runs after failure.
+The compositor PID/start time remains unchanged across all nine clients; both
+wrappers stop their test process afterward. The earlier run without explicit
+client PID/FD evidence reproduced the same eight-pass/ninth-fail boundary.
+
+X300 FD observations are 177 before clients, then
+200/202/205/208/211/214/217/220/220. Redmi observations are 151, then
+172/166/168/170/172/174/176/178/178. The initial fluctuation is retained rather
+than hidden behind a fixed baseline; subsequent growth is consistent with the
+source's retained AHB bindings, but these FD counts alone do not identify every
+owner or prove the exact runtime slot contents. No backend fix is included.
+The same-device wrapper lock was also exercised during the final X300 run:
+a second invocation failed with EAGAIN before touching the live test process.
+
+Fresh-process recovery with default `--repeat 1` also passes on both phones:
+X300 `20260907T101153-0f7d48b0` / probe `20260907T101154-536a15c5`; Redmi
+`20260907T101153-b89a3458` / probe `20260907T101154-17607f09`. Each passes
+three sizes, 24 frames and 254,976 screen pixels and leaves no test PID. This
+is evidence of recovery after a fresh process, not a remedy for the persistent
+backend lifetime defect. No production-library headless suite was rerun for
+this probe/wrapper-only change.
