@@ -30,6 +30,21 @@ binary code: this does not establish backend source reproducibility. Review
 its provenance before choosing another APK. Target SDK 28 supports this
 run-as native executable development workflow; this is not a production APK.
 
+To test a source change in anlabwc while retaining the selected APK's support
+libraries and xkb data, build that checkout and replace just its backend:
+
+```sh
+meson compile -C /path/to/ardesk/build/ndk-anlabwc
+python3 tests/wsi/compositor/build.py --backend-apk /path/to/ardesk-debug.apk \
+    --backend-library /path/to/ardesk/build/ndk-anlabwc/libanlabwc.so \
+    --sdk /path/to/Android/Sdk
+```
+
+The dependency walk uses the replacement ELF's DT_NEEDED list. The manifest
+records its absolute input path and SHA256 as `backend_library_override`;
+support libraries are still imported binaries. Keep the corresponding source
+revision/build log with the result; a library hash is not source provenance.
+
 The run wrapper only force-stops this dedicated test package, removes its
 stale socket files, starts a new Activity, waits for its socket and invokes
 the existing WSI runner with the test package's UID. The API probe remains
@@ -52,8 +67,9 @@ globals. This also means backgrounding the test Activity may end a run.
 For interactive inspection, start the test Activity manually and use
 `tests/wsi/run.py --package io.taowen.hybriswsitest --serial SERIAL`.
 Repeated manual runs share native state; prefer the wrapper for isolated
-iterations. The eight-client binding-table limit in the imported backend is
-not fixed here. A new process prevents its state from accumulating across
+iterations. The eight-client binding-table lifetime defect in the original imported backend
+is not fixed by isolation; the rebuilt backend revision documented below fixes
+surface-owned android_wlegl bindings. A new process prevents its state from accumulating across
 wrapper invocations; the repeat option deliberately retains that state within
 one invocation, without pretending that long-lived compositor operation
 is leak-free. Files/font caches persist; isolation is of process and native
@@ -111,3 +127,46 @@ three sizes, 24 frames and 254,976 screen pixels and leaves no test PID. This
 is evidence of recovery after a fresh process, not a remedy for the persistent
 backend lifetime defect. No production-library headless suite was rerun for
 this probe/wrapper-only change.
+
+
+Source backend retirement fix: anlabwc
+[`25a829e9`](https://github.com/taowen/anlabwc/commit/25a829e98650b786d236584e6c99ae0d9bb60005)
+keys android_wlegl AHB bindings by the actual `wlr_surface`, resolves that exact
+surface's view, and removes the binding on surface destruction. The removal
+releases the retained AHB and immediately updates the Android overlay table,
+so its reference need not wait for a subsequent client's draw. Existing
+external PID-based presentation APIs are unchanged. Eight simultaneously live
+overlay slots remain the limit; concurrent multiwindow/subsurface behavior,
+legacy X11/PID callers, abrupt client termination and arbitrary in-flight
+resource lifetime are not established by the sequential-client check.
+
+The actual NDK build recompiled embed.c and android_wlegl.c and relinked
+libanlabwc.so. `--backend-library` packaged SHA256
+6cf3e874f54b40456386ffbf933b166a5d25f2a60d75240d8a4ddbe4ee5995d3 into APK
+c24b4fa87e38a21f86863b888954df5f588e9e28e8795b6d3794021565e8c41f.
+Only the dedicated test package was updated on both phones. Support libraries
+and xkb still came from the same original backend APK; this is not a rebuild
+of the entire dependency graph.
+
+Redmi `20260907T101850-d5ce6967` passes all 12 clients in compositor PID 7870
+(start time 4893453): 288 frames, three sizes and 3,059,712 screen pixels in
+total. Every current client has a `binding retired ... active=0` record; FD
+counts after clients are 172 then 164 for the remaining 11 clients. The old
+backend failed at client 9 with increasing FDs. The wrapper leaves no process.
+
+Initial X300 `20260907T101850-87d2827b` passes clients 1–10, then fails client
+11 (`20260907T102145-a5982141`) under the unchanged strict screen checker:
+320×39 pixels differ by one channel value (green 250 instead of 251; red 233
+instead of 234). A charging notification is visible in both screenshots;
+causality was not independently isolated. The full rectangle and readbacks
+remain present, unlike the old ninth-client missing-color failure. This result
+remains FAIL; FD counts are 200 after the first client and 199 thereafter,
+and each client has a retirement record. It is not counted as a 12-client pass.
+
+Final X300 rerun `20260907T102323-39154d6d` passes all 12 clients with the same
+strict checker, compositor PID 7001 (start time 1622605), 288 frames and
+3,059,712 matched screen pixels. FD counts are 200 after client 1 and 199
+for clients 2–12; every client has its own retirement-to-zero log. No test
+process remains afterward. Together with the Redmi result this closes the
+observed sequential surface-destruction binding exhaustion, not all compositor
+memory/FD lifetime, simultaneous window placement or API compatibility gates.

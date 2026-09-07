@@ -720,3 +720,12 @@ phones: eight clients pass and the ninth fails screen-color transition despite
 not a binding-table retirement fix or proof that remaining compositor references
 and FDs are released. The backend source/build dependency has been located;
 production library behavior is unchanged in this batch.
+
+The dependent anlabwc backend now owns android_wlegl AHB bindings by actual
+Wayland surface and retires them on destruction (25a829e9), including the
+Android overlay's reference. The test APK can use this rebuilt library while
+retaining its recorded support-library inputs. Sequential lifetime results
+are in tests/wsi/compositor/README.md. This fixes the observed retained-binding
+path, not the eight-live-overlay capacity or all X11/subsurface/fence behavior.
+Desktop GL integration and Vulkan compatibility transforms remain separate,
+unimplemented deliverables; this WSI fix does not add API features.

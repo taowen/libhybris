@@ -11,6 +11,7 @@ import zipfile
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--backend-apk', type=Path, required=True)
+p.add_argument('--backend-library', type=Path, help='replace libanlabwc.so with a locally rebuilt backend; dependencies/assets still come from the APK')
 p.add_argument('--sdk', type=Path, default=Path(os.environ.get('ANDROID_HOME', str(Path.home() / 'Android/Sdk'))))
 p.add_argument('--ndk', default='29.0.14206865')
 p.add_argument('--build-tools', default='36.0.0')
@@ -30,7 +31,9 @@ with zipfile.ZipFile(a.backend_apk) as archive:
         name = pending.pop()
         if name in copied: continue
         if name not in names: raise ValueError('missing backend library ' + name)
-        path = libs / name; path.write_bytes(archive.read(names[name])); copied.add(name)
+        path = libs / name
+        data = a.backend_library.read_bytes() if name == 'libanlabwc.so' and a.backend_library else archive.read(names[name])
+        path.write_bytes(data); copied.add(name)
         needed = subprocess.check_output(['patchelf', '--print-needed', str(path)], text=True).splitlines()
         for dependency in needed:
             if dependency in names: pending.append(dependency)
@@ -57,8 +60,9 @@ run(bt / 'zipalign', '-f', '4', work / 'base.apk', out / 'unsigned.apk')
 run(bt / 'apksigner', 'sign', '--ks', key, '--ks-pass', 'pass:android', '--out', out / 'hybris-wsi-test.apk', out / 'unsigned.apk')
 run(bt / 'apksigner', 'verify', out / 'hybris-wsi-test.apk')
 (out / 'manifest.json').write_text(json.dumps({'backend_apk': str(a.backend_apk.resolve()), 'backend_sha256': sha(a.backend_apk),
+    'backend_library_override': ({'path': str(a.backend_library.resolve()), 'sha256': sha(a.backend_library)} if a.backend_library else None),
     'apk_sha256': sha(out / 'hybris-wsi-test.apk'), 'libraries': {x.name: sha(x) for x in libs.glob('*.so')},
     'external_dependencies': sorted(external), 'sources': {x.name: sha(x) for x in source.iterdir() if x.is_file()},
     'ndk': a.ndk, 'build_tools': a.build_tools,
-    'note': 'Imported backend binaries; no source reproducibility claim for that backend.'}, indent=2))
+    'note': 'APK dependencies with optional local backend replacement; hashes identify inputs, not source reproducibility.'}, indent=2))
 print(out / 'hybris-wsi-test.apk')
