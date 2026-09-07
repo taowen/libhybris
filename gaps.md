@@ -529,3 +529,18 @@ X300 `20260907T085914-d8c8a645` 24 帧与 254,976 屏幕像素通过；红米
 135 PASS / 10 UNSUPPORTED / 1 CRASH；红米 `20260907T090014-d22fcaa8` 为
 98 PASS / 47 UNSUPPORTED / 1 CRASH，仍均只有 native-groups 崩溃。
 VVL/SyncVal 与两种离屏捕获回放通过，X300 ICD 仍使用限定 Mali 选项。
+
+2026-09-07 双端失败现场：WSI runner 新增独立 diagnostics.py，滚动保留
+最多 512 KiB compositor PID 日志；十秒无客户端输出时、或 host timeout
+终止前，采集带 PID/cwd 核对的客户端状态、maps、FD、线程等待点及
+compositor 状态和截图。文本每份最多 256 KiB，采集命令有五秒期限，
+错误/截断/collector hash 单独记录。旧库 X300
+`20260907T094746-e0dc168e` 实测 TIMEOUT 124，主线程 do_sys_poll，客户端
+70,618 字节、compositor 155,310 字节、日志 17,596 字节，均未截断，
+终止前后截图存在。最终新库 X300 `20260907T094825-24bddd09` 三尺寸
+24 帧及 254,976 像素通过；红米 `20260907T094825-0f077796` 拒绝路径
+通过，窗口仍 UNSUPPORTED。日志 reader 均退出，运行目录清理完成。
+库包增量实际构建 9.885 秒，本批仅 host 诊断变化，不冒称新的完整离屏
+回归。中断期间测试桌面已退出，重新启动后验证，未安装 APK。日志首条
+可能早于运行、PID 重启不跟随、进程退出后无法追补现场；无 GPU/backtrace/
+release-fence 证据。独立 compositor 与整体验收仍未完成。

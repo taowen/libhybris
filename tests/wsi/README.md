@@ -193,3 +193,47 @@ Full release-build baseline: X300 `20260907T084136-0606339b` has
 Validation, SyncVal and both headless capture/replay gates pass; X300 ICD
 still uses the scoped Mali option. No real-window capture or standard ICD
 WSI coverage is inferred from those headless checks.
+
+## Automatic failure evidence
+
+The runner starts a PID-filtered compositor log reader before launching the
+client. It keeps at most 512 KiB in a rolling memory buffer, records bytes seen
+and truncation, then saves `compositor.log` and stops its own adb reader. The
+initial one-line logcat tail may predate the run; use timestamps, not mere log
+presence, to associate an event. A compositor restart is not followed to a new
+PID. Log access failures are recorded in `diagnostics.json`.
+
+After ten seconds without client output, once per run, the runner snapshots the
+owned client (PID plus working-directory check) and the compositor. It records
+status, mappings, FDs and client thread wait channels, with each text snapshot
+limited to 256 KiB and each collection command timed out after five seconds.
+`diagnostic-screen.png` is captured before timeout termination. An unsuccessful
+client exit also attempts a snapshot, which may report that the client has
+already gone. `failure-screen.png` records the screen for failed final results,
+including screenshot-checker failures. These diagnostic screenshots do not
+replace the six image acceptance checks. This is read-only process evidence,
+not a stack unwind, GPU trace, release-fence proof or exact compositor slot count.
+
+`--timeout SECONDS` adjusts the host watchdog (5–300, default 65); the existing
+45-second client alarm remains. Collection can add bounded command time beyond
+the requested deadline. Failure to collect a diagnostic is recorded separately
+and does not turn it into evidence of successful collection. PID-filtered logs
+and snapshots may contain other activity within that compositor process.
+
+Final old-library check `20260907T094746-e0dc168e` on X300 used `--timeout 25`
+and reproduced the known resize stall: TIMEOUT 124, client main thread in
+`do_sys_poll`, 70,618 bytes of client snapshot, 155,310 bytes of compositor
+snapshot, and 17,596 bytes of compositor log, without truncation. Both diagnostic
+screenshots were saved; the owned client was terminated and its directory
+removed. A prior host interruption `20260907T090508-6caffb44` was recorded as
+INTERRUPTED after confirming the client had exited; it is not a passing run.
+
+Final current-library X300 `20260907T094825-24bddd09` passes the three-size,
+24-frame and 254,976-pixel gate. Redmi `20260907T094825-0f077796` passes eight
+missing-protocol rejections and remains window-UNSUPPORTED. Both log reader
+processes exited. The unchanged library bundle was rebuilt incrementally in
+9.885 seconds; this batch changes host diagnostics only and does not claim a
+new full headless baseline. The test desktops had stopped during the interrupted
+session and were started again; no APK was installed. Standalone compositor
+isolation still requires a separate Android Surface/process lifecycle and is
+not implemented by this collector.

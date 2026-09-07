@@ -693,3 +693,11 @@ The manifest records clean/incremental mode; build-report.json records the
 actual decision and elapsed time. Failed preparation withdraws prior completion
 markers. This accelerates the edit/build loop but does not replace clean-build
 regression acceptance or provide a tamper-proof compiler cache.
+
+WSI diagnostics are isolated in tests/wsi/diagnostics.py. A bounded PID-filtered
+compositor log accompanies each run; stalls trigger read-only client/compositor
+process snapshots before the owned client is terminated. Collection errors,
+limits and collector hash are recorded independently of image acceptance.
+This improves first-failure evidence but is not an isolated compositor, a GPU
+trace or a debugger backtrace. See tests/wsi/README.md for the actual old-library
+stall and normal-window verification and remaining limitations.

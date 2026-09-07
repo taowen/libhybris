@@ -18,9 +18,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
 from manifest import sha256_file, verify_manifest
 from screen_evidence import verify_screen
+from diagnostics import Diagnostics
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
+p.add_argument('--timeout', type=float, default=65, help='host watchdog seconds (default 65)')
 p.add_argument('--trace', action='store_true', help='record compiled native-window tracepoints without verbose hook logs')
 p.add_argument('--package', default='io.taowen.ardesk')
 p.add_argument('--wayland', default='wayland-0')
@@ -28,6 +30,7 @@ p.add_argument('--build', type=Path, default=ROOT / 'tests/baseline/build')
 p.add_argument('--probe', type=Path, default=ROOT / 'tests/wsi/build')
 p.add_argument('--out', type=Path, default=ROOT / 'tests/wsi/build/results')
 a = p.parse_args()
+if not 5 <= a.timeout <= 300: p.error('timeout must be between 5 and 300 seconds')
 if not re.fullmatch(r'[A-Za-z0-9_.]+', a.package): p.error('invalid package')
 adb = [os.environ.get('ADB', 'adb'), '-s', a.serial]
 def shell(command, **kwargs): return subprocess.run(adb + ['shell', command], **kwargs)
@@ -60,7 +63,7 @@ command = ' '.join(k + '=' + shlex.quote(v) for k, v in env.items())
 command += ' ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-wayland'
 metadata = {'run_id': run_id, 'serial': a.serial, 'package': a.package,
             'fingerprint': prop('ro.build.fingerprint'), 'sdk': sdk,
-            'command': command, 'remote': remote, 'runner_sha256': sha256_file(Path(__file__)), 'hybris': provenance, 'probe': probe_provenance}
+            'command': command, 'remote': remote, 'host_timeout_seconds': a.timeout, 'runner_sha256': sha256_file(Path(__file__)), 'hybris': provenance, 'probe': probe_provenance}
 apk_paths = shell('pm path ' + shlex.quote(a.package), check=True, capture_output=True, text=True).stdout.splitlines()
 metadata['package_apks'] = []
 for apk in apk_paths:
@@ -73,6 +76,7 @@ archive = out / 'stage.tar'
 with tarfile.open(archive, 'w') as bundle: bundle.add(stage, arcname='.')
 process = None
 code = 2
+diagnostics = Diagnostics(adb, a.package, out, app)
 def stop_owned_process():
     value = app('cat ' + shlex.quote(remote + '/runner.pid'), capture_output=True, text=True)
     if value.returncode or not value.stdout.strip().isdigit(): return
@@ -91,17 +95,21 @@ try:
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
-    deadline = time.monotonic() + 65
+    deadline = time.monotonic() + a.timeout
+    last_output = time.monotonic()
     pending = b''
     screenshots = set()
     with (out / 'probe.log').open('wb') as log:
         while selector.get_map():
-            if time.monotonic() > deadline: raise subprocess.TimeoutExpired(command, 65)
+            if time.monotonic() - last_output > 10:
+                diagnostics.snapshot(remote, 'no client output for 10 seconds')
+            if time.monotonic() > deadline: raise subprocess.TimeoutExpired(command, a.timeout)
             for key, _ in selector.select(0.2):
                 chunk = os.read(key.fileobj.fileno(), 65536)
                 if not chunk:
                     selector.unregister(key.fileobj)
                     continue
+                last_output = time.monotonic()
                 log.write(chunk); log.flush()
                 pending += chunk
                 while b'\n' in pending:
@@ -114,8 +122,15 @@ try:
                         with (out / name).open('wb') as picture:
                             subprocess.run(adb + ['exec-out', 'screencap', '-p'], stdout=picture, check=True, timeout=10)
     code = process.wait(timeout=5)
+    if code not in (0, 3):
+        diagnostics.snapshot(remote, 'client exited unsuccessfully; client may already be gone')
+except (OSError, subprocess.CalledProcessError) as error:
+    code = 2
+    (out / 'runner-error.txt').write_text(str(error))
+    diagnostics.snapshot(remote, 'runner operation failed')
 except subprocess.TimeoutExpired:
     code = 124
+    diagnostics.snapshot(remote, 'host timeout before terminating owned client')
     # Only the PID written by this run's launcher is targeted.
     stop_owned_process()
     if process:
@@ -143,6 +158,7 @@ finally:
         if hashes.returncode and code == 0: code = 2
     app('rm -rf ' + shlex.quote(remote), check=True)
     if archive.exists(): archive.unlink()
+    diagnostics.finish()
 if code == 0:
     try:
         evidence = verify_screen(out)
@@ -150,6 +166,9 @@ if code == 0:
         evidence = {'status': 'FAIL', 'error': str(error)}
         code = 2
     (out / 'screen-evidence.json').write_text(json.dumps(evidence, indent=2))
+if code not in (0, 3):
+    diagnostics.screen('failure-screen.png')
+    (out / 'diagnostics.json').write_text(json.dumps(diagnostics.records, indent=2))
 status = 'PASS' if code == 0 else 'UNSUPPORTED' if code == 3 else 'TIMEOUT' if code in (124, 142) else 'CRASH' if code >= 128 else 'FAIL'
 (out / 'result.json').write_text(json.dumps({'status': status, 'exit_code': code}, indent=2))
 print(out)
