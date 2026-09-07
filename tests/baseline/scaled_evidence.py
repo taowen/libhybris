@@ -83,6 +83,9 @@ def scaled_evidence(directory, log, forced, source):
             raise ValueError('pipeline selected the wrong vertex entry')
         entry['entry_point'] = selected_name
         before, after = [vertex_input(module, selected) for module in modules]
+        if source.name == 'scaled.literal.inc':
+            if before['id'] != '%3' or not re.search(r'OpVectorShuffle .+ 3 2 1 0$', modules[0], re.M):
+                raise ValueError('literal collision fixture lost its ID/index overlap')
         if before['scalar'] != 'OpTypeFloat 32' or before['components'] != 4:
             raise ValueError('unexpected original vertex interface')
         expected = dict(before, scalar='OpTypeInt 32 ' + signs[0]) if vertex else before

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate the scaled probe's single and multi-entry shader assets."""
 from pathlib import Path
+import re
 import struct
 import subprocess
 import tempfile
@@ -16,11 +17,24 @@ with tempfile.TemporaryDirectory(prefix='hybris-scaled-shaders-') as temporary:
     fragment = compile_shader('frag', 'fragment')
     selected = compile_shader('vert', 'selected', ('-DHYBRIS_SCALED_MULTI=1', '--source-entrypoint', 'main', '-e', 'scaled_vertex'))
     alternate = compile_shader('vert', 'alternate', ('-DHYBRIS_SCALED_MULTI=1', '-DHYBRIS_SCALED_ALTERNATE=1', '--source-entrypoint', 'main', '-e', 'alternate_vertex'))
+    literal = compile_shader('vert', 'literal', ('-DHYBRIS_SCALED_LITERALS=1',))
+    assembly = subprocess.check_output(['spirv-dis', '--raw-id', str(literal)], text=True)
+    inputs = set(re.findall(r'^\s*(%\d+) = OpVariable %\d+ Input$', assembly, re.M))
+    locations = set(re.findall(r'OpDecorate (%\d+) Location 0$', assembly, re.M))
+    target, = inputs & locations
+    target_id = int(target[1:])
+    # SPIRV-Tools disassembly distinguishes IDs from literal operands. Swap
+    # only ID tokens so the input has ID 3 while shuffle component 3 stays 3.
+    assembly = re.sub(r'%(\d+)\b', lambda m: '%' + str(3 if int(m[1]) == target_id else target_id if int(m[1]) == 3 else int(m[1])), assembly)
+    assembly_path = output / 'literal.spvasm'
+    assembly_path.write_text(assembly)
+    subprocess.run(['spirv-as', '--target-env', 'spv1.0', '--preserve-numeric-ids', str(assembly_path), '-o', str(literal)], check=True)
     multiple = output / 'multiple.spv'
     subprocess.run(['spirv-link', '--target-env', 'vulkan1.1', str(alternate), str(fragment), str(selected), '-o', str(multiple)], check=True)
     for path, filename, symbol in ((vertex, 'scaled.vert.inc', 'kScaledVertSpv'),
                                    (fragment, 'scaled.frag.inc', 'kScaledFragSpv'),
-                                   (multiple, 'scaled.multi.inc', 'kScaledMultiSpv')):
+                                   (multiple, 'scaled.multi.inc', 'kScaledMultiSpv'),
+                                   (literal, 'scaled.literal.inc', 'kScaledLiteralSpv')):
         subprocess.run(['spirv-val', '--target-env', 'vulkan1.1', str(path)], check=True)
         binary = path.read_bytes()
         words = struct.unpack('<' + 'I' * (len(binary) // 4), binary)

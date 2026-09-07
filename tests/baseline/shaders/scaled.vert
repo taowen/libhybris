@@ -8,7 +8,9 @@ vec4 inspect_value(vec4 fetched) { return vec4(equal(fetched, expected.value)); 
 void main() {
     vec2 position = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
     gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
-#ifdef HYBRIS_SCALED_MULTI
+#ifdef HYBRIS_SCALED_LITERALS
+    color = vec4(equal(value.wzyx, expected.value.wzyx)).wzyx;
+#elif defined(HYBRIS_SCALED_MULTI)
     color = inspect_value(value);
 #else
     color = vec4(equal(value, expected.value));

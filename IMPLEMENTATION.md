@@ -53,6 +53,10 @@ probe. Multi-entry modules now receive stage-specific temporary modules with
 reachable function/global dependencies retained; a three-entry shared module
 and helper-function push-constant reads pass on Adreno and Mali. Adreno required
 removing unreachable declarations as well as unused entry-point declarations.
+The shared SPIR-V scans now exclude definite literal operands using pinned
+grammar metadata; a valid shader with input ID 3 and shuffle index 3 no longer
+fails conversion. Old/new Adreno runs use identical probe binaries, and Mali
+native/forced controls pass. Ambiguous operand layouts remain conservative.
 This is an experimental shader/pipeline subset: G07/G08 remain open,
 including general interfaces, dynamic vertex input, shader objects and graphics
 pipeline libraries. BC, clip/cull/point-size and software timeline patches are

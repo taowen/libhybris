@@ -158,10 +158,11 @@ still supply later pipeline variants. All temporary stage modules are freed
 after the backend call. Supported inputs are direct Location
 scalar/vec2/vec3/vec4 float32 values, direct loads, component
 access chains and pointer copies. It rejects matrix/array/interface-block and
-unhandled pointer forms. Its conservative pointer-use scan can also reject
-otherwise valid modules when a literal equals a tracked pointer ID. Entry
-extraction also conservatively retains global variables whose IDs equal
-literals in live functions. Function-pointer instructions, unknown opcodes,
+unhandled pointer forms. Grammar-derived masks exclude definite literal operands
+such as shuffle/extract indices and parameter-free enums from pointer/liveness
+scans. Ambiguous or variable-width operand sequences still use conservative
+scanning: a literal can cause rejection or retain an extra global declaration
+when its position cannot be classified statically. Function-pointer instructions, unknown opcodes,
 and grouped/nonsemantic debug references into removed code are rejected; this
 is not a general SPIR-V optimizer. Unsupported
 conversion returns `VK_ERROR_UNKNOWN`, with a diagnostic, rather than supplying
@@ -183,7 +184,7 @@ ignored for secure execution. The baseline runner's
 collects these dumps for scaled probes; host `spirv-val` and `spirv-dis` are
 required. See the baseline README for device results and reproduction.
 
-The entry-extraction result-ID table is generated from the Khronos SPIR-V 1.6
+The entry-extraction result-ID and definite-literal tables are generated from the Khronos SPIR-V 1.6
 revision 7 grammar, SHA256
 `db8581272b63d232268094a47b68d18a0464fc911e06004d57419924fe660ba4`, as vendored in
 unmodified Mesa `c3b008c1ba01d455351b762253ef44c3ca19653f` at
@@ -192,3 +193,10 @@ unmodified Mesa `c3b008c1ba01d455351b762253ef44c3ca19653f` at
 The generator verifies the input hash. The checked-in table needs no Mesa or
 SPIRV-Tools runtime dependency. The source grammar is available at:
 https://gitlab.freedesktop.org/mesa/mesa/-/raw/c3b008c1ba01d455351b762253ef44c3ca19653f/src/compiler/spirv/spirv.core.grammar.json
+
+`spirv_literals.inc` records fixed literal positions and all-literal suffixes.
+The generator stops at ambiguous composites, strings, optional non-final
+operands and parameterized enums (after classifying the enum word itself).
+It does not guess the layout of 64-bit switch pairs or enum-dependent payloads.
+Unclassified words retain the conservative behavior above. This is a bounded
+operand classifier, not a complete SPIR-V validation grammar implementation.

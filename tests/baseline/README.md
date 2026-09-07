@@ -2052,7 +2052,8 @@ and global-variable dependencies. Generate the assets with:
 python3 tests/baseline/shaders/generate-scaled.py
 ```
 
-This requires `glslangValidator`, `spirv-link` and `spirv-val`. The generated
+This requires `glslangValidator`, `spirv-link`, `spirv-val`, `spirv-dis` and
+`spirv-as`. The generated
 normal vertex/fragment and three-entry arrays are checked in and copied into
 the probe build snapshot. The ordinary single-entry fixture remains unchanged
 at the binary level.
@@ -2097,3 +2098,52 @@ explicit. This does not establish general multi-entry normalization outside
 scaled pipelines. Unknown opcodes, function pointers, grouped/debug references,
 general interface layouts, OOM injection at each temporary-stage allocation,
 and specialization/cache-key coverage remain open. G07/G08 are not closed.
+
+
+### Literal operands that overlap variable IDs
+
+The `scaled-vertex-literal` fixture gives the Location 0 input SPIR-V ID 3 and
+uses vector shuffle component literals `3 2 1 0`. Input and expected values are
+swizzled before comparison, and the result is swizzled back, preserving the
+existing white/cyan pixel checks. The shader generator changes only numeric ID
+tokens through SPIRV-Tools disassembly/assembly; it leaves component literals
+unchanged and validates the resulting module. Existing single/multi-entry
+shader bytes remain identical. Runtime evidence also verifies that the original
+input is `%3` and the shuffle index overlap is present.
+
+The old adapter falsely treated the literal as an unsupported pointer use.
+Archived-library Adreno run `20260907T171838-a7a012f4` reproduces rejection of
+the first pipeline with `VK_ERROR_UNKNOWN` and the pointer-use diagnostic.
+The new and old runs use identical probe binaries, verified against their
+manifests. This is an intentional failing negative control, not a passing
+acceptance result.
+
+Fixed scans use `spirv_literals.inc`, generated alongside the result-ID table
+from the same hash-pinned Khronos grammar. The 203 records describe definite
+literal positions and literal-only suffixes, including shuffle/extract indices,
+branch weights and fixed enum words. Both the vertex-pointer scan and the
+multi-entry global-liveness scan use this metadata. Parameterized enum payloads,
+composite operand pairs, variable-width strings and other ambiguous layouts
+remain conservatively scanned; this is not a complete operand parser.
+
+Final 2026-09-07 runs:
+
+- Adreno `20260907T172002-4a50d24f`: 12 PASS / 2 UNSUPPORTED. Six literal-fixture
+  ICD routes pass with normal missing-format conversion. Native/replacement
+  controls still lack the scaled formats. Single-entry, multi-entry and UBO
+  validation, device lifecycle and allocation regressions pass.
+- Mali `20260907T172002-0b12fec3`: all 14 cases PASS, using forced ICD conversion
+  plus native/replacement controls.
+- Each literal route checks all pixels for 12 formats × three phases, with
+  zero validation errors where enabled and zero live callback allocations
+  (284 calls on Adreno, 992 on Mali). Each device retains 108 audited
+  original/converted module pairs across the literal and regression fixtures.
+  Both generated tables reproduce byte for byte, and production sources match
+  the tested build snapshot. The ICD still exports only its three loader entries.
+
+Use `icd-scaled-vertex-literal`, `icd-scaled-vertex-literal-gdpa`,
+`icd-scaled-vertex-literal-elf`, `icd-linked-scaled-vertex-literal-linked`,
+`icd-scaled-vertex-literal-validation` and
+`icd-scaled-vertex-literal-gdpa-validation` with the existing opt-in runner
+arguments. General operand layouts, interface forms and the remaining G07/G08
+acceptance requirements remain open.

@@ -30,7 +30,7 @@ rm -rf "$PROBE_SRC"
 mkdir -p "$PROBE_SRC/shaders"
 cp allocation_fixture.h render_path.h tls_fixture.cpp sync_fixture.h stdio_fixture.h widget_fixture.h "$PROBE_SRC/"
 cp "${SOURCES[@]}" probe.h dispatch_commands.inc capability_fields.inc feature_compare.inc property_compare.inc "$PROBE_SRC/"
-cp shaders/generate-scaled.py shaders/scaled.multi.inc shaders/scaled.vert shaders/scaled.frag shaders/scaled.vert.inc shaders/scaled.frag.inc shaders/widget.vert shaders/widget.frag shaders/widget.vert.inc shaders/widget.frag.inc shaders/widget-large.vert.inc shaders/widget-large.frag.inc "$PROBE_SRC/shaders/"
+cp shaders/scaled.literal.inc shaders/generate-scaled.py shaders/scaled.multi.inc shaders/scaled.vert shaders/scaled.frag shaders/scaled.vert.inc shaders/scaled.frag.inc shaders/widget.vert shaders/widget.frag shaders/widget.vert.inc shaders/widget.frag.inc shaders/widget-large.vert.inc shaders/widget-large.frag.inc "$PROBE_SRC/shaders/"
 
 
 # Use the pinned repository toolchain unless the caller explicitly overrides it.

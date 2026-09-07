@@ -5,6 +5,21 @@
 static const unsigned char result_positions[] = {
 #include "spirv_results.inc"
 };
+static const struct literal_position { uint16_t opcode, tail; uint32_t mask; } literals[] = {
+#include "spirv_literals.inc"
+};
+int hybris_spirv_literal_word(uint32_t opcode, uint32_t word)
+{
+    size_t low = 0, high = sizeof(literals) / sizeof(literals[0]);
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        if (literals[mid].opcode < opcode) low = mid + 1;
+        else high = mid;
+    }
+    if (low == sizeof(literals) / sizeof(literals[0]) || literals[low].opcode != opcode) return 0;
+    return (literals[low].tail && word >= literals[low].tail) ||
+           (word < 32 && (literals[low].mask & (1u << word)));
+}
 struct definition { uint32_t owner, opcode; unsigned live; };
 
 int hybris_spirv_multiple(const uint32_t *code, size_t size)
@@ -21,9 +36,9 @@ int hybris_spirv_multiple(const uint32_t *code, size_t size)
 }
 
 /* Extract the selected entry's ordinary logical-shader call tree. Types and
- * constants are retained. Global variable liveness is conservative: a literal
- * equal to a global variable ID can retain extra declarations, never delete a
- * required one. Function-pointer extensions and nonsemantic debug references
+ * constants are retained. Grammar-classified literals are skipped; ambiguous
+ * operands remain conservative and can retain extra declarations, never delete
+ * a required one. Function-pointer extensions and nonsemantic debug references
  * into removed functions are explicitly unsupported. */
 VkResult hybris_spirv_entry(const uint32_t *code, size_t size, uint32_t model,
     const char *entry, const VkAllocationCallbacks *allocator, uint32_t **output,
@@ -100,7 +115,7 @@ VkResult hybris_spirv_entry(const uint32_t *code, size_t size, uint32_t model,
         if (op == 54) function = p[2];
         if (function && ids[function].live)
             for (uint32_t i = 1; i < count; ++i)
-                if (p[i] < bound && ids[p[i]].opcode == 59 && !ids[p[i]].owner) ids[p[i]].live = 1;
+                if (!hybris_spirv_literal_word(op, i) && p[i] < bound && ids[p[i]].opcode == 59 && !ids[p[i]].owner) ids[p[i]].live = 1;
         if (op == 56) function = 0;
     }
     /* Initializers and ID decorations may keep additional globals alive. */
@@ -116,7 +131,7 @@ VkResult hybris_spirv_entry(const uint32_t *code, size_t size, uint32_t model,
                 if (op == 71 && count > 3 && p[1] < bound && ids[p[1]].live && p[2] == 5634) first = 3;
                 if (op == 52 || op == 12) first = 3;
                 for (uint32_t i = first; i < count; ++i)
-                    if (p[i] < bound && ids[p[i]].opcode == 59 && !ids[p[i]].owner && !ids[p[i]].live) {
+                    if (!hybris_spirv_literal_word(op, i) && p[i] < bound && ids[p[i]].opcode == 59 && !ids[p[i]].owner && !ids[p[i]].live) {
                         ids[p[i]].live = 1; changed = 1;
                     }
             }
@@ -144,7 +159,7 @@ VkResult hybris_spirv_entry(const uint32_t *code, size_t size, uint32_t model,
             if (op == 74 || op == 75 || op == 12) {
                 /* Avoid dangling grouped/debug references into removed code. */
                 for (uint32_t i = 1; i < count; ++i)
-                    if (p[i] < bound && ids[p[i]].opcode && !ids[p[i]].live) {
+                    if (!hybris_spirv_literal_word(op, i) && p[i] < bound && ids[p[i]].opcode && !ids[p[i]].live) {
                         *reason = "grouped or debug references prevent SPIR-V entry extraction";
                         goto done;
                     }

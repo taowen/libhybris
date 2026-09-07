@@ -3,6 +3,7 @@
 #include "allocation_fixture.h"
 #include "shaders/scaled.vert.inc"
 #include "shaders/scaled.multi.inc"
+#include "shaders/scaled.literal.inc"
 #include "shaders/scaled.frag.inc"
 enum { kScaledImage = 16 };
 static const struct scaled_case { VkFormat format; const char *name; unsigned bits, components, sign; } cases[] = {
@@ -11,7 +12,8 @@ static const struct scaled_case { VkFormat format; const char *name; unsigned bi
  CASE(R16,16,1), CASE(R16G16,16,2), CASE(R16G16B16A16,16,4)
 #undef CASE
 };
-int scaled_vertex_probe(int validate, int route, int multiple) {
+int scaled_vertex_probe(int validate, int route, int variant) {
+  const int multiple = variant == 1, literal = variant == 2;
   struct allocation_probe allocations = {0};
   VkAllocationCallbacks callbacks = {.pUserData = &allocations,
     .pfnAllocation = instance_allocate, .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
@@ -240,8 +242,8 @@ int scaled_vertex_probe(int validate, int route, int multiple) {
   CHECK(p_vkBindBufferMemory(device, readback, rmem, 0));
 
   VkShaderModuleCreateInfo vs_ci = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-    .codeSize = multiple ? sizeof(kScaledMultiSpv) : sizeof(kScaledVertSpv),
-    .pCode = multiple ? kScaledMultiSpv : kScaledVertSpv};
+    .codeSize = multiple ? sizeof(kScaledMultiSpv) : literal ? sizeof(kScaledLiteralSpv) : sizeof(kScaledVertSpv),
+    .pCode = multiple ? kScaledMultiSpv : literal ? kScaledLiteralSpv : kScaledVertSpv};
   VkShaderModuleCreateInfo fs_ci = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = sizeof(kScaledFragSpv), .pCode = kScaledFragSpv};
   VkShaderModule vs, fs;

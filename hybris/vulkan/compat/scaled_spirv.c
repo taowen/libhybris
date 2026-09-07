@@ -130,12 +130,12 @@ static VkResult convert_scaled(const uint32_t *code, size_t size, const char *en
                     !float_width(ids, bound, ids[p[1]].element)) goto done;
                 ids[p[2]].sign = ids[p[3]].sign;
             }
-        } else if (count > 1 && p[1] < bound && ids[p[1]].opcode == OP_TYPE_POINTER && ids[p[1]].storage == 1) {
+        } else if (count > 1 && !hybris_spirv_literal_word(op, 1) && p[1] < bound && ids[p[1]].opcode == OP_TYPE_POINTER && ids[p[1]].storage == 1) {
             *reason = "unsupported Input pointer producer in scaled vertex shader";
             goto done;
         }
         for (uint32_t i = 1; i < count; ++i) {
-            if (p[i] >= bound || !ids[p[i]].sign) continue;
+            if (hybris_spirv_literal_word(op, i) || p[i] >= bound || !ids[p[i]].sign) continue;
             if ((op == OP_LOAD && i == 3) ||
                 ((op == OP_ACCESS_CHAIN || op == OP_IN_BOUNDS_ACCESS_CHAIN || op == OP_COPY_OBJECT) && (i == 2 || i == 3)))
                 continue;
