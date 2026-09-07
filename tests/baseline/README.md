@@ -1587,8 +1587,8 @@ frontend startup failure (libgpud_sys.so not found).
 
 For focused development use repeated `--case`, for example
 `--case hybris-groups --case hybris-groups-dlsym`; selected names are recorded
-in device.json. With no selection all cases run. `--capture-tools` requires a
-full run, including reference images. Future device validation is restricted
+in device.json. With no selection all cases run. `--capture-tools` can be combined with selected cases; the runner adds
+`icd-version` and `icd-ubo` when needed and still executes both capture suites. Future device validation is restricted
 to Redmi and X300; X300 APK installation must use `../../tools/install-apk.sh`
 from the repository root (headless probes use adb push and need no APK).
 
@@ -2384,3 +2384,9 @@ coverage limits.
 [Format policy evidence](scaled-format-policy.md) describes the optional bounded
 raw/effective capability trace, independent native query comparison, and actual
 Adreno/Mali runs. Use `--scaled-format-trace` with scaled compatibility enabled.
+
+
+### Focused capture/replay and command outcomes
+
+See [capture execution](capture-execution.md) for dependency selection, per-stage
+outcomes, device-side output merging and the Adreno/Mali capture regressions.

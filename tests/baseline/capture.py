@@ -4,6 +4,7 @@ import hashlib
 import shlex
 import shutil
 import subprocess
+import time
 from draw_evidence import check_draw
 from shader_evidence import check_pipeline
 
@@ -43,15 +44,22 @@ def run_capture(shell, adb, remote, out, command, metadata, kill_remote, dynamic
                               '--library-path ./standard:./hybris:./glibc:./capture-tools:./capture-tools/runtime')
 
     def run(name, cmd):
-        metadata['commands'][('dynamic-' if dynamic else '') + name] = {'directory': remote, 'command': cmd}
+        entry = {'directory': remote, 'command': cmd, 'exit_code': None, 'timed_out': False,
+                 'output': 'stderr merged into stdout on device before adb transport'}
+        metadata['commands'][('dynamic-' if dynamic else '') + name] = entry
+        started = time.monotonic()
         try:
             result = shell('cd ' + remote + ' && sh -c ' + shlex.quote(
-                'echo $$ > probe.pid; exec env ' + cmd),
+                'exec 2>&1; echo $$ > probe.pid; exec env ' + cmd),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=35)
         except subprocess.TimeoutExpired as exc:
+            entry['timed_out'] = True
             (evidence / (name + '.log')).write_bytes(exc.stdout or b'')
             kill_remote()
             raise
+        finally:
+            entry['elapsed_seconds'] = round(time.monotonic() - started, 6)
+        entry['exit_code'] = result.returncode
         (evidence / (name + '.log')).write_bytes(result.stdout)
         result.check_returncode()
 

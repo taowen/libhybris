@@ -46,8 +46,6 @@ if a.scaled_vertex_compat and not a.icd_hal:
     p.error('--scaled-vertex-compat requires --icd-hal')
 if a.icd_mali_loader_quirk and not a.icd_hal:
     p.error('--icd-mali-loader-quirk requires --icd-hal')
-if a.selected_cases and a.capture_tools:
-    p.error('--case cannot be combined with --capture-tools; capture requires the full reference workload')
 if bool(a.validation_layer) != bool(a.validation_manifest):
     p.error('--validation-layer and --validation-manifest must be supplied together')
 if a.validation_build_manifest and not a.validation_layer:
@@ -327,9 +325,14 @@ try:
         if unknown:
             raise SystemExit('unknown selected cases: ' + ', '.join(sorted(unknown)))
         cases = [case for case in cases if case[0] + '-' + case[1] in a.selected_cases]
+        if a.capture_tools and ('icd', 'ubo', 'probe-glibc') not in cases:
+            cases.append(('icd', 'ubo', 'probe-glibc'))
         if any(case[0].startswith('icd') for case in cases) and ('icd', 'version', 'probe-glibc') not in cases:
             cases.insert(0, ('icd', 'version', 'probe-glibc'))
     metadata['selected_cases'] = a.selected_cases
+    metadata['scheduled_cases'] = [backend + '-' + mode for backend, mode, _ in cases]
+    if a.capture_tools:
+        metadata['scheduled_cases'] += ['icd-capture-replay', 'icd-capture-dynamic-replay']
     for backend, mode, binary in cases:
         if backend == 'native':
             command = (
