@@ -4,6 +4,8 @@ import json
 import re
 import shlex
 import shutil
+import subprocess
+import time
 from pathlib import Path
 
 SAVED = ((0, 0), (0, 7), (1, 0), (1, 7), (2, 0), (2, 7))
@@ -77,6 +79,8 @@ def _transfer_commands(docs, expected_indexes):
                 index = cmd.get('cmdIndex')
                 if index is None:
                     raise ValueError('replay dump is missing cmdIndex')
+                if index in by_index and by_index[index] != cmd:
+                    raise ValueError("conflicting replay copies for cmdIndex %s" % index)
                 by_index[index] = cmd
     missing = [index for index in expected_indexes if index not in by_index]
     if missing:
@@ -87,20 +91,62 @@ def _transfer_commands(docs, expected_indexes):
     return [by_index[index] for index in expected_indexes]
 
 
-def verify_window_capture(app, remote, tool_prefix, out, log_text, timeout=120):
+def preserve_capture(app, remote, out, timeout=30):
+    """Keep the replay input even when conversion, replay or the client fails."""
     evidence = out / 'capture'
-    evidence.mkdir()
+    evidence.mkdir(exist_ok=True)
+    path = evidence / 'window.gfxr'
+    with path.open('wb') as stream:
+        value = app('cat ' + shlex.quote(remote + '/window.gfxr'),
+                    stdout=stream, stderr=subprocess.PIPE, timeout=timeout)
+    if value.returncode or not path.stat().st_size:
+        raise ValueError('missing or unreadable window.gfxr')
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    device = app('sha256sum ' + shlex.quote(remote + '/window.gfxr'),
+                 capture_output=True, text=True, check=True, timeout=timeout)
+    if not device.stdout.split() or device.stdout.split()[0] != digest:
+        raise ValueError('saved window.gfxr hash differs from device')
+    (evidence / 'capture-input.json').write_text(json.dumps({
+        'file': path.name, 'bytes': path.stat().st_size, 'sha256': digest}, indent=2) + '\n')
+    return digest
+
+
+def verify_window_capture(app, remote, tool_prefix, out, log_text, stop_owned_process, timeout=120):
+    evidence = out / 'capture'
+    evidence.mkdir(exist_ok=True)
+    commands = {}
+
+    def run_tool(name, command):
+        launch = ('cd ' + shlex.quote(remote) +
+                  ' && echo $$ > capture-tool.pid && exec env ' + command + ' 2>&1')
+        entry = {'command': launch, 'timeout_seconds': timeout, 'exit_code': None,
+                 'timed_out': False}
+        commands[name] = entry
+        started = time.monotonic()
+        try:
+            result = app(launch, capture_output=True, timeout=timeout)
+            entry['exit_code'] = result.returncode
+            (evidence / (name + '.log')).write_bytes((result.stdout or b'') + (result.stderr or b''))
+            if result.returncode:
+                raise ValueError('gfxrecon-' + name + ' failed')
+        except subprocess.TimeoutExpired as error:
+            entry['timed_out'] = True
+            (evidence / (name + '.log')).write_bytes((error.stdout or b'') + (error.stderr or b''))
+            stop_owned_process('capture-tool.pid')
+            raise
+        finally:
+            entry['elapsed_seconds'] = round(time.monotonic() - started, 6)
+            (evidence / 'commands.json').write_text(json.dumps(commands, indent=2) + '\n')
+
     copies_expected = 24
     formats = [int(value) for value in re.findall(r'^WSI format=(\d+) ', log_text, re.M)]
     if len(formats) != 3:
         raise ValueError('expected three swapchain format records, got %u' % len(formats))
+    if any(value not in (37, 44) for value in formats):
+        raise ValueError('unsupported replay comparison format')
     convert = (tool_prefix + './capture-tools/gfxrecon-convert --include-binaries --format jsonl '
                '--output calls.jsonl window.gfxr')
-    converted = app('cd ' + shlex.quote(remote) + ' && ' + convert,
-                    capture_output=True, timeout=timeout)
-    (evidence / 'convert.log').write_bytes((converted.stdout or b'') + (converted.stderr or b''))
-    if converted.returncode:
-        raise ValueError('gfxrecon-convert failed')
+    run_tool('convert', convert)
     jsonl = app('cat ' + shlex.quote(remote + '/calls.jsonl'), capture_output=True, timeout=timeout)
     if jsonl.returncode:
         raise ValueError('failed to read capture jsonl')
@@ -120,6 +166,11 @@ def verify_window_capture(app, remote, tool_prefix, out, log_text, timeout=120):
     window_copies = copies[-copies_expected:]
     window_begins = begins[-copies_expected:]
     window_submits = submits[-copies_expected:]
+    window_presents = presents[-copies_expected:]
+    for i, (begin, copy, submit, present) in enumerate(zip(
+            window_begins, window_copies, window_submits, window_presents)):
+        if not begin < copy < submit < present or (i and window_presents[i - 1] >= begin):
+            raise ValueError('unexpected window copy/submit/present ordering')
     request = {
         'BeginCommandBuffer': window_begins,
         'Transfer': [[index] for index in window_copies],
@@ -130,11 +181,8 @@ def verify_window_capture(app, remote, tool_prefix, out, log_text, timeout=120):
         input=(evidence / 'dump.json').read_text(), text=True, check=True, timeout=30)
     replay = (tool_prefix + './capture-tools/gfxrecon-replay --swapchain virtual '
               '--dump-resources dump.json --dump-resources-dir replay window.gfxr')
-    replayed = app('cd ' + shlex.quote(remote) + ' && mkdir -p replay && ' + replay,
-                   capture_output=True, timeout=timeout)
-    (evidence / 'replay.log').write_bytes((replayed.stdout or b'') + (replayed.stderr or b''))
-    if replayed.returncode:
-        raise ValueError('gfxrecon-replay dump failed')
+    app('mkdir -p ' + shlex.quote(remote + '/replay'), check=True, timeout=30)
+    run_tool('replay', replay)
     reports = app('sh -c ' + shlex.quote('cat ' + remote + '/replay/*_dr.json'),
                   capture_output=True, timeout=timeout)
     if reports.returncode or not reports.stdout:
@@ -161,6 +209,9 @@ def verify_window_capture(app, remote, tool_prefix, out, log_text, timeout=120):
         if dumped.returncode:
             raise ValueError('failed to read replay dump ' + regions[0]['file'])
         raw = dumped.stdout
+        if len(raw) != expected_bytes:
+            raise ValueError('replay dump size does not match copy extent')
+        (evidence / ('replay-%u-%u.bin' % (epoch, frame))).write_bytes(raw)
         if formats[epoch] == bgra:
             raw = _bgra_to_rgba(raw)
         recorded = (out / ('image-%u-%u.rgba' % (epoch, frame))).read_bytes()
@@ -169,10 +220,10 @@ def verify_window_capture(app, remote, tool_prefix, out, log_text, timeout=120):
         compared.append({'epoch': epoch, 'frame': frame, 'copy_index': window_copies[copy_index],
                          'bytes': expected_bytes, 'sha256': hashlib.sha256(recorded).hexdigest(),
                          'replay_file': regions[0]['file']})
-    gfxr = app('sha256sum ' + shlex.quote(remote + '/window.gfxr'), capture_output=True, text=True, timeout=30)
+    capture_input = json.loads((evidence / 'capture-input.json').read_text())
     result = {'status': 'PASS', 'copies': copies_expected, 'presents': len(presents),
               'formats': formats, 'images': compared,
-              'capture_sha256': gfxr.stdout.split()[0] if gfxr.returncode == 0 else None,
+              'capture_sha256': capture_input['sha256'],
               'comparison': 'live image-*-*.rgba == replayed vkCmdCopyImageToBuffer',
               'scope': 'three-size window copies; virtual swapchain dump, not a second present'}
     (evidence / 'comparison.json').write_text(json.dumps(result, indent=2) + '\n')

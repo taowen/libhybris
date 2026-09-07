@@ -9,6 +9,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,7 +55,7 @@ static void frame_done(void *data, struct wl_callback *callback, uint32_t time) 
 }
 static const struct wl_callback_listener frame_listener = {.done = frame_done};
 
-static unsigned validation_errors;
+static atomic_uint validation_errors;
 static VKAPI_ATTR VkBool32 VKAPI_CALL validation_message(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT types,
     const VkDebugUtilsMessengerCallbackDataEXT *data, void *user)
@@ -64,7 +65,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL validation_message(
     if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         printf("VALIDATION %s: %s\n", data->pMessageIdName ? data->pMessageIdName : "(unnamed)",
                data->pMessage ? data->pMessage : "");
-        ++validation_errors;
+        atomic_fetch_add_explicit(&validation_errors, 1, memory_order_relaxed);
     }
     return VK_FALSE;
 }
@@ -206,8 +207,8 @@ int main(int argc, char **argv) {
             if (result != VK_ERROR_UNKNOWN) return 2;
         }
         if (destroy_messenger && messenger) destroy_messenger(instance, messenger, NULL);
-        printf("WSI_VALIDATION errors=%u\n", validation_errors);
         vkDestroyInstance(instance, NULL);
+        if (validate) printf("WSI_VALIDATION errors=%u\n", atomic_load(&validation_errors));
         xdg_toplevel_destroy(toplevel);
         xdg_surface_destroy(xdg_surface);
         wl_surface_destroy(wl_surface);
@@ -217,7 +218,7 @@ int main(int argc, char **argv) {
         wl_display_disconnect(w.display);
         dlclose(library);
         printf("WSI_MISSING_WLEGL rejection=PASS window=UNSUPPORTED\n");
-        return validation_errors ? 2 : 3;
+        return atomic_load(&validation_errors) ? 2 : 3;
     }
     if (surface_lifecycle(w.display, w.compositor, instance, vkCreateWaylandSurfaceKHR, vkDestroySurfaceKHR)) return 2;
     VkSurfaceKHR surface;
@@ -410,13 +411,14 @@ int main(int argc, char **argv) {
     vkDestroySwapchainKHR(device, previous, NULL);
     vkDestroyDevice(device, NULL); vkDestroySurfaceKHR(instance, surface, NULL);
     if (destroy_messenger && messenger) destroy_messenger(instance, messenger, NULL);
-    printf("WSI_VALIDATION errors=%u\n", validation_errors);
-    if (validation_errors) return 2;
+    /* The instance-create pNext callback also covers vkDestroyInstance. */
     vkDestroyInstance(instance, NULL);
+    if (validate) printf("WSI_VALIDATION errors=%u\n", atomic_load(&validation_errors));
     xdg_toplevel_destroy(toplevel); xdg_surface_destroy(xdg_surface); wl_surface_destroy(wl_surface);
     xdg_wm_base_destroy(w.shell); wl_compositor_destroy(w.compositor); wl_registry_destroy(registry);
     wl_display_disconnect(w.display);
     dlclose(library);
+    if (atomic_load(&validation_errors)) return 2;
     printf("WSI PASS\n");
     return 0;
 }

@@ -291,8 +291,8 @@ layer chain, and do not rewrite dispatch headers:
 python3 tests/wsi/compositor/run.py --serial 192.168.1.28:5555 \
   --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
   --vulkan-loader /path/to/standard/libvulkan.so.1 --swapchain-review \
-  --validation-layer tests/baseline/build/validation/extracted/usr/lib/aarch64-linux-gnu/libVkLayer_khronos_validation.so \
-  --validation-manifest tests/baseline/build/validation/extracted/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+  --validation-layer tests/baseline/build/validation-build/install/lib/libVkLayer_khronos_validation.so \
+  --validation-manifest tests/baseline/build/validation-build/install/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
 python3 tests/wsi/compositor/run.py --serial 192.168.1.28:5555 \
   --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
   --vulkan-loader /path/to/standard/libvulkan.so.1 \
@@ -300,11 +300,24 @@ python3 tests/wsi/compositor/run.py --serial 192.168.1.28:5555 \
 ```
 
 Validation enables `VK_LAYER_KHRONOS_validation` plus SyncVal through
-`CreateInstance` and a live debug-utils messenger; any ERROR fails the probe.
+`CreateInstance` and a live debug-utils messenger; any ERROR, including instance
+destruction, fails the probe. The error count is safe for concurrent callbacks.
 Capture records the live window probe, then dumps the 24 `vkCmdCopyImageToBuffer`
 commands through `gfxrecon-replay --swapchain virtual` and compares the six
 saved readbacks. That is not a second present, and it does not implement
-swapchain image aliasing unless replay actually requires it.
+swapchain image aliasing. The raw `.gfxr`, six compared replay binaries, tool
+commands, exit codes and timeout logs are retained in `capture/`. Tool timeouts
+clean up their own PID after checking its working directory.
+
+With the pinned tools, `--capture-tools` cannot be combined with either
+`--validation-layer` or `--swapchain-review`: the former exposes an injected
+extension dependency error; the latter cannot replay the deliberate allocation
+callback failure. Both combinations are rejected before device work. Validation
+and boundaries can be used together. Layered runs default to a 180-second host
+timeout; an explicit `--timeout` remains authoritative. The isolated wrapper
+also accepts `--probe` for a separately built probe. See
+[the validation/capture review](validation-capture-review.md) for negative
+controls, successful separate runs and retained failures.
 
 The frontend destroys the Android Vulkan surface before releasing the owner's
 native-window reference, then destroys the window before its protocol objects.

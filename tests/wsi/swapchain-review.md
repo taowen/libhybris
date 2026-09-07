@@ -165,6 +165,11 @@ swapchain image alias remains unsupported.
 Capture is a virtual-swapchain dump of the probe copies, not a second present
 or an application replay. Both compositor identities stayed stable.
 
+The subsequent [validation/capture review](validation-capture-review.md) fixes
+a reproduced teardown ERROR being reported as PASS, preserves raw capture inputs
+and replay binaries, and records the incompatible option combinations. Its
+corrected-probe runs supersede the validation/capture verdict handling above.
+
 ## Remaining gaps
 
 Complete image-alias support, protected/multi-device presentation, presentation

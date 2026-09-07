@@ -68,7 +68,10 @@ Mali have device evidence for create/render/resize/retirement/destroy under
 VVL+SyncVal, and for capture/replay of the three-size window copies via
 `--swapchain virtual`. Swapchain-backed image alias creation/binding remains
 unsupported; this replay path did not require it. See the
-[swapchain review and device evidence](../../../tests/wsi/swapchain-review.md).
+[swapchain review and device evidence](../../../tests/wsi/swapchain-review.md) and
+[validation/capture review](../../../tests/wsi/validation-capture-review.md).
+The pinned tools require separate validation and capture runs; capture also
+excludes the allocation-failure boundary workload.
 
 ## Sources
 

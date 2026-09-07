@@ -15,6 +15,7 @@ import uuid
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
 p.add_argument('--build', type=Path)
+p.add_argument('--probe', type=Path, help='WSI probe build directory, forwarded to the client runner')
 p.add_argument('--trace', action='store_true')
 p.add_argument('--repeat', type=int, default=1, help='sequential clients sharing one compositor process (1–100)')
 p.add_argument('--icd-hal')
@@ -30,6 +31,12 @@ if (a.validation_layer is None) != (a.validation_manifest is None):
     p.error('--validation-layer and --validation-manifest must be supplied together')
 if a.validation_layer and not a.icd_hal: p.error('--validation-layer requires --icd-hal')
 if a.capture_tools and not a.icd_hal: p.error('--capture-tools requires --icd-hal')
+if a.validation_layer and a.capture_tools:
+    p.error('run validation and capture separately: pinned GFXReconstruct 1.0.5 injects '
+            'VK_KHR_depth_stencil_resolve without its VK_KHR_create_renderpass2 dependency')
+if a.swapchain_review and a.capture_tools:
+    p.error('run --swapchain-review separately from capture: replay does not reproduce '
+            'the allocation-callback failure that retires the old swapchain')
 if (a.icd_hal is None) != (a.vulkan_loader is None):
     p.error('--icd-hal and --vulkan-loader must be supplied together')
 if a.icd_mali_loader_quirk and not a.icd_hal:
@@ -88,6 +95,7 @@ try:
         command = [sys.executable, str(root / 'run.py'), '--serial', a.serial,
                    '--package', package, '--out', str(directory)]
         if a.build: command += ['--build', str(a.build)]
+        if a.probe: command += ['--probe', str(a.probe)]
         if a.trace: command += ['--trace']
         if a.icd_hal:
             command += ['--icd-hal', a.icd_hal, '--vulkan-loader', str(a.vulkan_loader)]

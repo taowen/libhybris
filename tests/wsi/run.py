@@ -19,11 +19,11 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from manifest import sha256_file, verify_manifest
 from screen_evidence import verify_screen
 from diagnostics import Diagnostics
-from capture import stage_tools, verify_window_capture
+from capture import preserve_capture, stage_tools, verify_window_capture
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
-p.add_argument('--timeout', type=float, default=65, help='host watchdog seconds (default 65)')
+p.add_argument('--timeout', type=float, help='host watchdog seconds (default 65, or 180 with layers)')
 p.add_argument('--trace', action='store_true', help='record compiled native-window tracepoints without verbose hook logs')
 p.add_argument('--package', default='io.taowen.ardesk')
 p.add_argument('--wayland', default='wayland-0')
@@ -43,9 +43,14 @@ if (a.validation_layer is None) != (a.validation_manifest is None):
     p.error('--validation-layer and --validation-manifest must be supplied together')
 if a.validation_layer and not a.icd_hal: p.error('--validation-layer requires --icd-hal')
 if a.capture_tools and not a.icd_hal: p.error('--capture-tools requires --icd-hal')
+if a.validation_layer and a.capture_tools:
+    p.error('run validation and capture separately: pinned GFXReconstruct 1.0.5 injects '
+            'VK_KHR_depth_stencil_resolve without its VK_KHR_create_renderpass2 dependency')
+if a.swapchain_review and a.capture_tools:
+    p.error('run --swapchain-review separately from capture: replay does not reproduce '
+            'the allocation-callback failure that retires the old swapchain')
+if a.timeout is None: a.timeout = 180 if a.validation_layer or a.capture_tools else 65
 if not 5 <= a.timeout <= 300: p.error('timeout must be between 5 and 300 seconds')
-if a.timeout == 65 and (a.validation_layer or a.capture_tools):
-    a.timeout = 180
 if not re.fullmatch(r'[A-Za-z0-9_.]+', a.package): p.error('invalid package')
 if (a.icd_hal is None) != (a.vulkan_loader is None):
     p.error('--icd-hal and --vulkan-loader must be supplied together')
@@ -98,6 +103,7 @@ if a.icd_hal:
         shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
         layer_meta['validation_layer_sha256'] = sha256_file(a.validation_layer)
         layer_meta['validation_manifest_sha256'] = sha256_file(a.validation_manifest)
+        shutil.copy2(a.validation_manifest, out / 'validation-original.json')
         layer_json = json.loads(a.validation_manifest.read_text())
         if layer_json['layer']['name'] != 'VK_LAYER_KHRONOS_validation':
             raise SystemExit('expected Khronos validation layer manifest')
@@ -124,6 +130,8 @@ metadata = {'run_id': run_id, 'serial': a.serial, 'package': a.package,
             'fingerprint': prop('ro.build.fingerprint'), 'sdk': sdk,
             'command': command, 'remote': remote, 'host_timeout_seconds': a.timeout, 'runner_sha256': sha256_file(Path(__file__)), 'hybris': provenance, 'probe': probe_provenance,
             'path': 'icd' if a.icd_hal else 'frontend'}
+metadata['helper_sha256'] = {name: sha256_file(Path(__file__).with_name(name))
+                           for name in ('capture.py', 'screen_evidence.py', 'diagnostics.py')}
 if a.icd_hal:
     metadata['icd_hal'] = a.icd_hal
     metadata['standard_loader_sha256'] = sha256_file(stage / 'standard/libvulkan.so.1')
@@ -141,13 +149,13 @@ with tarfile.open(archive, 'w') as bundle: bundle.add(stage, arcname='.')
 process = None
 code = 2
 diagnostics = Diagnostics(adb, a.package, out, app)
-def stop_owned_process():
-    value = app('cat ' + shlex.quote(remote + '/runner.pid'), capture_output=True, text=True)
+def stop_owned_process(pid_file='runner.pid'):
+    value = app('cat ' + shlex.quote(remote + '/' + pid_file), capture_output=True, text=True, timeout=10)
     if value.returncode or not value.stdout.strip().isdigit(): return
     pid = int(value.stdout.strip())
-    cwd = app('readlink /proc/' + str(pid) + '/cwd', capture_output=True, text=True)
+    cwd = app('readlink /proc/' + str(pid) + '/cwd', capture_output=True, text=True, timeout=10)
     if cwd.returncode == 0 and cwd.stdout.strip() == remote:
-        app('kill -KILL ' + str(pid), capture_output=True)
+        app('kill -KILL ' + str(pid), capture_output=True, timeout=10)
 
 try:
     app('mkdir -p ' + shlex.quote(remote), check=True)
@@ -237,8 +245,9 @@ finally:
         (out / 'android-library-hashes.json').write_text(json.dumps({
             'exit_code': hashes.returncode, 'output': hashes.stdout, 'errors': hashes.stderr}, indent=2))
         if hashes.returncode and code == 0: code = 2
-    if a.capture_tools and code == 0:
+    if a.capture_tools:
         try:
+            metadata['capture_sha256'] = preserve_capture(app, remote, out)
             tool_env = {k: v for k, v in env.items()
                         if k not in ('VK_INSTANCE_LAYERS', 'GFXRECON_CAPTURE_FILE',
                                      'GFXRECON_CAPTURE_FILE_TIMESTAMP', 'HYBRIS_WSI_VALIDATION',
@@ -246,12 +255,19 @@ finally:
             tool_prefix = ' '.join(k + '=' + shlex.quote(v) for k, v in tool_env.items())
             tool_prefix += ' ./glibc/ld-linux-aarch64.so.1 --library-path ' + libraries + ' '
             log_text = (out / 'probe.log').read_text()
-            metadata['window_capture'] = verify_window_capture(
-                app, remote, tool_prefix, out, log_text)
+            if code == 0:
+                metadata['window_capture'] = verify_window_capture(
+                    app, remote, tool_prefix, out, log_text, stop_owned_process)
             (out / 'device.json').write_text(json.dumps(metadata, indent=2))
-        except (ValueError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+        except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
             (out / 'capture-error.txt').write_text(str(error))
-            code = 2
+            if code == 0: code = 124 if isinstance(error, subprocess.TimeoutExpired) else 2
+        finally:
+            try:
+                stop_owned_process('capture-tool.pid')
+            except (OSError, subprocess.SubprocessError) as error:
+                (out / 'capture-cleanup-error.txt').write_text(str(error))
+                if code == 0: code = 2
     app('rm -rf ' + shlex.quote(remote), check=True)
     if archive.exists(): archive.unlink()
     diagnostics.finish()
@@ -265,9 +281,10 @@ if code == 0:
 if code == 0 and a.validation_layer:
     log_text = (out / 'probe.log').read_text()
     counts = re.findall(r'^WSI_VALIDATION errors=(\d+)$', log_text, re.M)
-    if len(counts) != 1 or int(counts[0]) != 0:
+    if len(counts) != 1 or int(counts[0]) != 0 or re.search(r'^VALIDATION ', log_text, re.M):
         code = 2
-        (out / 'validation-error.txt').write_text('expected one WSI_VALIDATION errors=0 record')
+        (out / 'validation-error.txt').write_text(
+            'expected one WSI_VALIDATION errors=0 record and no ERROR callback anywhere in the log')
 if code not in (0, 3):
     diagnostics.screen('failure-screen.png')
     (out / 'diagnostics.json').write_text(json.dumps(diagnostics.records, indent=2))
