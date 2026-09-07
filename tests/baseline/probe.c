@@ -91,6 +91,8 @@ int main(int argc, char **argv) {
     rc = ubo_large_probe(1);
   else if (!strcmp(mode, "ubo-dynamic-good") || !strcmp(mode, "ubo-dynamic-bad"))
     rc = ubo_dynamic_draw(!strcmp(mode, "ubo-dynamic-bad"));
+  else if (!strcmp(mode, "bc-decode") || !strcmp(mode, "bc-decode-validation"))
+    rc = bc_decode_probe(strstr(mode, "validation") != NULL);
   else if (!strcmp(mode, "memory-ranges") || !strcmp(mode, "memory-ranges-validation"))
     rc = memory_ranges_probe(strstr(mode, "validation") != NULL);
   else if (!strncmp(mode, "timeline-", 9)) {

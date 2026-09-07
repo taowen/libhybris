@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: Apache-2.0
+#version 450
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0, std430) readonly buffer Source { uint data[]; } src;
+layout(set = 0, binding = 1, std430) writeonly buffer Destination { uint data[]; } dst;
+layout(push_constant) uniform Region {
+    uint mode; // 0: BC1 RGB, 1: BC1 RGBA, 2: BC2, 3: BC3
+    uint source_word;
+    uint row_blocks;
+    uint layer_blocks;
+    uint width;
+    uint height;
+    uint pixels;
+    uint first_pixel;
+    uint destination_word;
+    uint chunk_pixels;
+} r;
+
+uvec3 rgb565(uint value)
+{
+    uvec3 c = uvec3(value >> 11, (value >> 5) & 63, value & 31);
+    return (c << uvec3(3, 2, 3)) | (c >> uvec3(2, 4, 2));
+}
+
+uint alpha3(uint word, uint pixel)
+{
+    uint lo = src.data[word], hi = src.data[word + 1];
+    uint a = lo & 255, b = (lo >> 8) & 255;
+    uint bit = 16 + pixel * 3;
+    uint index;
+    if (bit < 32) {
+        index = lo >> bit;
+        // Only pixel 5 straddles words; never shift a 32-bit value by 32.
+        if (bit == 31) index |= hi << 1;
+    } else index = hi >> (bit - 32);
+    index &= 7;
+    if (index == 0) return a;
+    if (index == 1) return b;
+    if (a > b) return ((8 - index) * a + (index - 1) * b) / 7;
+    if (index == 6) return 0;
+    if (index == 7) return 255;
+    return ((6 - index) * a + (index - 1) * b) / 5;
+}
+
+void main()
+{
+    uint local_pixel = gl_GlobalInvocationID.x;
+    if (local_pixel >= r.chunk_pixels) return;
+    uint pixel = r.first_pixel + local_pixel;
+    if (pixel >= r.pixels) return;
+    uint x = pixel % r.width;
+    uint y = (pixel / r.width) % r.height;
+    uint layer = pixel / (r.width * r.height);
+    uint block = layer * r.layer_blocks + (y / 4) * r.row_blocks + x / 4;
+    uint word = r.source_word + block * (r.mode < 2 ? 2 : 4);
+    uint within = (y & 3) * 4 + (x & 3);
+    uint color_word = word + (r.mode < 2 ? 0 : 2);
+    uint endpoints = src.data[color_word];
+    uint c0 = endpoints & 65535, c1 = endpoints >> 16;
+    uvec3 a = rgb565(c0), b = rgb565(c1), color;
+    uint index = (src.data[color_word + 1] >> (within * 2)) & 3;
+    uint alpha = 255;
+    if (index == 0) color = a;
+    else if (index == 1) color = b;
+    else if (r.mode >= 2 || c0 > c1)
+        color = index == 2 ? (2 * a + b) / 3 : (a + 2 * b) / 3;
+    else if (index == 2) color = (a + b) / 2;
+    else {
+        color = uvec3(0);
+        if (r.mode == 1) alpha = 0;
+    }
+    if (r.mode == 2)
+        alpha = ((src.data[word + within / 8] >> ((within & 7) * 4)) & 15) * 17;
+    else if (r.mode == 3) alpha = alpha3(word, within);
+    // sRGB variants retain encoded bytes; image sampling performs the EOTF.
+    dst.data[r.destination_word + pixel] = color.r | (color.g << 8) |
+                                         (color.b << 16) | (alpha << 24);
+}

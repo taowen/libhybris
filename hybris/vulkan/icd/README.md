@@ -290,3 +290,8 @@ expression/direct lengths, unrelated float/bool parameters, defaults, repeated
 pipeline variants and same-process cache serialization/restoration. See the
 baseline README for exact device results and remaining limits. Specialization
 map behavior follows the [Vulkan specialization constants rules](https://docs.vulkan.org/spec/latest/chapters/pipelines.html#pipelines-specialization-constants).
+
+The internal `compat/bc_decode.c` BC1–BC3 compute kernel is built with the ICD
+but has no image-command interception or format advertisement yet. The existing
+[headless decoder probe](../../../tests/baseline/bc-decode.md) exercises the same
+source through native/frontend/standard-loader dispatch and records its limits.

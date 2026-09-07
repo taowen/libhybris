@@ -43,6 +43,7 @@ int eglprobe(int version);
 int egl_lifecycle_probe(void);
 int vkprobe(const char *route);
 int memory_ranges_probe(int validate);
+int bc_decode_probe(int validate);
 int dispatch_probe(void);
 int life_probe(int unload);
 int init_probe(void);
