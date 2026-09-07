@@ -4,6 +4,18 @@
 范围：评估把本仓库扩展为同进程的 GLES / 桌面 OpenGL / Vulkan 兼容栈；借鉴 Vortek、Gladio 的能力，不照搬它们的命令 IPC。
 本文最初为调研建议，现作为持续实施的验收清单；阶段进度见 [实施状态](IMPLEMENTATION.md)。下文目标结构和完整兼容层尚未完成，两次 Blender 故障尚未重新复现。
 
+## 当前 Mesa 依赖（2026-09-07）
+
+按当前方案，Mesa 改为官方 `c3b008c1`，不再依赖 Mesa fork、Gallium Freedreno
+KGSL 或定制 Zink 顶点模拟。此前 fork 的通过记录保留为历史，不能视为当前
+官方实现的覆盖。原版 Turnip + Zink 在 Redmi 的 EGL/GLX 两轮通过 38 张一致
+图像及 44 份 SPIR-V 验证，SSBO 为 16/16/16，SyncVal 零错误。Mali 官方 Zink
+拒绝 core 3.3；core 3.2 的 packed attribute 用例失败。Mali Blender 显示
+需要 OpenGL 4.3 的对话框，启动脚本未执行；Redmi 未安装 Blender。详见
+[当前官方 Mesa 证据](tests/desktop-gl/README.md#official-upstream-results-2026-09-07)。
+后续工作沿用官方 Mesa；这些驱动能力与应用缺口仍需验收，不能通过恢复私有
+Mesa 补丁或提高宣告值来记作完成。G07/G08/G10/G13 等整项保持开放。
+
 ## 1. 结论与边界
 
 当前 libhybris 已能把 glibc 程序接到 Android GPU 驱动，但它还不是 Vortek 式 Vulkan 语义兼容层，也不是 Gladio 式桌面 GL 实现。基础测试通过与复杂应用正确渲染之间，主要缺少：

@@ -1,61 +1,93 @@
-# Desktop OpenGL through Zink and hybris
+# Desktop OpenGL with official Mesa
 
-This builds an actual desktop GL frontend: source-built Mesa/Zink → standard
-glibc Vulkan loader → hybris ICD → Android vendor Vulkan HAL. EGL is Mesa's
-implementation, not the hybris GLES EGL frontend. The initial integration uses
-surfaceless EGL pbuffers, with no X server, APK or compositor. GLX pbuffer contexts are also available with an external X server, as described
-below. A working Blender renderer and displayed desktop GL windows remain open.
+The current dependency is unmodified official Mesa `26.3.0-devel`, pinned to
+`c3b008c1ba01d455351b762253ef44c3ca19653f` from
+[mesa/mesa](https://gitlab.freedesktop.org/mesa/mesa). Zink emits Vulkan through
+the standard glibc loader. Select the hybris ICD for an Android vendor HAL, or
+the bundled upstream Turnip ICD on an Adreno KGSL device. Mesa implements EGL
+and GLX. No custom Zink vertex prepass or Gallium Freedreno KGSL code is built.
 
-Build prerequisites are the parent Ardesk checkout's clean Mesa revision
-`597b75359ae16357cfb5d183ea9c3ea0a6b12874`, its AArch64 cross file, Podman and
-its existing GL cross-builder. The default cached builder image is
-`localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` can select an
-explicit available replacement. The script records the resolved image ID,
-compiler, Mesa commit, probe/source hashes and packaged ELF hashes. It rejects
-a different or dirty Mesa checkout. This dependency is not bundled into an
-independent libhybris clone. The recorded image identifies this build; it is
-not a new independently reproducible container recipe.
+Build prerequisites are the parent Ardesk Mesa checkout, its AArch64 cross
+file, Podman and the existing GL cross-builder. The default image is
+`localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` selects an
+explicit replacement. The script records the image ID, compiler, clean Mesa
+commit, probe/source hashes and packaged ELF hashes. It rejects a different or
+dirty Mesa checkout. An independent libhybris clone does not bundle Mesa.
 
 ```sh
+# Build hybris first when testing an Android vendor HAL.
 tools/build-aarch64.sh
 tests/desktop-gl/build.sh
-ADB=/path/to/adb python3 tests/desktop-gl/run.py \
+python3 tests/desktop-gl/run.py \
+  --serial 29854870 --backend turnip --api-version 1.4.359 \
+  --profile core33 --vertex-prepass --vertex-draws
+python3 tests/desktop-gl/run.py \
   --serial 10AFA31610002QH --hal /vendor/lib64/hw/vulkan.mali.so \
   --api-version 1.3.305 --mali-loader-quirk --profile core32
 ```
 
-`--api-version` must match baseline ICD version discovery for the selected
-HAL, not a desired Vulkan version. Mali's existing explicitly enabled,
-build-ID-scoped loader workaround remains necessary on this tested driver.
-The supported probe choices are `core32`, `compat32`, and `core33`. The latter
-checks a separately requested context; it does not silently fall back. Only
-EGL_BAD_MATCH on context creation is recorded as UNSUPPORTED. Other failures
-remain FAIL/CRASH/TIMEOUT, and all non-PASS results return a failing host exit.
+The Mali command currently reports FAIL; it is retained as a negative baseline.
+`--api-version` must match the selected ICD's actual version, not a desired
+capability. The explicit build-ID-scoped Mali loader quirk is in libhybris,
+not a Mesa patch. Turnip neither stages nor uses hybris. No GL/GLSL version or
+feature advertisement override is set. `--display` selects GLX, with
+`LIBGL_KOPPER_DISABLE=true` and the drisw X11 transport; rendering still uses
+Zink and the selected GPU Vulkan driver.
 
-The build enables only the Zink Gallium backend and no native Mesa Vulkan
-ICDs. It installs Mesa into a fresh staging tree and collects the transitive
-ELF dependency closure, preserving executable modes. Build/runtime files and
-results stay under ignored `build/`. Compilation is cached by Ninja; remove
-`build/mesa` for a clean rebuild or when changing build configuration. The
-script does not reconfigure an existing build directory or support concurrent
-builds in that directory.
+The build enables Gallium Zink and Vulkan Turnip (`vulkan-drivers=freedreno`,
+`freedreno-kmds=kgsl` are upstream Turnip option names). Ninja caches objects in
+`build/mesa-upstream`; this separate directory avoids reuse of the former fork
+build. The build reconfigures existing objects, installs into a fresh staging
+tree and collects transitive ELF dependencies, including the standard Vulkan
+loader. Do not run simultaneous builds in the same output directory.
 
-The runner validates Mesa and hybris manifests, stages an independent shell
-UID directory, forces the one explicit hybris ICD JSON and runs with the Mesa
-runtime library directory before hybris. It does not set GL/GLSL version
-advertisement overrides. The program requests a desktop context, compiles GLSL
-1.50 vertex/fragment shaders, creates a VAO, uses gl_VertexID for a fullscreen
-triangle and draws two different colors with gl_FragCoord. It reads all 256
-RGBA pixels; both C and Python check the exact expected image. It rejects a
-non-Zink renderer. Host acceptance also requires mappings for Mesa Gallium,
-the standard loader, hybris ICD and selected Mali/Adreno HAL. Raw maps, image,
-command and staged ELF hashes are retained. Mapping names/hashes of deployed
-files are not an audit of driver memory contents or every dynamic load.
+`--vertex-draws` exercises ordinary GL attribute, indexed, multidraw and resource
+cases. `--vertex-prepass` is the existing explicit application compute fixture;
+it does not convert arbitrary vertex shaders or enable a private driver mode.
+The former `--vertex-execution compute` option has been removed. The original
+pixel, GL-error and validation requirements are retained. No unit framework is
+used. Mappings must contain Gallium, the standard loader and the selected ICD
+(and vendor HAL for hybris). Retained hashes identify deployed files, not
+in-memory contents or every dynamic load. The 45-second probe alarm and
+60-second host timeout remain; cleanup is restricted to the unique run directory.
 
-The probe has a 45-second alarm and a 60-second host watchdog. Cleanup checks
-the recorded process PID's working directory before killing it, then deletes
-only this run's unique directory. Device state is not otherwise reset. No unit
-test framework is added.
+## Official upstream results (2026-09-07)
+
+All rows use the pinned upstream commit, standard Khronos validation and
+SyncVal. Core 3.3 is requested explicitly; rejection is not retried as success.
+
+| Device/backend | Request | Result | Evidence |
+| --- | --- | --- | --- |
+| Redmi / Turnip | EGL core 3.3 | `20260907T150334-1f83f981` PASS | GL 4.6; vertex/fragment/compute SSBO 16/16/16; 38 images |
+| Redmi / Turnip | GLX core 3.3 | `20260907T150334-a0841785` PASS | Same 38 images and zero validation errors |
+| Mali / hybris | EGL core 3.3 | `20260907T150334-3b67df69` UNSUPPORTED | EGL_BAD_MATCH |
+| Mali / hybris | GLX core 3.3 | `20260907T150334-3479d105` FAIL | GLXBadFBConfig |
+| Mali / hybris | EGL core 3.2 | `20260907T150505-6d20e1e5` FAIL | GL 3.2 / GLSL 1.50; packed attributes return GL_INVALID_ENUM |
+| Mali / hybris | GLX core 3.2 | `20260907T150505-51c67002` FAIL | Same packed attribute failure |
+
+The two Turnip runs have identical full image hashes and 22 SPIR-V modules
+each. All 44 modules pass spirv-val with Vulkan 1.3 and uniform buffer standard
+layout; per-result JSON retains commands, hashes and disassembly hashes. The
+four Mali outcomes are compatibility gaps, not successful desktop GL acceptance.
+
+Installed Blender 4.3.2 on Mali was launched with the official runtime, fresh
+HOME/config and no version overrides (`build/blender/upstream-f4b5bd38`). It
+shows the OpenGL 4.3-or-higher requirement dialog. Its Python startup marker
+never executes; the watchdog terminates the waiting process after recording
+its window and mappings (exit 137 is this cleanup, not a spontaneous crash).
+Blender was absent from the tested Redmi rootfs; Turnip probe success does not
+prove Blender rendering. Private Xvfb :189 and both ADB reverses are removed
+after validation.
+
+The parent Ardesk build also compiles official Zink+Turnip, stages the standard
+loader and zink/swrast DRI aliases, and builds the APK. Upstream capability gaps
+remain open; historical fork passes below are not evidence for this dependency.
+
+## Historical fork results
+
+The records below describe earlier Mesa fork experiments. Their private flags,
+commit pins, capability fixes and conversion coverage are historical and are
+not part of the current implementation or commands.
 
 Initial results on 2026-09-07, Mesa 26.3.0-devel at
 `1cb7f0a1c9a5438045f89ad4aa83eda8fbafa09e` (before the fixes below):

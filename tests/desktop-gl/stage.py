@@ -11,7 +11,7 @@ def needed(path):
     data = subprocess.check_output(['aarch64-linux-gnu-readelf', '-d', str(path)], text=True)
     return re.findall(r'\(NEEDED\).*\[(.*?)\]', data)
 search = [installed, Path('/usr/lib/aarch64-linux-gnu'), Path('/lib/aarch64-linux-gnu')]
-pending = ['libGL.so.1', 'libEGL.so.1', 'libgallium-26.3.0-devel.so', 'libvulkan.so.1', 'ld-linux-aarch64.so.1']
+pending = ['libGL.so.1', 'libEGL.so.1', 'libgallium-26.3.0-devel.so', 'libvulkan.so.1', 'libvulkan_freedreno.so', 'ld-linux-aarch64.so.1']
 seen = set()
 while pending:
     name = pending.pop()

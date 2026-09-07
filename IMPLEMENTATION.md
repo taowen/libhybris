@@ -4,6 +4,17 @@ The active objective is to complete the acceptance criteria in [gaps.md](gaps.md
 and improve maintainability without changing API/ABI contracts during structural
 refactors. A probe passing does not close an entire gap.
 
+## Current Mesa dependency
+
+Mesa is now unmodified upstream `c3b008c1`, using Zink and Turnip. The parent
+submodule URL, build, packaging and launch defaults no longer depend on
+Freedreno Gallium KGSL or private Zink conversion. Earlier fork results below
+are historical. Official Turnip passes both EGL/GLX runs with 38 identical
+images, 44 valid SPIR-V modules and no SyncVal errors. Official Mali Zink
+rejects GL 3.3 and fails the GL 3.2 packed-attribute regression; installed
+Blender waits at its OpenGL 4.3 requirement dialog. No capability is overridden.
+Desktop-gl README records the exact upstream results and remaining app gaps.
+
 ## Delivery order
 
 1. Split existing code along ownership boundaries; preserve exported ABI and

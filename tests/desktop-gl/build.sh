@@ -2,7 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 ardesk="$(cd "$root/../.." && pwd)"
-mesa_commit=597b75359ae16357cfb5d183ea9c3ea0a6b12874
+mesa_commit=c3b008c1ba01d455351b762253ef44c3ca19653f
 [[ "$(git -C "$ardesk/third_party/mesa" rev-parse HEAD)" == "$mesa_commit" ]] || { echo 'unexpected Mesa revision' >&2; exit 1; }
 [[ -z "$(git -C "$ardesk/third_party/mesa" status --porcelain)" ]] || { echo 'Mesa checkout must be clean' >&2; exit 1; }
 image="${BUILDER_IMAGE:-localhost/ardesk-glibc-arm64:20d8189233233158}"
@@ -11,19 +11,19 @@ out="$root/tests/desktop-gl/build"
 mkdir -p "$out"
 podman run --rm --userns=keep-id -v "$ardesk:/work:z" --workdir /work "$image_id" bash -eu -c '
 build=/work/third_party/libhybris/tests/desktop-gl/build
-if [ ! -f "$build/mesa/build.ninja" ]; then
-meson setup "$build/mesa" /work/third_party/mesa --cross-file /work/tools/build/mesa-aarch64.ini \
+if [ ! -f "$build/mesa-upstream/build.ninja" ]; then
+meson setup "$build/mesa-upstream" /work/third_party/mesa --cross-file /work/tools/build/mesa-aarch64.ini \
  --prefix=/usr --libdir=lib --buildtype=release -Dauto_features=disabled \
- -Dgallium-drivers=zink -Dvulkan-drivers= -Dplatforms=x11 -Degl-native-platform=surfaceless \
+ -Dgallium-drivers=zink -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dplatforms=x11 -Degl-native-platform=surfaceless \
  -Degl=enabled -Dgles1=disabled -Dgles2=enabled -Dopengl=true -Dglx=dri -Dgbm=disabled \
  -Dllvm=disabled -Dzstd=disabled -Dshader-cache=false -Dxmlconfig=disabled -Dexpat=disabled \
  -Dzlib=enabled -Dbuild-tests=false -Dtools= -Dvideo-codecs=
 else
-meson configure "$build/mesa" -Dplatforms=x11 -Dglx=dri
+meson configure "$build/mesa-upstream" -Dplatforms=x11 -Dglx=dri -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl
 fi
-ninja -C "$build/mesa" -j12
+ninja -C "$build/mesa-upstream" -j12
 rm -rf "$build/install" "$build/runtime"
-DESTDIR="$build/install" ninja -C "$build/mesa" install
+DESTDIR="$build/install" ninja -C "$build/mesa-upstream" install
 python3 /work/third_party/libhybris/tests/desktop-gl/stage.py
 aarch64-linux-gnu-gcc -O2 -Wall -Wextra /work/third_party/libhybris/tests/desktop-gl/probe.c /work/third_party/libhybris/tests/desktop-gl/packed_draw.c /work/third_party/libhybris/tests/desktop-gl/glx_context.c /work/third_party/libhybris/tests/desktop-gl/vertex_prepass.c /work/third_party/libhybris/tests/desktop-gl/procedural_draw.c /work/third_party/libhybris/tests/desktop-gl/attribute_draw.c /work/third_party/libhybris/tests/desktop-gl/multidraw_draw.c /work/third_party/libhybris/tests/desktop-gl/indexed_draw.c /work/third_party/libhybris/tests/desktop-gl/resource_draw.c -lX11 -ldl -o "$build/probe"
 aarch64-linux-gnu-gcc --version > "$build/compiler.txt"

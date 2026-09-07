@@ -15,16 +15,19 @@ import time
 import uuid
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial',required=True)
-p.add_argument('--hal',required=True)
+p.add_argument('--backend',choices=['hybris','turnip'],default='hybris')
+p.add_argument('--hal',help='vendor HAL path, required for the hybris backend')
 p.add_argument('--api-version',required=True,help='actual ICD version from baseline version discovery')
 p.add_argument('--mali-loader-quirk',action='store_true')
 p.add_argument('--profile',choices=['core32','compat32','core33'],default='core32')
 p.add_argument('--display',help='X11 DISPLAY for GLX; omit for surfaceless EGL')
 p.add_argument('--vertex-prepass',action='store_true',help='exercise explicit compute vertex prepass feasibility workload')
-p.add_argument('--vertex-execution',choices=['native','compute'],help='run procedural and attribute cases, optionally through experimental Zink conversion')
+p.add_argument('--vertex-draws',action='store_true',help='run ordinary procedural, attribute, indexed and multidraw GL cases')
 p.add_argument('--validation-layer',type=Path,help='glibc AArch64 Khronos validation layer')
 p.add_argument('--validation-manifest',type=Path,help='matching original validation JSON')
 a=p.parse_args()
+if a.backend=='hybris' and not a.hal:p.error('--hal is required for hybris')
+if a.backend=='turnip' and (a.hal or a.mali_loader_quirk):p.error('Turnip does not use a vendor HAL or Mali loader quirk')
 if bool(a.validation_layer)!=bool(a.validation_manifest):p.error('provide both validation layer and manifest')
 if not re.fullmatch(r'\d+\.\d+\.\d+',a.api_version):p.error('invalid API version')
 root=Path(__file__).resolve().parents[2]
@@ -33,8 +36,10 @@ from manifest import verify_manifest
 build=root/'tests/desktop-gl/build'
 baseline=root/'tests/baseline/build'
 manifest=json.loads((build/'manifest.json').read_text())
-hybris_manifest=json.loads((baseline/'manifest.json').read_text())
-verify_manifest(hybris_manifest,baseline/'install/usr/lib/hybris',baseline/'runtime')
+hybris_manifest=None
+if a.backend=='hybris':
+    hybris_manifest=json.loads((baseline/'manifest.json').read_text())
+    verify_manifest(hybris_manifest,baseline/'install/usr/lib/hybris',baseline/'runtime')
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 if sha(build/'probe')!=manifest['probe_sha256']:raise RuntimeError('probe hash mismatch')
 for name,digest in manifest['runtime'].items():
@@ -42,7 +47,7 @@ for name,digest in manifest['runtime'].items():
 out=build/'results'/(time.strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8]);out.mkdir(parents=True)
 stage=out/'stage';stage.mkdir()
 shutil.copytree(build/'runtime',stage/'runtime')
-shutil.copytree(baseline/'install/usr/lib/hybris',stage/'hybris',symlinks=True)
+if a.backend=='hybris':shutil.copytree(baseline/'install/usr/lib/hybris',stage/'hybris',symlinks=True)
 shutil.copy2(build/'probe',stage/'probe')
 if a.validation_layer:
     (stage/'layers').mkdir()
@@ -55,17 +60,17 @@ if a.validation_layer:
 adb=[os.environ.get('ADB','adb'),'-s',a.serial]
 def shell(command,**kwargs):return subprocess.run(adb+['shell',command],**kwargs)
 remote='/data/local/tmp/hybris-desktop-gl-'+out.name
-(stage/'driver.json').write_text(json.dumps({'file_format_version':'1.0.0','ICD':{'library_path':remote+'/hybris/libhybris-vulkan-icd.so.0','api_version':a.api_version}}))
+icd=remote+('/runtime/libvulkan_freedreno.so' if a.backend=='turnip' else '/hybris/libhybris-vulkan-icd.so.0')
+(stage/'driver.json').write_text(json.dumps({'file_format_version':'1.0.0','ICD':{'library_path':icd,'api_version':a.api_version}}))
 sdk=shell('getprop ro.build.version.sdk',capture_output=True,text=True,check=True).stdout.strip()
 env={'EGL_PLATFORM':'surfaceless','MESA_LOADER_DRIVER_OVERRIDE':'zink','GALLIUM_DRIVER':'zink',
  'MESA_DEBUG':'1','VK_DRIVER_FILES':remote+'/driver.json','VK_LAYER_PATH':remote+'/layers',
- 'HYBRIS_LINKER_DIR':remote+'/hybris/libhybris/linker','HYBRIS_ANDROID_SDK_VERSION':sdk,
- 'HYBRIS_VULKAN_HAL':a.hal,'XDG_RUNTIME_DIR':remote}
+ 'XDG_RUNTIME_DIR':remote}
+if a.backend=='hybris':env.update(HYBRIS_LINKER_DIR=remote+'/hybris/libhybris/linker',HYBRIS_ANDROID_SDK_VERSION=sdk,HYBRIS_VULKAN_HAL=a.hal)
 if a.vertex_prepass:env['HYBRIS_VERTEX_PREPASS']='1'
-if a.vertex_execution:
+if a.vertex_draws:
     env['HYBRIS_PROCEDURAL_VERTEX']='1'
     env['ZINK_DEBUG']='spirv'
-if a.vertex_execution=='compute':env['ZINK_DEBUG']='vertex_prepass,spirv'
 if a.validation_layer:
     env['VK_INSTANCE_LAYERS']='VK_LAYER_KHRONOS_validation'
     env['VK_LAYER_ENABLES']='VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT'
@@ -77,7 +82,7 @@ if a.display:
                LIBGL_DRIVERS_PATH=remote+'/runtime/dri')
 if a.mali_loader_quirk:env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK']='1'
 command='env '+' '.join(k+'='+shlex.quote(v) for k,v in env.items())+' ./runtime/ld-linux-aarch64.so.1 --library-path ./runtime:./hybris ./probe '+a.profile
-record={'serial':a.serial,'command':command,'mesa':manifest,'hybris':hybris_manifest,
+record={'backend':a.backend,'serial':a.serial,'command':command,'mesa':manifest,'hybris':hybris_manifest,
  'staged_elf_sha256':{str(x.relative_to(stage)):sha(x) for x in stage.rglob('*') if x.is_file()},'runner_sha256':sha(Path(__file__))}
 archive=out/'stage.tar'
 with tarfile.open(archive,'w') as t:t.add(stage,arcname='.')
@@ -92,9 +97,9 @@ try:
     except subprocess.TimeoutExpired as error:
         code=124;(out/'probe.log').write_bytes((error.stdout or b'')+(error.stderr or b''))
     artifacts=['maps.txt','image.rgba']
-    if a.vertex_execution:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)] + [f'attributes-{phase}.rgba' for phase in range(11)] + [f'indexed-{phase}.rgba' for phase in range(9)] + [f'resources-{phase}.rgba' for phase in range(6)] + [f'multidraw-{phase}.rgba' for phase in range(5)]
+    if a.vertex_draws:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)] + [f'attributes-{phase}.rgba' for phase in range(11)] + [f'indexed-{phase}.rgba' for phase in range(9)] + [f'resources-{phase}.rgba' for phase in range(6)] + [f'multidraw-{phase}.rgba' for phase in range(5)]
     if a.vertex_prepass:artifacts += [f'vertex-prepass-{phase}.rgba' for phase in range(3)]
-    if a.vertex_execution:
+    if a.vertex_draws:
         listing=shell('cd '+shlex.quote(remote)+' && ls dump*.spv',capture_output=True,text=True)
         artifacts += [name for name in listing.stdout.splitlines() if re.fullmatch(r'dump[0-9]+\.spv', name)]
     for name in artifacts:
@@ -111,22 +116,6 @@ if code==0:
         if len(packed)!=12 or {row[:4] for row in packed}!=cases or any(row[4:]!=('0','0') for row in packed):
             raise ValueError('packed vertex draw matrix incomplete or failed')
         record['packed_vertex_cases']=12
-        if (a.vertex_execution=='compute'):
-            draws=re.findall(r'ZINK_VERTEX_PREPASS draw vertices=(\d+) instances=(\d+) inputs=(\d+)', (out/'probe.log').read_text())
-            if draws.count(('3','2','0'))!=3 or ('3','1','0') not in draws or draws.count(('3','2','1'))!=13 or draws.count(('3','4','4'))!=5 or draws.count(('3','4','3'))!=2 or draws.count(('3','2','4'))!=4:
-                raise ValueError('automatic Zink vertex prepass cases incomplete')
-            if draws.count(('7','1','3'))!=3 or draws.count(('7','1','2'))!=2 or draws.count(('6','1','2'))!=3:
-                raise ValueError('indexed Zink vertex prepass cases incomplete')
-            if draws.count(('3','2','16'))!=3 or draws.count(('3','1','3'))!=4:
-                raise ValueError('resource or sub-word conversion missing')
-            bindings=re.findall(r'ZINK_VERTEX_PREPASS draw vertices=3 instances=2 inputs=(\d+) [^\n]*input_binding=(texel|ssbo|mixed)', (out/'probe.log').read_text())
-            if bindings.count(('16','texel'))!=3 or bindings.count(('1','ssbo'))!=1 or bindings.count(('17','mixed'))!=1 or bindings.count(('18','mixed'))!=1:
-                raise ValueError('texel/SSBO resource pressure paths missing')
-            multi=re.findall(r'ZINK_VERTEX_PREPASS draw vertices=3 instances=1 inputs=\d+ index_size=(\d+) [^\n]*drawid=([23])', (out/'probe.log').read_text())
-            if sorted(multi)!=[(str(width),str(drawid)) for width in (0,1,2,4) for drawid in (2,3)]:
-                raise ValueError('multidraw conversion or DrawID progression missing')
-            record['multidraw_prepass_ids']=multi
-            record['automatic_vertex_prepass_draws']=draws
         if a.vertex_prepass:
             for phase in range(3):
                 marker=f'VERTEX_PREPASS phase={phase} PASS bad_pixels=0 guards=0 count={6*(phase+1)} ids=63 error=0x0'
@@ -138,7 +127,7 @@ if code==0:
             for phase in range(3):
                 wanted=bytes((255,0,255,255))*256 if phase==1 else expected
                 if (out/f'vertex-prepass-{phase}.rgba').read_bytes()!=wanted:raise ValueError('prepass image mismatch')
-        if a.vertex_execution:
+        if a.vertex_draws:
             attributes=bytes(c for y in range(16) for x in range(16) for c in (255*((x//4)&1),255*((x//8)&1),0,255))
             for phase in range(11):
                 marker=f'ATTRIBUTE_VERTEX phase={phase} PASS bad_pixels=0 error=0x0'
@@ -176,10 +165,11 @@ if code==0:
             record['synchronization_validation']='enabled and no reported errors'
             record['validation_layer_sha256']=sha(a.validation_layer)
             record['validation_manifest_sha256']=sha(a.validation_manifest)
-        for name in ['runtime/libgallium-', 'runtime/libvulkan.so.1', 'hybris/libhybris-vulkan-icd.so', 'vulkan.'+('mali' if 'mali' in a.hal else 'adreno')+'.so']:
+        backends=['runtime/libvulkan_freedreno.so'] if a.backend=='turnip' else ['hybris/libhybris-vulkan-icd.so', 'vulkan.'+('mali' if 'mali' in a.hal else 'adreno')+'.so']
+        for name in ['runtime/libgallium-', 'runtime/libvulkan.so.1']+backends:
             if name not in maps:raise ValueError('missing mapped backend '+name)
         if a.display and 'runtime/libGL.so.1' not in maps:raise ValueError('missing mapped GLX frontend')
-        record['evidence']='256 exact pixels; Mesa, standard loader, hybris ICD and selected vendor mapped'
+        record['evidence']='256 exact pixels; Mesa, standard loader and selected '+a.backend+' backend mapped'
     except (OSError,ValueError) as error:
         code=2;record['evidence_error']=str(error)
 record['exit_code']=code
