@@ -16,6 +16,10 @@ Blender waits at its OpenGL 4.3 requirement dialog. No capability is overridden.
 Desktop-gl README records the exact upstream results. Per the current user
 requirement, Blender compatibility through Zink is not an acceptance gate; its
 failed startup remains an observation, not a reason to maintain a Mesa fork.
+libhybris continues to support the Android vendor-driver path on both Qualcomm
+and Mali; Qualcomm can alternatively use the independent official Turnip
+backend. The choice is per device/workload, not a restriction of libhybris to
+Mali or a Turnip connection through the hybris ICD.
 
 ## Delivery order
 
@@ -36,6 +40,19 @@ unit-test suite or general capture/replay engine is planned. Completed batches
 are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
+
+The timeline probe now includes two same-family queues and actual buffer
+visibility: submit the waiting consumer first, fill on the producer, then
+copy/read back 1024 exact words, repeated four times with GPU-ordered reuse.
+Mali native/frontend/ICD core and KHR paths pass using non-coherent readback
+memory; both dual-queue standard ICD validation/SyncVal runs report zero
+errors. Adreno vendor timeline requirements are unsupported; official Turnip
+on Redmi, tested separately through the standard loader without libhybris,
+exposes only one queue and rejects this workload before submission.
+The independent transfer helper is separate from timeline setup/host-command
+coverage. Partial-range flushes, cross-family ownership and concurrent host
+submissions remain outside this batch; G09 is still partial. Exact records and
+limits are in the baseline README.
 
 The allocator workload now lives in `tests/baseline/probe_alloc.c`, separate
 from concurrent first-initialization code. Direct ICD enumeration refuses

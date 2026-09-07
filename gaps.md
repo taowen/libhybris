@@ -157,6 +157,9 @@ compat 在标准 layer 里时，验证原始 app 调用和转换后 backend 调�
 本项目同应用对照证明 Zink 全面优于 Gladio，也不意味着 Blender 已通过。
 Adreno 在所固定 Turnip 支持且实测通过的设备上采用 Zink → Turnip；
 Mali 等设备采用 Zink → hybris Vulkan → 厂商驱动，并按实际缺口补兼容。
+高通也保留 Zink → hybris Vulkan → 原厂驱动这条选择；libhybris 并不限于
+Mali。选择原厂驱动还是独立 Turnip 后端，应根据设备实测能力和工作负载
+决定。某个原厂驱动不支持 timeline 不代表 libhybris 不支持该 GPU 厂商。
 统一的是 GL frontend 和 Vulkan 接口，不能把 Turnip 当成跨 GPU 后端。
 Gladio 的有效应用经验继续作为回归参考，GLES 路径保留给现有用例及
 Vulkan 不满足要求的设备，不同时重建另一套通用桌面 GL 前端。
@@ -206,7 +209,7 @@ P0 = 兼容增强前的基础；P1 = 直接影响目标应用；P2 = 基础可�
 | G06 / P0 | 缺少 draw→资源→image 诊断链 | 用 Mali-shaped UBO 测试导出绑定/布局/内容/attachment 证据；人工注入错误 binding 后能定位首个错误 draw。**部分落地**：固定 widget 已覆盖 UBO、staging、template、普通/动态捕获和 API-input shader 关联，详见下方 G06 证据记录。任意应用首个错误 draw、runtime generation 和 WSI attachment lineage 仍未完成 |
 | G07 / P1 | Vulkan 格式兼容：BC、scaled vertex、swizzle/sRGB 等 | 每个已支持格式有 golden/reference 像素；格式查询、创建、view、copy、readback、mip/layer/subregion 一致；单独覆盖 BC6H/BC7，未实现则不广告 |
 | G08 / P1 | SPIR-V 转换缺少语义保证 | 转换前后 spirv-val、反射 diff、源码/二进制 hash、pipeline specialization key；clip/cull 真使用时正确模拟或拒绝，不能简单删除改变画面 |
-| G09 / P1 | 同步/内存模型模拟不完整 | non-coherent atom 对齐与 flush/invalidate、staging 多次写入、submit 重用、queue 间信号、wait-before-signal、销毁时仍在飞行测试；没有全局 wait-idle 才能运行的默认实现 |
+| G09 / P1 | 同步/内存模型模拟不完整 | non-coherent atom 对齐与 flush/invalidate、staging 多次写入、submit 重用、queue 间信号、wait-before-signal、销毁时仍在飞行测试；没有全局 wait-idle 才能运行的默认实现。**部分验证**：Mali 同 family 双 queue 的 consumer 先提交、producer 后 signal，四轮 fill→copy→1024 words 精确读回、timeline/fence 及资源重用在 native/frontend/ICD core/KHR 六路径通过；实际非 coherent 内存整块 invalidate，标准 ICD 两种 alias 的 SyncVal 零错误。Adreno 厂商不支持所需 timeline；绕过 libhybris 的独立官方 Turnip 对照在 Redmi 只有一个 queue，此用例返回不支持。部分范围 flush/invalidate、跨 family ownership、并发主机提交及其它在飞工作下的资源退役仍未覆盖；详见 baseline README |
 | G10 / P1 | 桌面 GL frontend | 分别声明 core/compat 版本；GLSL/link、VAO/VBO、UBO/SSBO、FBO、sRGB、texture、GLX/EGL contexts 回归；经 Zink/GL→GLES 的失败归属独立统计 |
 | G11 / P1 | Vulkan X11 缺失，EGL X11 含旁路，WSI release 正确性未证实 | Xlib/XCB/Wayland 分别创建、多窗口、resize/minimize、out-of-date、surface destroy/recreate；无提前复用，无 FD 泄漏，帧 ID 贯穿 compositor |
 | G12 / P1 | 黑屏/贴图错误没有可重复证据包 | 对指定 frame/draw 生成输入 shader、descriptor/resource、attachment 前后图、同步事件、present 记录；有容量上限，默认不开高开销捕获 |

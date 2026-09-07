@@ -1826,3 +1826,65 @@ HAL allocation site. It does not cover partial enumeration of multiple GPUs,
 concurrent enumeration, allocator-internal locking or resource ownership
 beyond these instance/physical/device paths. Validation/SyncVal and GPU
 rendering were not rerun for this probe-only change. G03 remains open.
+
+## Cross-queue timeline data visibility (2026-09-07)
+
+`timeline-queues-core` requests API 1.2; `timeline-queues-khr` requests API 1.1
+and enables KHR_timeline_semaphore. Both require the timeline feature and two
+graphics/compute queues in the same family. The additional
+`-validation` modes use the standard ICD with Khronos validation and SyncVal.
+They share instance/device setup with the existing single-queue workload;
+GPU transfer and readback live in `probe_timeline_queues.c`.
+
+Each of four cycles first submits a consumer that waits for a future timeline
+value, copies 4096 bytes, makes the copy visible to host reads and signals the
+next value. Its fence must still time out before the producer is submitted.
+The producer then fills the source buffer with a cycle-specific word and
+signals the consumer's dependency. On later cycles it also waits for the
+previous consumer's signal, ordering resource reuse on the GPU. The host waits
+for the consumer value and both fences, invalidates the mapped readback
+allocation, and checks all 1024 words before resetting fences and re-recording
+both command buffers. No queue/device wait-idle is used. Mappings are captured
+while the device and its resources still exist.
+
+The ordering follows the Khronos [timeline semaphore
+sample](https://docs.vulkan.org/samples/latest/samples/extensions/timeline_semaphore/README.html)
+and [semaphore memory dependencies](https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-semaphores).
+The probe prefers a genuinely non-coherent host-visible readback memory type
+when available and logs the selected flags. Invalidation covers the whole
+mapped allocation from offset zero; it does not test partial-atom ranges or
+host-written uploads/flushes.
+
+| Device/backend | Evidence | Results |
+|---|---|---|
+| X300 / Mali vendor, frontend and standard ICD | `20260907T153355-ea6e0794` | 9 PASS: six dual-queue paths, two existing single-queue validation controls and ICD version |
+| Redmi 29854870 / Adreno vendor, frontend and standard ICD | `20260907T153355-3c3c999e` | ICD version PASS; eight timeline cases UNSUPPORTED |
+| Redmi / independent official Turnip `c3b008c1` control (no libhybris) | Parent `build/mesa-upstream/results/turnip-f2040a95` | Both dual-queue core/KHR validation modes UNSUPPORTED: family 0 exposes one queue |
+
+Mali exposes two queues in family 0 (flags `0x17`); the workload verifies that
+their handles differ. All six dual-queue paths use memory flags `0xb`, which
+are host-visible and non-coherent. Each checks 4096 words over four cycles
+with zero mismatches and counter values 2/4/6/8. The two dual-queue ICD runs
+and two single-queue controls report `validation=1 errors=0`. The runner
+verifies staged provenance and required mappings. Mali retains the existing
+explicit scoped loader quirk; no driver capability is overridden.
+
+The Turnip row is a separate backend control using the same standalone Vulkan
+probe through the standard loader directly to Turnip. It stages no libhybris
+libraries and does not pass through the hybris ICD. The libhybris paths above
+continue to bridge the Android vendor drivers on both Mali and Qualcomm.
+Qualcomm can use either its vendor driver through libhybris or the independent
+Turnip backend. This Adreno vendor driver's missing timeline capability is
+not a general libhybris/Qualcomm incompatibility. Turnip was staged from the
+unmodified official build, with driver bytes
+checked against its build output and the current Mesa commit stamp. Its
+result retains commands, probe manifest and staged hashes. It returns before
+GPU work; the final mapping snapshot after instance destruction does not
+retain Turnip, so this record is not a live-driver mapping proof or a rendering
+pass. Adreno vendor core/KHR requirements fail before queue work as well.
+
+This adds same-family queue ordering, deferred signal submission, repeated
+buffer reuse and full-allocation non-coherent invalidation coverage. It does
+not prove physical GPU overlap, different-family ownership transfers,
+concurrent host submissions, partial flush/invalidate ranges or legal resource
+retirement while other work remains in flight. G09 remains open.

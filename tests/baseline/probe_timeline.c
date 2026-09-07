@@ -26,7 +26,7 @@ static void *signal_from_thread(void *opaque) {
   return NULL;
 }
 
-int timeline_probe(int khr, int route, int validate) {
+int timeline_probe(int khr, int route, int validate, int multiple_queues) {
   void *h = dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) return 2;
   PFN_vkGetInstanceProcAddr gip = sym(h, "vkGetInstanceProcAddr");
@@ -88,9 +88,28 @@ int timeline_probe(int khr, int route, int validate) {
   p_vkGetPhysicalDeviceFeatures2(physical, &features);
   if (!timeline.timelineSemaphore) { p_vkDestroyInstance(instance, NULL); return 3; }
   if (!pick_queue(p_vkGetPhysicalDeviceQueueFamilyProperties, physical, &family)) return 2;
-  float priority = 1;
+  if (multiple_queues) {
+    uint32_t families = 0;
+    p_vkGetPhysicalDeviceQueueFamilyProperties(physical, &families, NULL);
+    VkQueueFamilyProperties *queues = calloc(families, sizeof(*queues));
+    if (!queues) return 2;
+    p_vkGetPhysicalDeviceQueueFamilyProperties(physical, &families, queues);
+    for (family = 0; family < families; ++family) {
+      printf("TIMELINE_QUEUE_CAP family=%u count=%u flags=0x%x\n",
+          family, queues[family].queueCount, queues[family].queueFlags);
+      if (queues[family].queueCount >= 2 &&
+          (queues[family].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))) break;
+    }
+    free(queues);
+    if (family == families) {
+      printf("UNSUPPORTED timeline requires two queues in one transfer-capable family\n");
+      p_vkDestroyInstance(instance, NULL);
+      return 3;
+    }
+  }
+  float priorities[2] = {1, 1};
   VkDeviceQueueCreateInfo qc = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-      .queueFamilyIndex = family, .queueCount = 1, .pQueuePriorities = &priority};
+      .queueFamilyIndex = family, .queueCount = multiple_queues ? 2 : 1, .pQueuePriorities = priorities};
   const char *extension = VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME;
   VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = &timeline,
       .queueCreateInfoCount = 1, .pQueueCreateInfos = &qc,
@@ -124,6 +143,13 @@ int timeline_probe(int khr, int route, int validate) {
   PFN_vkGetSemaphoreCounterValue counter = (PFN_vkGetSemaphoreCounterValue)calls[0];
   PFN_vkWaitSemaphores wait = (PFN_vkWaitSemaphores)calls[1];
   PFN_vkSignalSemaphore signal = (PFN_vkSignalSemaphore)calls[2];
+  if (multiple_queues) {
+    int rc = timeline_queue_work(gip, instance, physical, device, family, counter, wait);
+    /* On failure, exit the probe without destroying potentially pending GPU
+     * objects. The existing process watchdog bounds a hung driver call. */
+    if (rc) return rc;
+    goto destroy_device;
+  }
   VkQueue queue;
   p_vkGetDeviceQueue(device, family, 0, &queue);
   VkSemaphoreTypeCreateInfo type = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
@@ -179,6 +205,7 @@ int timeline_probe(int khr, int route, int validate) {
   }
   p_vkDestroyFence(device, fence, NULL);
   p_vkDestroySemaphore(device, semaphore, NULL);
+destroy_device:
   p_vkDestroyDevice(device, NULL);
   if (messenger) destroy_messenger(instance, messenger, NULL);
   p_vkDestroyInstance(instance, NULL);

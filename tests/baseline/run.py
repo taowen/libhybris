@@ -238,8 +238,9 @@ cases = [
 
 cases.extend(('hybris', mode, 'probe-glibc') for mode in ('render-owners', 'command-alloc'))
 
+timeline_queue_cases = ('timeline-queues-core', 'timeline-queues-khr')
 timeline_cases = tuple('timeline-' + family + suffix for family in ('core', 'khr')
-                       for suffix in ('', '-gdpa', '-elf'))
+                       for suffix in ('', '-gdpa', '-elf')) + timeline_queue_cases
 for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.extend((backend, mode, binary) for mode in timeline_cases)
 cases.extend(('hybris-linked', 'timeline-' + family + '-linked', 'probe-glibc-linked')
@@ -277,7 +278,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.extend([('icd', mode, 'probe-glibc') for mode in ('timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)

@@ -89,7 +89,7 @@ int main(int argc, char **argv) {
   else if (!strncmp(mode, "timeline-", 9)) {
     int khr = strstr(mode, "khr") != NULL;
     int route = strstr(mode, "linked") ? 3 : strstr(mode, "elf") ? 2 : strstr(mode, "gdpa") ? 1 : 0;
-    rc = timeline_probe(khr, route, strstr(mode, "validation") != NULL);
+    rc = timeline_probe(khr, route, strstr(mode, "validation") != NULL, strstr(mode, "queues") != NULL);
   }
   else if (!strcmp(mode, "command-alloc"))
     rc = command_allocator_probe();
