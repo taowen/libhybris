@@ -260,8 +260,9 @@ discovery, its private queue/wrapper, android_wlegl and the native window.
 The internal C interface has no Vulkan types or loader callbacks; the frontend
 keeps only its VkSurfaceKHR-to-owner mapping and Android Vulkan translation.
 The standard ICD now compiles the same factory and implements local Wayland
-surface create/destroy plus presentation-support/capabilities/formats/FIFO
-queries. It advertises `VK_KHR_surface`/`VK_KHR_wayland_surface` itself and
+surface create/destroy. Presentation-support queries return false until a
+presentation engine exists. Successful capabilities/formats/FIFO query output
+is not implemented. It advertises `VK_KHR_surface`/`VK_KHR_wayland_surface` itself and
 strips those names before HAL `vkCreateInstance`. Swapchain import/present is
 not implemented.
 
@@ -300,5 +301,54 @@ compositor identities stayed stable and their owned processes were absent after
 cleanup. Raw logs, staged ELF provenance and screenshot evidence remain under
 `tests/wsi/build/isolated/`. These are replacement-frontend regressions; acquire
 timeout, ICD swapchain/present, asynchronous buffer retirement and presented
-frame capture remain open. The ICD surface probe is built and wired through
-`--icd-hal`; it has no recorded device run in this batch.
+frame capture remain open. The initial ICD surface implementation was only
+build-checked; the subsequent review and device evidence are recorded below.
+
+
+## ICD surface review (2026-09-07)
+
+The original implementation is preserved in `75953aa`. Review removed its
+assumption that a graphics queue can present: no swapchain/presentation engine
+exists yet. Both support queries now report false. Hard-coded RGBA/BGRA formats,
+16384 limits, usages and FIFO success were removed. The required query entry
+points remain, but return VK_ERROR_UNKNOWN for unsupported queries. The
+[capability query contract](https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceSurfaceCapabilitiesKHR.html)
+requires surface support first. The probe therefore checks lifecycle and false
+presentation support; it does not interpret fabricated capabilities as coverage.
+It also requires a disabled instance-extension entry point to resolve to NULL,
+without invoking it in an invalid extension configuration. Instance preparation
+no longer silently marks KHR_surface enabled when only the Wayland name appears.
+
+The runner queries the staged adapter before writing `driver.json`, rather than
+hard-coding API 1.3. It records that query's command, log and version, and hashes
+the staged standard loader. `--icd-mali-loader-quirk` explicitly enables the
+existing build-id-scoped MMUD workaround; the isolated compositor wrapper now
+forwards the ICD options. Results distinguish `icd-surface-lifecycle` from
+`frontend-presentation`. For example:
+
+```sh
+python3 tests/wsi/compositor/run.py --serial 10AFA31610002QH \
+  --icd-hal /vendor/lib64/hw/vulkan.mali.so --icd-mali-loader-quirk \
+  --vulkan-loader /path/to/standard/libvulkan.so.1
+```
+
+Actual aarch64 library build (incremental, 16.41 seconds), independent probe
+build and Python syntax checks passed. Final source bytes match their build
+snapshots. Final device results under `build/isolated/`:
+
+| Path / device | Isolated run / client run | Result |
+| --- | --- | --- |
+| Standard ICD / Adreno | `20260907T211953-81a53337` / `20260907T211954-2942050b` | Surface lifecycle PASS, presentation unsupported; queried API 1.1.128 |
+| Standard ICD / Mali | `20260907T211953-f2055694` / `20260907T211954-c9c34b7a` | Surface lifecycle PASS, presentation unsupported; queried API 1.3.305 |
+| Frontend / Adreno | `20260907T211808-60e19b23` / `20260907T211809-79fc403a` | Presentation and screenshot PASS |
+| Frontend / Mali | `20260907T211808-11e6c4cd` / `20260907T211809-c9fb93a4` | Presentation and screenshot PASS |
+
+Each run passed 128 surface pairs with 16 concurrently live, with warmed client
+FD counts unchanged (Adreno 13, Mali 7). All four compositor identities stayed
+stable and owned processes were absent after cleanup. ICD mappings contain the
+staged standard loader and adapter, without Android libvulkan. Each frontend
+run passed 24 frames at three sizes and six screenshot comparisons. Initial
+ICD runs before the manifest-version correction also passed lifecycle checks
+(`20260907T211740-24ecd4d9`, `20260907T211741-6391e50c`); the final runs above
+supersede them. No standard-ICD rendering, windowed validation/capture, allocator
+failure sweep, missing-wlegl device case or non-Wayland build is claimed here.

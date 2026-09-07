@@ -68,7 +68,24 @@ static void dump_maps(const char *phase) {
     if (output) fclose(output);
 }
 
-int main(void) {
+static int icd_version(void) {
+    alarm(20);
+    void *library = dlopen("libhybris-vulkan-icd.so.0", RTLD_NOW | RTLD_LOCAL);
+    if (!library) { fprintf(stderr, "%s\n", dlerror()); return 2; }
+    PFN_vkGetInstanceProcAddr resolver = dlsym(library, "vk_icdGetInstanceProcAddr");
+    PFN_vkEnumerateInstanceVersion query = resolver
+        ? (PFN_vkEnumerateInstanceVersion)resolver(VK_NULL_HANDLE, "vkEnumerateInstanceVersion") : NULL;
+    uint32_t version = 0;
+    if (!query || query(&version) != VK_SUCCESS) return 2;
+    printf("WSI_ICD_VERSION %u.%u.%u\n", VK_VERSION_MAJOR(version),
+           VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
+    dlclose(library);
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc == 2 && !strcmp(argv[1], "--icd-version")) return icd_version();
+    if (argc != 1) return 2;
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("WSI_CLIENT pid=%ld\n", (long)getpid());
     alarm(45);
@@ -115,22 +132,10 @@ int main(void) {
     CHECK(vkCreateInstance(&bare, NULL, &gated));
     PFN_vkCreateWaylandSurfaceKHR ungated_create =
         (PFN_vkCreateWaylandSurfaceKHR)gip(gated, "vkCreateWaylandSurfaceKHR");
-    if (ungated_create) {
-        VkWaylandSurfaceCreateInfoKHR ungated_info = {
-            .sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
-            .display = w.display, .surface = wl_surface};
-        VkSurfaceKHR rejected = VK_NULL_HANDLE;
-        VkResult ungated = ungated_create(gated, &ungated_info, NULL, &rejected);
-        printf("WSI_ICD ungated create=%d expected=%d\n", ungated, VK_ERROR_EXTENSION_NOT_PRESENT);
-        if (ungated == VK_SUCCESS) {
-            PFN_vkDestroySurfaceKHR ungated_destroy =
-                (PFN_vkDestroySurfaceKHR)gip(gated, "vkDestroySurfaceKHR");
-            if (ungated_destroy) ungated_destroy(gated, rejected, NULL);
-            return 2;
-        }
-    } else {
-        printf("WSI_ICD ungated create=NULL\n");
-    }
+    printf("WSI_ICD ungated create=%s\n", ungated_create ? "NONNULL" : "NULL");
+    /* A disabled instance-extension command must not resolve. Do not invoke
+     * it through a standard loader with an invalid extension configuration. */
+    if (ungated_create) return 2;
     PFN_vkDestroyInstance destroy_gated = (PFN_vkDestroyInstance)gip(gated, "vkDestroyInstance");
     if (!destroy_gated) return 2;
     destroy_gated(gated, NULL);
@@ -182,56 +187,20 @@ int main(void) {
     VkQueueFamilyProperties *families = calloc(count, sizeof(*families));
     if (!families) return 2;
     vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families);
-    uint32_t family = UINT32_MAX;
+    if (!count) return 2;
     for (uint32_t i = 0; i < count; ++i) {
         VkBool32 present = vkGetPhysicalDeviceWaylandPresentationSupportKHR(physical, i, w.display);
         VkBool32 supported = 0;
         CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physical, i, surface, &supported));
         printf("WSI_ICD family=%u graphics=%d present=%d support=%d\n", i,
                !!(families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT), present, supported);
-        if (supported && present && families[i].queueCount &&
-            (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) { family = i; break; }
+        if (supported || present) {
+            printf("WSI_ICD false presentation advertisement: swapchain is unimplemented\n");
+            return 2;
+        }
     }
     free(families);
-    if (family == UINT32_MAX) return 3;
-    VkSurfaceCapabilitiesKHR caps;
-    CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps));
-    printf("WSI_ICD currentExtent=%ux%u min=%ux%u max=%ux%u usage=0x%x minImage=%u maxImage=%u\n",
-           caps.currentExtent.width, caps.currentExtent.height,
-           caps.minImageExtent.width, caps.minImageExtent.height,
-           caps.maxImageExtent.width, caps.maxImageExtent.height,
-           caps.supportedUsageFlags, caps.minImageCount, caps.maxImageCount);
-    if (caps.currentExtent.width != 0xffffffffu || caps.currentExtent.height != 0xffffffffu) return 2;
-    if (caps.minImageExtent.width > 320 || caps.minImageExtent.height > 240) return 3;
-    if (caps.maxImageExtent.width < 448 || caps.maxImageExtent.height < 288) return 3;
-    const VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if ((caps.supportedUsageFlags & usage) != usage) return 3;
-    count = 0;
-    CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, NULL));
-    VkSurfaceFormatKHR *formats = calloc(count, sizeof(*formats));
-    if (!formats) return 2;
-    CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, formats));
-    VkSurfaceFormatKHR format = {0};
-    for (uint32_t i = 0; i < count; ++i)
-        if (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR &&
-            (formats[i].format == VK_FORMAT_R8G8B8A8_UNORM || formats[i].format == VK_FORMAT_B8G8R8A8_UNORM)) {
-            format = formats[i];
-            break;
-        }
-    free(formats);
-    if (!format.format) return 3;
-    printf("WSI_ICD format=%u colorSpace=%u\n", format.format, format.colorSpace);
-    count = 0;
-    CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &count, NULL));
-    VkPresentModeKHR *modes = calloc(count, sizeof(*modes));
-    if (!modes) return 2;
-    CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &count, modes));
-    int fifo = 0;
-    for (uint32_t i = 0; i < count; ++i)
-        fifo |= modes[i] == VK_PRESENT_MODE_FIFO_KHR;
-    free(modes);
-    printf("WSI_ICD fifo=%d modes=%u\n", fifo, count);
-    if (!fifo) return 2;
+    printf("WSI_ICD presentation=UNSUPPORTED capability_queries=SKIPPED\n");
     vkDestroySurfaceKHR(instance, surface, NULL);
     vkDestroyInstance(instance, NULL);
     xdg_toplevel_destroy(toplevel);

@@ -24,12 +24,6 @@ static const VkExtensionProperties local_wsi[] = {
 #endif
 
 #ifdef WANT_WAYLAND
-static const VkSurfaceFormatKHR k_surface_formats[] = {
-    {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-    {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-};
-static const VkPresentModeKHR k_present_modes[] = {VK_PRESENT_MODE_FIFO_KHR};
-
 struct surface_state {
     VkInstance instance;
     uint64_t generation;
@@ -88,18 +82,6 @@ static struct surface_state *find_surface(VkSurfaceKHR surface)
     return state;
 }
 
-static VkResult fill_array(uint32_t available, uint32_t *count, void *out,
-    const void *src, size_t element)
-{
-    if (!out) {
-        *count = available;
-        return VK_SUCCESS;
-    }
-    uint32_t written = *count < available ? *count : available;
-    if (written) memcpy(out, src, written * element);
-    *count = written;
-    return written < available ? VK_INCOMPLETE : VK_SUCCESS;
-}
 
 #endif
 
@@ -170,7 +152,6 @@ VkResult hybris_icd_wsi_prepare_instance(const VkInstanceCreateInfo *info,
         }
         kept[count++] = name;
     }
-    if (*wayland_enabled) *surface_enabled = 1;
     *names = kept;
     filtered->enabledExtensionCount = count;
     filtered->ppEnabledExtensionNames = count ? kept : NULL;
@@ -251,32 +232,15 @@ static struct surface_state *owned_surface(VkPhysicalDevice physical,
     return state;
 }
 
-static VkBool32 graphics_present(const struct hybris_icd_physical *context,
-    VkPhysicalDevice physical, uint32_t index)
-{
-    PFN_vkGetPhysicalDeviceQueueFamilyProperties query =
-        (PFN_vkGetPhysicalDeviceQueueFamilyProperties)
-        context->resolver(context->instance, "vkGetPhysicalDeviceQueueFamilyProperties");
-    if (!query) return VK_FALSE;
-    uint32_t count = 0;
-    query(physical, &count, NULL);
-    if (index >= count) return VK_FALSE;
-    VkQueueFamilyProperties *families = calloc(count, sizeof(*families));
-    if (!families) return VK_FALSE;
-    query(physical, &count, families);
-    VkBool32 supported = families[index].queueCount &&
-        (families[index].queueFlags & VK_QUEUE_GRAPHICS_BIT);
-    free(families);
-    return supported;
-}
-
 static VkBool32 VKAPI_CALL wayland_presentation_support(VkPhysicalDevice physical,
     uint32_t queue_family, struct wl_display *display)
 {
     struct hybris_icd_physical context;
     if (!display || !hybris_icd_lookup_physical(physical, &context))
         return VK_FALSE;
-    return graphics_present(&context, physical, queue_family);
+    (void)queue_family;
+    /* Queue graphics capability does not implement a presentation engine. */
+    return VK_FALSE;
 }
 
 static VkResult VKAPI_CALL surface_support(VkPhysicalDevice physical,
@@ -286,29 +250,9 @@ static VkResult VKAPI_CALL surface_support(VkPhysicalDevice physical,
     if (!supported) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context))
         return VK_ERROR_SURFACE_LOST_KHR;
-    *supported = graphics_present(&context, physical, queue_family);
+    (void)queue_family;
+    *supported = VK_FALSE;
     return VK_SUCCESS;
-}
-
-static void fill_capabilities(VkSurfaceCapabilitiesKHR *capabilities)
-{
-    memset(capabilities, 0, sizeof(*capabilities));
-    capabilities->minImageCount = 2;
-    capabilities->maxImageCount = 0;
-    capabilities->currentExtent.width = 0xffffffffu;
-    capabilities->currentExtent.height = 0xffffffffu;
-    capabilities->minImageExtent.width = 1;
-    capabilities->minImageExtent.height = 1;
-    capabilities->maxImageExtent.width = 16384;
-    capabilities->maxImageExtent.height = 16384;
-    capabilities->maxImageArrayLayers = 1;
-    capabilities->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    capabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    capabilities->supportedCompositeAlpha =
-        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR | VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
-    capabilities->supportedUsageFlags =
-        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 }
 
 static VkResult VKAPI_CALL surface_capabilities(VkPhysicalDevice physical,
@@ -318,8 +262,9 @@ static VkResult VKAPI_CALL surface_capabilities(VkPhysicalDevice physical,
     if (!capabilities) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context))
         return VK_ERROR_SURFACE_LOST_KHR;
-    fill_capabilities(capabilities);
-    return VK_SUCCESS;
+    /* Unsupported surfaces must not be queried for swapchain capabilities.
+     * Keep the required entry point, but never fabricate successful output. */
+    return VK_ERROR_UNKNOWN;
 }
 
 static VkResult VKAPI_CALL get_surface_formats(VkPhysicalDevice physical,
@@ -329,8 +274,8 @@ static VkResult VKAPI_CALL get_surface_formats(VkPhysicalDevice physical,
     if (!count) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context))
         return VK_ERROR_SURFACE_LOST_KHR;
-    return fill_array(sizeof(k_surface_formats) / sizeof(k_surface_formats[0]),
-        count, formats, k_surface_formats, sizeof(*formats));
+    (void)formats;
+    return VK_ERROR_UNKNOWN;
 }
 
 static VkResult VKAPI_CALL get_surface_present_modes(VkPhysicalDevice physical,
@@ -340,8 +285,8 @@ static VkResult VKAPI_CALL get_surface_present_modes(VkPhysicalDevice physical,
     if (!count) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context))
         return VK_ERROR_SURFACE_LOST_KHR;
-    return fill_array(sizeof(k_present_modes) / sizeof(k_present_modes[0]),
-        count, modes, k_present_modes, sizeof(*modes));
+    (void)modes;
+    return VK_ERROR_UNKNOWN;
 }
 
 void hybris_icd_wsi_release_instance(VkInstance instance)

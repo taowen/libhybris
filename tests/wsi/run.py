@@ -31,11 +31,14 @@ p.add_argument('--probe', type=Path, default=ROOT / 'tests/wsi/build')
 p.add_argument('--out', type=Path, default=ROOT / 'tests/wsi/build/results')
 p.add_argument('--icd-hal', help='standard-loader ICD path: Android Vulkan HAL')
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
+p.add_argument('--icd-mali-loader-quirk', action='store_true', help='Opt in to the build-id-scoped Mali MMUD loader workaround')
 a = p.parse_args()
 if not 5 <= a.timeout <= 300: p.error('timeout must be between 5 and 300 seconds')
 if not re.fullmatch(r'[A-Za-z0-9_.]+', a.package): p.error('invalid package')
 if (a.icd_hal is None) != (a.vulkan_loader is None):
     p.error('--icd-hal and --vulkan-loader must be supplied together')
+if a.icd_mali_loader_quirk and not a.icd_hal:
+    p.error('--icd-mali-loader-quirk requires --icd-hal')
 adb = [os.environ.get('ADB', 'adb'), '-s', a.serial]
 def shell(command, **kwargs): return subprocess.run(adb + ['shell', command], **kwargs)
 def app(command, **kwargs): return shell('run-as ' + shlex.quote(a.package) + ' sh -c ' + shlex.quote(command), **kwargs)
@@ -70,11 +73,9 @@ if a.icd_hal:
         raise SystemExit('ICD adapter missing from hybris install')
     (stage / 'standard').mkdir()
     shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
-    (stage / 'driver.json').write_text(json.dumps({
-        'file_format_version': '1.0.0',
-        'ICD': {'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
-                'api_version': '1.3.0'}}))
     env['HYBRIS_VULKAN_HAL'] = a.icd_hal
+    if a.icd_mali_loader_quirk:
+        env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK'] = '1'
     env['VK_DRIVER_FILES'] = remote + '/driver.json'
     libraries = './standard:./hybris:./glibc'
 else:
@@ -89,7 +90,7 @@ metadata = {'run_id': run_id, 'serial': a.serial, 'package': a.package,
             'path': 'icd' if a.icd_hal else 'frontend'}
 if a.icd_hal:
     metadata['icd_hal'] = a.icd_hal
-    metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
+    metadata['standard_loader_sha256'] = sha256_file(stage / 'standard/libvulkan.so.1')
 apk_paths = shell('pm path ' + shlex.quote(a.package), check=True, capture_output=True, text=True).stdout.splitlines()
 metadata['package_apks'] = []
 for apk in apk_paths:
@@ -116,6 +117,23 @@ try:
     with archive.open('rb') as data:
         app('cd ' + shlex.quote(remote) + ' && tar xf -', stdin=data, check=True)
     archive.unlink()
+    if a.icd_hal:
+        # Query the staged adapter directly before creating a loader manifest.
+        # A fixed 1.3 declaration would misrepresent a HAL reporting 1.1.
+        version_command = 'cd ' + shlex.quote(remote) + ' && env ' + command + ' --icd-version'
+        version_run = app(version_command, capture_output=True, text=True, timeout=30)
+        (out / 'icd-version.log').write_text(version_run.stdout + version_run.stderr)
+        versions = re.findall(r'^WSI_ICD_VERSION (\d+\.\d+\.\d+)$', version_run.stdout, re.MULTILINE)
+        if version_run.returncode or len(versions) != 1:
+            raise RuntimeError('staged ICD version query failed; see icd-version.log')
+        driver = json.dumps({'file_format_version': '1.0.0', 'ICD': {
+            'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
+            'api_version': versions[0]}})
+        (stage / 'driver.json').write_text(driver)
+        app('cat > ' + shlex.quote(remote + '/driver.json'), input=driver, text=True, check=True)
+        metadata['icd_api_version'] = versions[0]
+        metadata['icd_version_command'] = version_command
+        (out / 'device.json').write_text(json.dumps(metadata, indent=2))
     launch = 'cd ' + shlex.quote(remote) + ' && echo $$ > runner.pid && exec env ' + command
     process = subprocess.Popen(adb + ['shell', 'run-as ' + shlex.quote(a.package) + ' sh -c ' + shlex.quote(launch)],
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -150,7 +168,7 @@ try:
     code = process.wait(timeout=5)
     if code not in (0, 3):
         diagnostics.snapshot(remote, 'client exited unsuccessfully; client may already be gone')
-except (OSError, subprocess.CalledProcessError) as error:
+except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
     code = 2
     (out / 'runner-error.txt').write_text(str(error))
     diagnostics.snapshot(remote, 'runner operation failed')
@@ -196,7 +214,8 @@ if code not in (0, 3):
     diagnostics.screen('failure-screen.png')
     (out / 'diagnostics.json').write_text(json.dumps(diagnostics.records, indent=2))
 status = 'PASS' if code == 0 else 'UNSUPPORTED' if code == 3 else 'TIMEOUT' if code in (124, 142) else 'CRASH' if code >= 128 else 'FAIL'
-(out / 'result.json').write_text(json.dumps({'status': status, 'exit_code': code}, indent=2))
+(out / 'result.json').write_text(json.dumps({'status': status, 'exit_code': code,
+    'scope': 'icd-surface-lifecycle' if a.icd_hal else 'frontend-presentation'}, indent=2))
 print(out)
 print(status, code)
 raise SystemExit(0 if code in (0, 3) else 1)

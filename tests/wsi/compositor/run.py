@@ -17,7 +17,14 @@ p.add_argument('--serial', required=True)
 p.add_argument('--build', type=Path)
 p.add_argument('--trace', action='store_true')
 p.add_argument('--repeat', type=int, default=1, help='sequential clients sharing one compositor process (1–100)')
+p.add_argument('--icd-hal')
+p.add_argument('--vulkan-loader', type=Path)
+p.add_argument('--icd-mali-loader-quirk', action='store_true')
 a = p.parse_args()
+if (a.icd_hal is None) != (a.vulkan_loader is None):
+    p.error('--icd-hal and --vulkan-loader must be supplied together')
+if a.icd_mali_loader_quirk and not a.icd_hal:
+    p.error('--icd-mali-loader-quirk requires --icd-hal')
 if not 1 <= a.repeat <= 100: p.error('--repeat must be between 1 and 100')
 root = Path(__file__).resolve().parents[1]
 package = 'io.taowen.hybriswsitest'
@@ -73,6 +80,9 @@ try:
                    '--package', package, '--out', str(directory)]
         if a.build: command += ['--build', str(a.build)]
         if a.trace: command += ['--trace']
+        if a.icd_hal:
+            command += ['--icd-hal', a.icd_hal, '--vulkan-loader', str(a.vulkan_loader)]
+        if a.icd_mali_loader_quirk: command += ['--icd-mali-loader-quirk']
         code = subprocess.run(command).returncode
         entry = {'iteration': index + 1, 'runner_exit': code}
         record['runs'].append(entry)

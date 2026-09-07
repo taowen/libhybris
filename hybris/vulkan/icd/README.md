@@ -44,11 +44,14 @@ still rejects HALs advertising driver-owned `VK_KHR_surface` or
 `VK_KHR_display` rather than passing incompatible surfaces through. When
 built with Wayland, it advertises `VK_KHR_surface` and
 `VK_KHR_wayland_surface` itself, creates local `VkSurfaceKHR` objects with
-the existing `window_owner` native-window factory, and answers presentation
-support, capabilities, formats and FIFO present modes. Missing `android_wlegl`
-still maps to `VK_ERROR_UNKNOWN`. `currentExtent` is `0xFFFFFFFF` so the
-client can choose a swapchain size later. Swapchain import/present, windowed
-validation and capture/replay remain open.
+the existing `window_owner` native-window factory. Both presentation-support
+queries return `VK_FALSE`: graphics queue capability alone is not a working
+presentation engine. Required capability/format/present-mode entry points are
+retained, but return `VK_ERROR_UNKNOWN` if called on these unsupported surfaces;
+they do not fabricate successful swapchain limits or format lists. Vulkan
+requires a supported surface before these queries. Missing `android_wlegl`
+also maps to `VK_ERROR_UNKNOWN`. Swapchain import/present, windowed validation
+and capture/replay remain open.
 
 ## Sources
 
