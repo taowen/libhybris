@@ -729,3 +729,12 @@ are in tests/wsi/compositor/README.md. This fixes the observed retained-binding
 path, not the eight-live-overlay capacity or all X11/subsurface/fence behavior.
 Desktop GL integration and Vulkan compatibility transforms remain separate,
 unimplemented deliverables; this WSI fix does not add API features.
+
+The first desktop OpenGL frontend now builds from fixed Mesa source under
+`tests/desktop-gl`: Mesa EGL/Zink → standard Vulkan loader → hybris ICD →
+vendor HAL. X300 actually creates GL 3.2 core and compatibility contexts and
+passes a GLSL 1.50/VAO draw with 256 exact pixels through Mali; GL 3.3 is rejected
+with EGL_BAD_MATCH, and Redmi fails EGL initialization. See its README for
+artifacts and restrictions. This advances G10 beyond GLES passthrough, but
+neither full GL conformance nor windowed GL/Blender or Gladio/Vortek parity is
+proved. No GL version overrides or new Vulkan feature advertisements are used.

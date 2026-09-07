@@ -105,3 +105,6 @@ __pycache__/
 
 # Standalone Wayland WSI probe outputs
 tests/wsi/build/
+
+# Desktop GL frontend build outputs
+tests/desktop-gl/build/

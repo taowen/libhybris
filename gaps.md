@@ -601,3 +601,22 @@ FAIL：充电通知可见时顶部 39 行有单通道差 1，完整窗口及读�
 修复源码/构建库及所有结果索引见 tests/wsi/compositor/README.md。
 这关闭已复现的正常 surface 销毁后绑定耗尽，不是全部 G03/G11 或新增
 桌面 OpenGL/Vulkan 特性；标准 ICD WSI、present capture、真实应用仍开放。
+
+2026-09-07 首个实际桌面 GL 前端：tests/desktop-gl 从固定 Mesa
+`1cb7f0a1c9a5438045f89ad4aa83eda8fbafa09e` 构建仅 Zink 的 Gallium 和
+Mesa EGL，标准 glibc Vulkan loader → hybris ICD → vendor HAL。
+X300 `20260907T104023-a4d52adb`（3.2 core）与
+`20260907T104042-984ffd94`（3.2 compatibility）均创建成功，实际报告
+Mesa/Zink、Mali-G1-Ultra、GL 3.2、GLSL 1.50；GLSL 编译/link、VAO、
+gl_VertexID 三角形和 gl_FragCoord 两色绘制通过，C/host 各校验全部
+256 像素且 GL error=0。映射含实际 Mesa、标准 loader、hybris ICD 和
+Mali HAL；继续显式使用既有、限定 build-ID 的 Mali loader 选项。
+3.3 core `20260907T104053-34894e46` 返回 EGL_BAD_MATCH，明确
+UNSUPPORTED；红米 `20260907T104023-86f66a86` EGL 初始化失败，记 FAIL。
+固定 Zink 源码只识别 EXT_vertex_attribute_divisor，Mali 实际只提供 KHR
+名称，这是 3.3 的一个明确能力缺口，不能推定改此一处即可满足高版本。
+红米缺 timeline/maintenance5 等该版本需求；尚未隔离 EGL 失败的单一原因。
+构建源码、编译器/image、ELF 哈希、maps、image 和失败记录见新目录 README；
+未覆盖整套 GL 3.2、固定管线、UBO/SSBO/FBO/纹理/sRGB、GLX、窗口呈现、
+Zink validation 或 Blender。没有 GL/GLSL version override；不是 Gladio/
+Vortek 同等特性声明。G10 有首个实际功能进展，整体验收保持开放。
