@@ -64,6 +64,7 @@ int tls_bounds_probe(void);
 int tls_destructor_probe(void);
 int caps_probe(int check_wsi_guard);
 int caps2_probe(void);
+int native_buffer_probe(void);
 int properties2_check(PFN_vkGetPhysicalDeviceProperties2 query, VkPhysicalDevice pd,
                       const VkPhysicalDeviceProperties *legacy);
 int scaled_vertex_probe(int validate, int route, const char *mode);

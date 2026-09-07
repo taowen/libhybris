@@ -2390,3 +2390,10 @@ Adreno/Mali runs. Use `--scaled-format-trace` with scaled compatibility enabled.
 
 See [capture execution](capture-execution.md) for dependency selection, per-stage
 outcomes, device-side output merging and the Adreno/Mali capture regressions.
+
+
+### Driver-native buffer import
+
+[Native-buffer evidence](native-buffer.md) describes the gralloc AHB borrowing
+API, independent HAL import/CPU-readback/fence probe, and the remaining work
+before standard ICD window support.

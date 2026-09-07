@@ -156,6 +156,10 @@ static AHardwareBuffer *ahb_map_find(const native_handle_t *handle) {
     return ahb;
 }
 
+struct AHardwareBuffer *hybris_gralloc_get_hardware_buffer(buffer_handle_t handle) {
+    return ahb_map_find(handle);
+}
+
 static int ahb_map_incref(const native_handle_t *handle) {
     int rc = -ENOENT;
     pthread_mutex_lock(&ahb_map_mutex);

@@ -66,6 +66,8 @@ int main(int argc, char **argv) {
     rc = tls_bounds_probe();
   else if (!strcmp(mode, "tls"))
     rc = tls_probe();
+  else if (!strcmp(mode, "native-buffer"))
+    rc = native_buffer_probe();
   else if (!strcmp(mode, "caps2"))
     rc = caps2_probe();
   else if (!strcmp(mode, "caps"))

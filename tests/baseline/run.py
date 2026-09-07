@@ -212,6 +212,7 @@ cases = [
     ('native', 'tls', 'probe-bionic'),
     ('native', 'caps', 'probe-bionic'),
     ('native', 'caps2', 'probe-bionic'),
+    ('native', 'native-buffer', 'probe-bionic'),
     ('native', 'ubo', 'probe-bionic'),
     ('hybris', 'vk', 'probe-glibc'),
     ('hybris', 'vk-dlsym', 'probe-glibc'),
@@ -238,6 +239,7 @@ cases = [
     ('hybris', 'caps', 'probe-glibc'),
     ('hybris', 'wsi-disabled', 'probe-glibc'),
     ('hybris', 'caps2', 'probe-glibc'),
+    ('hybris', 'native-buffer', 'probe-glibc'),
     ('hybris', 'ubo', 'probe-glibc'),
     ('hybris-linked', 'dispatch', 'probe-glibc-linked'),
     ('hybris-linked', 'vk', 'probe-glibc-linked'),
@@ -275,7 +277,7 @@ if a.icd_hal:
     metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
     # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('version', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
+              for mode in ('version', 'native-buffer', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
     cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
