@@ -16,7 +16,7 @@
 
 #include <android-config.h>
 #include <assert.h>
-#include <algorithm>
+#include <errno.h>
 #include <map>
 #include <mutex>
 #include <new>
@@ -45,21 +45,12 @@ extern "C" {
 #include "logging.h"
 #include "server_wlegl_buffer.h"
 #include "wayland-android-client-protocol.h"
-#include "wayland_window.h"
-
-struct WaylandDisplay {
-    wl_display *wl_dpy;
-    wl_event_queue *queue;
-    wl_registry *registry;
-    android_wlegl *wlegl;
-    WaylandNativeWindow *window;
-    wl_display *wl_dpy_wrapper;
-};
+#include "window_owner.h"
 
 static bool init_done = false;
 
 /* Keep track of active Vulkan window surfaces */
-static std::map<VkSurfaceKHR,struct WaylandDisplay *> _surface_window_map;
+static std::map<VkSurfaceKHR,struct hybris_vk_wayland_window *> _surface_window_map;
 static std::mutex surface_map_guard;
 /* The lock protects independent surfaces. Vulkan external synchronization
  * still governs use versus destruction of the same surface. Never hold this
@@ -71,7 +62,7 @@ int vulkan_wayland_has_mapping(VkSurfaceKHR surface)
     return (_surface_window_map.find(surface) != _surface_window_map.end());
 }
 
-void vulkan_wayland_push_mapping(VkSurfaceKHR surface, struct WaylandDisplay *wdpy)
+void vulkan_wayland_push_mapping(VkSurfaceKHR surface, struct hybris_vk_wayland_window *wdpy)
 {
     std::lock_guard<std::mutex> lock(surface_map_guard);
     assert(_surface_window_map.find(surface) == _surface_window_map.end());
@@ -79,23 +70,23 @@ void vulkan_wayland_push_mapping(VkSurfaceKHR surface, struct WaylandDisplay *wd
     _surface_window_map[surface] = wdpy;
 }
 
-struct WaylandDisplay *vulkan_wayland_pop_mapping(VkSurfaceKHR surface)
+struct hybris_vk_wayland_window *vulkan_wayland_pop_mapping(VkSurfaceKHR surface)
 {
     std::lock_guard<std::mutex> lock(surface_map_guard);
-    std::map<VkSurfaceKHR, struct WaylandDisplay *>::iterator it;
+    std::map<VkSurfaceKHR, struct hybris_vk_wayland_window *>::iterator it;
     it = _surface_window_map.find(surface);
 
     if (it == _surface_window_map.end()) return NULL;
 
-    struct WaylandDisplay *result = it->second;
+    struct hybris_vk_wayland_window *result = it->second;
     _surface_window_map.erase(it);
     return result;
 }
 
-struct WaylandDisplay *vulkan_wayland_get_mapping(VkSurfaceKHR surface)
+struct hybris_vk_wayland_window *vulkan_wayland_get_mapping(VkSurfaceKHR surface)
 {
     std::lock_guard<std::mutex> lock(surface_map_guard);
-    std::map<VkSurfaceKHR, struct WaylandDisplay *>::iterator it;
+    std::map<VkSurfaceKHR, struct hybris_vk_wayland_window *>::iterator it;
     it = _surface_window_map.find(surface);
     if (it == _surface_window_map.end())
         return NULL;
@@ -114,28 +105,6 @@ extern "C" void waylandws_init_module(struct ws_vulkan_interface *vulkan_iface)
     hybris_gralloc_initialize(0);
     vulkanplatformcommon_init(vulkan_iface);
     init_done = true;
-}
-
-static void registry_handle_global(void *data, wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
-{
-    WaylandDisplay *dpy = (WaylandDisplay *)data;
-
-    if (strcmp(interface, "android_wlegl") == 0) {
-        dpy->wlegl = static_cast<struct android_wlegl *>(wl_registry_bind(registry, name, &android_wlegl_interface, std::min(2u, version)));
-    }
-}
-
-static const wl_registry_listener registry_listener = {
-    registry_handle_global
-};
-
-void freeWaylandDisplay(WaylandDisplay *wdpy)
-{
-    if (wdpy->wlegl) android_wlegl_destroy(wdpy->wlegl);
-    if (wdpy->registry) wl_registry_destroy(wdpy->registry);
-    if (wdpy->wl_dpy_wrapper) wl_proxy_wrapper_destroy(wdpy->wl_dpy_wrapper);
-    if (wdpy->queue) wl_event_queue_destroy(wdpy->queue);
-    delete wdpy;
 }
 
 static VkResult waylandws_vkEnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties)
@@ -202,65 +171,30 @@ static VkResult waylandws_vkCreateWaylandSurfaceKHR(VkInstance instance,
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     VkAndroidSurfaceCreateInfoKHR createInfo;
     VkResult result;
-    WaylandDisplay *wdpy = new (std::nothrow) WaylandDisplay{};
-    if (!wdpy) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    WaylandNativeWindow *win;
-    struct wl_egl_window *window;
-
-    wdpy->wl_dpy = pCreateInfo->display;
-    wdpy->queue = wl_display_create_queue(wdpy->wl_dpy);
-    if (!wdpy->queue) {
-        freeWaylandDisplay(wdpy);
-        return VK_ERROR_OUT_OF_HOST_MEMORY;
-    }
-    wdpy->wl_dpy_wrapper = (struct wl_display *) wl_proxy_create_wrapper(wdpy->wl_dpy);
-    if (!wdpy->wl_dpy_wrapper) {
-        freeWaylandDisplay(wdpy);
-        return VK_ERROR_OUT_OF_HOST_MEMORY;
-    }
-    wl_proxy_set_queue((struct wl_proxy *) wdpy->wl_dpy_wrapper, wdpy->queue);
-    wdpy->registry = wl_display_get_registry(wdpy->wl_dpy_wrapper);
-    if (!wdpy->registry) {
-        freeWaylandDisplay(wdpy);
-        return VK_ERROR_OUT_OF_HOST_MEMORY;
-    }
-    wl_registry_add_listener(wdpy->registry, &registry_listener, wdpy);
-
-    // Complete discovery on this surface's private queue. Its sync callback
-    // must finish before we can destroy the discovery state.
-    if (wl_display_roundtrip_queue(wdpy->wl_dpy, wdpy->queue) < 0 || !wdpy->wlegl) {
-        HYBRIS_ERROR("Wayland surface discovery failed or android_wlegl is unavailable");
-        freeWaylandDisplay(wdpy);
-        return VK_ERROR_UNKNOWN;
-    }
-    window = wl_egl_window_create(pCreateInfo->surface, 1, 1);
-    if (!window) {
-        freeWaylandDisplay(wdpy);
-        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    hybris_vk_wayland_window *wdpy = NULL;
+    int error = hybris_vk_wayland_window_create(pCreateInfo->display, pCreateInfo->surface, &wdpy);
+    if (error) {
+        HYBRIS_ERROR("Wayland native window creation failed: %d", error);
+        return error == -ENOMEM ? VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_UNKNOWN;
     }
 
     HYBRIS_TRACE_BEGIN("hybris-vulkan", "vkCreateWaylandSurfaceKHR", "");
     HYBRIS_TRACE_BEGIN("native-vulkan", "vkCreateWaylandSurfaceKHR", "");
 
-    win = new WaylandNativeWindow((struct wl_egl_window *)window, wdpy->wl_dpy, wdpy->wlegl);
-    win->common.incRef(&win->common);
     createInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
     createInfo.pNext = NULL;
     createInfo.flags = 0;
-    createInfo.window = win;
+    createInfo.window = hybris_vk_wayland_window_native(wdpy);
 
     result = create_surface(instance, &createInfo, pAllocator, pSurface);
 
     HYBRIS_TRACE_END("native-vulkan", "vkCreateWaylandSurfaceKHR", "");
 
     if (result == VK_SUCCESS) {
-        wdpy->window = win;
         vulkan_wayland_push_mapping(*pSurface, wdpy);
     } else {
         HYBRIS_ERROR("vkCreateAndroidSurfaceKHR failed");
-        win->destroyWlEGLWindow();
-        win->common.decRef(&win->common);
-        freeWaylandDisplay(wdpy);
+        hybris_vk_wayland_window_destroy(wdpy);
     }
 
     HYBRIS_TRACE_END("hybris-vulkan", "vkCreateWaylandSurfaceKHR", "");
@@ -274,7 +208,7 @@ static VkBool32 waylandws_vkGetPhysicalDeviceWaylandPresentationSupportKHR(VkPhy
 
 static void waylandws_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator)
 {
-    WaylandDisplay *wdpy = vulkan_wayland_pop_mapping(surface);
+    hybris_vk_wayland_window *wdpy = vulkan_wayland_pop_mapping(surface);
     if (wdpy) {
         PFN_vkDestroySurfaceKHR destroy_surface = _vkGetInstanceProcAddr
             ? (PFN_vkDestroySurfaceKHR)_vkGetInstanceProcAddr(instance, "vkDestroySurfaceKHR")
@@ -283,12 +217,8 @@ static void waylandws_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surf
             fprintf(stderr, "libhybris vulkan: no vkDestroySurfaceKHR for instance\n");
             abort();
         }
-        WaylandNativeWindow *window = (WaylandNativeWindow *)wdpy->window;
-
-        window->destroyWlEGLWindow();
-        window->common.decRef(&window->common);
         destroy_surface(instance, surface, pAllocator);
-        freeWaylandDisplay(wdpy);
+        hybris_vk_wayland_window_destroy(wdpy);
     }
 }
 
@@ -321,14 +251,14 @@ static void waylandws_patchSurfaceCapabilities(VkSurfaceKHR surface, VkSurfaceCa
 
 static void waylandws_prepareSwapchain(const VkSwapchainCreateInfoKHR* pCreateInfo)
 {
-    struct WaylandDisplay *wdpy = vulkan_wayland_get_mapping(pCreateInfo->surface);
+    struct hybris_vk_wayland_window *wdpy = vulkan_wayland_get_mapping(pCreateInfo->surface);
     if (!wdpy)
         return;
 
     unsigned int width = pCreateInfo->imageExtent.width;
     unsigned int height = pCreateInfo->imageExtent.height;
     if (width > 0 && height > 0) {
-        wdpy->window->resize(width, height);
+        hybris_vk_wayland_window_resize(wdpy, width, height);
     }
 }
 

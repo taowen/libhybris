@@ -251,3 +251,39 @@ compositor remains alive while sequential probe processes exit and reconnect;
 all requested runs must pass, with unchanged compositor PID/start time. Each
 probe logs its PID, and the wrapper saves compositor FD snapshots between
 clients. See [the fixture](compositor/README.md) for failure evidence and scope.
+
+
+## Native-window ownership split (2026-09-07)
+
+`hybris/vulkan/platforms/wayland/window_owner.{h,cpp}` now owns registry
+discovery, its private queue/wrapper, android_wlegl and the native window.
+The internal C interface has no Vulkan types or loader callbacks; the frontend
+keeps only its VkSurfaceKHR-to-owner mapping and Android Vulkan translation.
+This is reusable source for the standard ICD's upcoming WSI, currently compiled
+into the existing frontend plugin. It does not add an ICD surface or swapchain.
+
+The frontend destroys the Android Vulkan surface before releasing the owner's
+native-window reference, then destroys the window before its protocol objects.
+Creation failures clean up the constructed discovery objects. A missing
+android_wlegl still maps to VK_ERROR_UNKNOWN in this frontend. The factory
+installs both registry listener callbacks and binds only the first matching
+global. This batch does not establish allocation-failure safety inside the
+existing WaylandNativeWindow constructor or connection-loss recovery.
+
+Actual clean aarch64 build (48.236 seconds) and independent WSI probe build
+passed. The built source snapshot matches all four changed build/source files.
+The factory object's undefined symbols contain no Vulkan entry points.
+The existing dedicated compositor runner passed on both vendor drivers:
+
+| Device | Isolated run / client run | Evidence |
+| --- | --- | --- |
+| Adreno 29854870 | `20260907T204530-9fd97e0d` / `20260907T204531-878d0df4` | 128 surface pairs, 16 concurrent; warmed client FD count 13 → 13 |
+| Mali 10AFA31610002QH | `20260907T204530-1a387e69` / `20260907T204531-1d63c8f7` | 128 surface pairs, 16 concurrent; warmed client FD count 7 → 7 |
+
+Each client passed 24 render/readback/present/frame-callback rounds at three
+sizes, all six screenshot comparisons, and normal teardown. Both isolated
+compositor identities stayed stable and their owned processes were absent after
+cleanup. Raw logs, staged ELF provenance and screenshot evidence remain under
+`tests/wsi/build/isolated/`. These are replacement-frontend regressions; acquire
+timeout, standard ICD presentation, asynchronous buffer retirement and presented
+frame capture remain open. No new unit test framework or test case was added.
