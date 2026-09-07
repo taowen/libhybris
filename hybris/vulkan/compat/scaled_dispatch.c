@@ -3,44 +3,12 @@
 #define VK_NO_PROTOTYPES
 #include "scaled_dispatch.h"
 #include "scaled_vertex.h"
+#include "scaled_formats.h"
 #include "spirv_entry.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/auxv.h>
 
-static const struct format_pair { VkFormat scaled, integer; int is_signed; } formats[] = {
-#define PAIR(c) { VK_FORMAT_##c##_USCALED, VK_FORMAT_##c##_UINT, 0 }, \
-                { VK_FORMAT_##c##_SSCALED, VK_FORMAT_##c##_SINT, 1 }
-    PAIR(R8), PAIR(R8G8), PAIR(R8G8B8A8), PAIR(R16), PAIR(R16G16), PAIR(R16G16B16A16)
-#undef PAIR
-};
-#define FORMAT_COUNT (sizeof(formats) / sizeof(formats[0]))
-static pthread_once_t config_once = PTHREAD_ONCE_INIT;
-static int enabled, force;
-static void configure(void)
-{
-    const char *value = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_VULKAN_COMPAT_SCALED_VERTEX");
-    force = value && !strcmp(value, "force");
-    enabled = force || (value && !strcmp(value, "1"));
-}
-int hybris_scaled_enabled(void) { pthread_once(&config_once, configure); return enabled; }
-static int fallback(PFN_vkGetPhysicalDeviceFormatProperties query, VkPhysicalDevice physical, unsigned i)
-{
-    VkFormatProperties scaled, integer;
-    query(physical, formats[i].scaled, &scaled);
-    query(physical, formats[i].integer, &integer);
-    return (force || !(scaled.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT)) &&
-            (integer.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT);
-}
-void hybris_scaled_format(PFN_vkGetPhysicalDeviceFormatProperties query,
-    VkPhysicalDevice physical, VkFormat format, VkFormatProperties *properties)
-{
-    if (!hybris_scaled_enabled() || !query) return;
-    for (unsigned i = 0; i < FORMAT_COUNT; ++i)
-        if (formats[i].scaled == format && fallback(query, physical, i))
-            properties->bufferFeatures |= VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
-}
 
 struct shader {
     VkShaderModule handle;
@@ -85,13 +53,11 @@ VkResult hybris_scaled_device_create(VkDevice handle, VkPhysicalDevice physical,
     device->create_shader = (PFN_vkCreateShaderModule)resolver(handle, "vkCreateShaderModule");
     device->destroy_shader = (PFN_vkDestroyShaderModule)resolver(handle, "vkDestroyShaderModule");
     device->create_pipelines = (PFN_vkCreateGraphicsPipelines)resolver(handle, "vkCreateGraphicsPipelines");
-    if (query) for (unsigned i = 0; i < FORMAT_COUNT; ++i)
-        if (fallback(query, physical, i)) device->mask |= 1u << i;
+    device->mask = hybris_scaled_mask(handle, physical, query);
     pthread_mutex_lock(&guard);
     device->next = devices;
     devices = device;
     pthread_mutex_unlock(&guard);
-    fprintf(stderr, "HYBRIS_SCALED_VERTEX experimental=1 force=%d fallback_mask=0x%x\n", force, device->mask);
     return VK_SUCCESS;
 }
 static void free_shader(struct shader *shader)
@@ -180,8 +146,8 @@ static VkResult convert_pipeline(struct scaled_device *device, VkGraphicsPipelin
     const VkPipelineVertexInputStateCreateInfo *input = info->pVertexInputState;
     unsigned count = 0;
     for (uint32_t j = 0; j < input->vertexAttributeDescriptionCount; ++j)
-        for (unsigned i = 0; i < FORMAT_COUNT; ++i)
-            if ((device->mask & (1u << i)) && input->pVertexAttributeDescriptions[j].format == formats[i].scaled) ++count;
+        for (unsigned i = 0; i < HYBRIS_SCALED_FORMAT_COUNT; ++i)
+            if ((device->mask & (1u << i)) && input->pVertexAttributeDescriptions[j].format == hybris_scaled_formats[i].scaled) ++count;
     if (!count) return VK_SUCCESS;
     /* Scaled and integer fetch use the same bytes and binding cadence. Keep
      * the divisor chain (EXT/KHR aliases) intact for the backend; reject other
@@ -201,10 +167,10 @@ static VkResult convert_pipeline(struct scaled_device *device, VkGraphicsPipelin
     memcpy(copy->stages, info->pStages, info->stageCount * sizeof(*copy->stages));
     count = 0;
     for (uint32_t j = 0; j < input->vertexAttributeDescriptionCount; ++j)
-        for (unsigned i = 0; i < FORMAT_COUNT; ++i)
-            if ((device->mask & (1u << i)) && copy->attributes[j].format == formats[i].scaled) {
-                attrs[count++] = (struct hybris_scaled_attribute){copy->attributes[j].location, formats[i].is_signed};
-                copy->attributes[j].format = formats[i].integer;
+        for (unsigned i = 0; i < HYBRIS_SCALED_FORMAT_COUNT; ++i)
+            if ((device->mask & (1u << i)) && copy->attributes[j].format == hybris_scaled_formats[i].scaled) {
+                attrs[count++] = (struct hybris_scaled_attribute){copy->attributes[j].location, hybris_scaled_formats[i].is_signed};
+                copy->attributes[j].format = hybris_scaled_formats[i].integer;
                 break;
             }
     result = VK_SUCCESS;

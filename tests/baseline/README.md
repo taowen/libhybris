@@ -2377,3 +2377,10 @@ The fallback preserves static vertex-input divisor state. See
 [scaled instancing](scaled-instancing.md) for the four independent probe modes,
 capability gating, Adreno/Mali results, old-library failure control and remaining
 coverage limits.
+
+
+### Scaled format policy evidence
+
+[Format policy evidence](scaled-format-policy.md) describes the optional bounded
+raw/effective capability trace, independent native query comparison, and actual
+Adreno/Mali runs. Use `--scaled-format-trace` with scaled compatibility enabled.

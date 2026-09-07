@@ -383,7 +383,15 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
     p_vkGetPhysicalDeviceFormatProperties(pd, f->format, &props);
     VkFormatProperties2 props2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
     p_vkGetPhysicalDeviceFormatProperties2(pd, f->format, &props2);
-    if (props.bufferFeatures != props2.formatProperties.bufferFeatures) {
+    VkFormatProperties fetch;
+    p_vkGetPhysicalDeviceFormatProperties(pd, f->integer, &fetch);
+    printf("SCALED FORMAT index=%u scaled=%d integer=%d legacy=0x%x,0x%x,0x%x properties2=0x%x,0x%x,0x%x fetch=0x%x,0x%x,0x%x\n",
+        c, f->format, f->integer, props.linearTilingFeatures, props.optimalTilingFeatures, props.bufferFeatures,
+        props2.formatProperties.linearTilingFeatures, props2.formatProperties.optimalTilingFeatures,
+        props2.formatProperties.bufferFeatures, fetch.linearTilingFeatures, fetch.optimalTilingFeatures, fetch.bufferFeatures);
+    if (props.linearTilingFeatures != props2.formatProperties.linearTilingFeatures ||
+        props.optimalTilingFeatures != props2.formatProperties.optimalTilingFeatures ||
+        props.bufferFeatures != props2.formatProperties.bufferFeatures) {
       printf("SCALED query mismatch format=%s\n", f->name); return 2;
     }
     if (!(props.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT)) {

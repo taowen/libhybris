@@ -30,6 +30,7 @@ p.add_argument('--runtime', type=Path, help='Directory containing glibc loader a
 p.add_argument('--manifest', type=Path, help='Provenance JSON from tools/manifest.py')
 p.add_argument('--out', type=Path, default=Path(__file__).resolve().parent / 'build/results')
 p.add_argument('--bundle', type=Path, default=Path(__file__).resolve().parent / 'build/bundle')
+p.add_argument('--scaled-format-trace', action='store_true', help='Audit raw/effective scaled format decisions; requires scaled compatibility')
 p.add_argument('--scaled-vertex-compat', choices=('missing', 'force'), help='Enable experimental scaled vertex fallback for ICD cases')
 p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
 p.add_argument('--icd-mali-loader-quirk', action='store_true', help='Opt in to the build-id-scoped Mali MMUD loader-check workaround for ICD cases')
@@ -39,6 +40,8 @@ p.add_argument('--validation-manifest', type=Path, help='Original layer JSON mat
 p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
 p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
 a = p.parse_args()
+if a.scaled_format_trace and not a.scaled_vertex_compat:
+    p.error('--scaled-format-trace requires --scaled-vertex-compat')
 if a.scaled_vertex_compat and not a.icd_hal:
     p.error('--scaled-vertex-compat requires --icd-hal')
 if a.icd_mali_loader_quirk and not a.icd_hal:
@@ -359,16 +362,19 @@ try:
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 HYBRIS_ICD_DEVICE_TRACE=1 ' + command
         if backend in {'icd', 'icd-linked'} and a.scaled_vertex_compat:
             command = 'HYBRIS_VULKAN_COMPAT_SCALED_VERTEX=' + ('force' if a.scaled_vertex_compat == 'force' else '1') + ' ' + command
+            if a.scaled_format_trace:
+                command = 'HYBRIS_VULKAN_COMPAT_FORMAT_TRACE=1 ' + command
             if mode.startswith('scaled-vertex'):
                 dump_remote = remote + '/' + backend + '-' + mode + '-shaders'
                 shell('mkdir -p ' + shlex.quote(dump_remote), check=True)
                 command = 'HYBRIS_VULKAN_SCALED_DUMP_DIR=' + shlex.quote(dump_remote) + ' ' + command
         name = backend + '-' + mode
-        metadata['commands'][name] = {'directory': remote, 'command': command + mode}
+        metadata['commands'][name] = {'directory': remote, 'command': command + mode,
+                                      'output': 'stderr merged into stdout on device before adb transport'}
         try:
             r = shell(
                 'cd ' + remote + ' && sh -c ' + shlex.quote(
-                    'echo $$ > probe.pid; exec env ' + command + mode),
+                    'exec 2>&1; echo $$ > probe.pid; exec env ' + command + mode),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=35,
@@ -396,6 +402,10 @@ try:
                     evidence = aggregate_evidence(dump_local, decoded, source)
                 else:
                     evidence = scaled_evidence(dump_local, decoded, a.scaled_vertex_compat == 'force', source)
+                if a.scaled_format_trace:
+                    from format_evidence import format_evidence
+                    native_log = a.out / ('native-' + mode.removesuffix('-validation') + '.log')
+                    evidence['formats'] = format_evidence(decoded, native_log.read_text() if native_log.is_file() else None)
                 (a.out / (name + '-shaders.json')).write_text(json.dumps(evidence, indent=2) + '\n')
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 print(name, 'scaled shader evidence failed:', exc, flush=True)

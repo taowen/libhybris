@@ -15,8 +15,8 @@
 #include "shaders/scaled.group.inc"
 #include "shaders/scaled.group-multi.inc"
 #include "shaders/scaled.group-spec.inc"
-static const struct scaled_case { VkFormat format; const char *name; unsigned bits, components, sign; } cases[] = {
-#define CASE(n,b,c) {VK_FORMAT_##n##_USCALED, #n "_USCALED", b,c,0}, {VK_FORMAT_##n##_SSCALED, #n "_SSCALED",b,c,1}
+static const struct scaled_case { VkFormat format; const char *name; unsigned bits, components, sign; VkFormat integer; } cases[] = {
+#define CASE(n,b,c) {VK_FORMAT_##n##_USCALED, #n "_USCALED", b,c,0,VK_FORMAT_##n##_UINT}, {VK_FORMAT_##n##_SSCALED, #n "_SSCALED",b,c,1,VK_FORMAT_##n##_SINT}
  CASE(R8,8,1), CASE(R8G8,8,2), CASE(R8G8B8A8,8,4),
  CASE(R16,16,1), CASE(R16G16,16,2), CASE(R16G16B16A16,16,4)
 #undef CASE
