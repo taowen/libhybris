@@ -72,6 +72,11 @@ finally:
     shell('rm -rf '+shlex.quote(remote),check=True)
 if code==0:
     try:
+        packed=re.findall(r'^PACKED_DRAW signed=(\d) normalized=(\d) bgra=(\d) divisor=(\d) bad=(\d+) error=0x([0-9a-f]+)$', (out/'probe.log').read_text(), re.MULTILINE)
+        cases={(str(s),str(n),str(b),str(d)) for s in range(2) for n in range(2) for b in range(2 if n else 1) for d in (1,2)}
+        if len(packed)!=12 or {row[:4] for row in packed}!=cases or any(row[4:]!=('0','0') for row in packed):
+            raise ValueError('packed vertex draw matrix incomplete or failed')
+        record['packed_vertex_cases']=12
         expected=b''.join(bytes((255,0,0,255) if x<8 else (0,255,0,255)) for y in range(16) for x in range(16))
         if (out/'image.rgba').read_bytes()!=expected:raise ValueError('full image mismatch')
         maps=(out/'maps.txt').read_text()

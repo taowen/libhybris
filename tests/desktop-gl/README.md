@@ -7,7 +7,7 @@ surfaceless EGL pbuffers, with no X server, APK or compositor. It does not yet
 provide an application launcher, GLX or displayed desktop GL windows.
 
 Build prerequisites are the parent Ardesk checkout's clean Mesa revision
-`1cb7f0a1c9a5438045f89ad4aa83eda8fbafa09e`, its AArch64 cross file, Podman and
+`37f170c789f75792c209fa9221f7ab67bbd5b87f`, its AArch64 cross file, Podman and
 its existing GL cross-builder. The default cached builder image is
 `localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` can select an
 explicit available replacement. The script records the resolved image ID,
@@ -57,7 +57,8 @@ the recorded process PID's working directory before killing it, then deletes
 only this run's unique directory. Device state is not otherwise reset. No unit
 test framework is added.
 
-Actual results on 2026-09-07, Mesa 26.3.0-devel at the revision above:
+Initial results on 2026-09-07, Mesa 26.3.0-devel at
+`1cb7f0a1c9a5438045f89ad4aa83eda8fbafa09e` (before the fixes below):
 
 | Device / request | Result | Evidence |
 | --- | --- | --- |
@@ -75,10 +76,13 @@ Builder ID is `443690e01138637d8624d70fef6601444727044dd33e35136615aa29eb3a9678`
 Earlier core/compat runs also passed. Initial staging lost executable modes
 and failed before loading; the final copy operations preserve those modes.
 
-The fixed Mesa source checks only EXT_vertex_attribute_divisor for instanced
-vertex attributes. The recorded Mali capability list advertises its KHR name
-but not EXT. This is one concrete blocker for GL 3.3, not a proof that changing
-one extension check will satisfy all higher GL versions. The Adreno baseline
+Correction to the initial diagnosis: the generated device code already
+recognizes KHR_vertex_attribute_divisor and enables that KHR name. The first
+GL 3.3 blocker was packed 10/10/10/2 vertex fetch, confirmed by the missing
+GL_ARB_vertex_type_2_10_10_10_rev in the actual GL extension list. A separate
+bug remains in the old code's divisor **property structure**: it uses the EXT
+sType on a KHR-only driver. The corrected behavior is documented below.
+The Adreno baseline
 also lacks timeline semaphores and maintenance5 required by this Zink revision;
 its EGL initialization failure was not independently isolated to one missing
 capability. No feature is emulated or falsely advertised by this integration.
@@ -91,3 +95,59 @@ Blender are still unverified here. The old headless Vulkan/GLES suite was not
 rerun: hybris production libraries were unchanged. Next work should address
 the actual Zink capability/alias blockers and application drawing, rather than
 expanding unrelated diagnostics.
+
+## Packed vertex formats and KHR divisor properties
+
+Mesa `2e3d35e` adds the eight packed RGBA/BGRA 10/10/10/2 normalized/scaled
+formats to its existing u_vbuf CPU translation table. Unsupported inputs are
+translated into R32G32B32A32_FLOAT; state-tracker extension queries check that
+same translated destination against actual driver support. Supported native
+formats keep their native path. This changes desktop GL vertex fetching, not
+Vulkan format queries or compressed texture support. CPU conversion can cost
+uploads and time; performance is not measured here.
+
+Mesa `37f170c789f75792c209fa9221f7ab67bbd5b87f` separately fixes KHR divisor
+properties. Its KHR struct has a different sType and an additional field, unlike
+the aliased feature struct. The generator now queries the KHR property struct
+when that extension is used and copies maxVertexAttribDivisor into the existing
+state. EXT-only devices retain the EXT query; Vulkan 1.4 retains its core
+property route. KHR supportsNonZeroFirstInstance behavior is not covered by
+these zero-base-instance draws.
+
+The strengthened probe performs twelve additional draws: signed/unsigned,
+normalized or scaled RGBA, normalized BGRA, each with divisor 1 and 2. Two
+instance records differ, and guard words surround offset-4/stride-8 input.
+The shader compares all four fetched components against independent expected
+values, including negative signed values and alpha, before outputting red/green
+halves. Every draw first clears blue so a skipped draw cannot reuse a previous
+passing image. Each checks all 256 pixels and GL errors; host acceptance also
+requires all twelve unique successful case records. This is six GL input
+configurations, not separate coverage of all eight internal pipe formats;
+scaled BGRA is not a legal glVertexAttribPointer combination.
+
+Evidence on X300:
+
+- Original Mesa rejected core 3.3 (`20260907T104053-34894e46`). Actual extension
+  enumeration `20260907T104507-85166d8c` includes ARB_instanced_arrays but lacks
+  ARB_vertex_type_2_10_10_10_rev, correcting the earlier name-alias diagnosis.
+- Packed conversion alone allows core 3.3, but distinct-data divisor-2 cases
+  fail 128 pixels each (`20260907T105012-3a49ec45`). Temporary backend logging
+  (`20260907T105206-0ff75bc3`) identifies requested divisor 2 clamped through max=0 and dynamic input using
+  divisor 1; its exact diagnostic patch is stored in that diagnostic run's
+  manifest. Those temporary logging edits were removed before the final build.
+  Earlier identical-instance data was too weak to detect this defect.
+- Final `20260907T105351-1b2678ab` core-3.3 request and
+  `20260907T105419-ad7a9372` compatibility-3.2 request both pass all twelve
+  packed draws plus the original draw. Both report Mesa GL 4.4 / GLSL 4.40.
+  This reported version is not evidence of complete GL 4.4 conformance.
+- Redmi `20260907T105351-89b27f4b` still fails EGL initialization; no EXT-only
+  execution of the new packed draws or core-1.4 property route is established.
+
+The final Gallium SHA256 is
+`bc1dccce9a8727645170edc6a9e5b7483495b368a0e51f4b49a02f748eafe79c`.
+Builds use the same recorded builder and actually recompile the modified Mesa
+code and probe. Both Mesa fixes are source commits in the dependent repository,
+and this directory's build pins their final revision. Unaligned access beyond
+the specified layout, indexed/base-instance/indirect draws, packed value
+boundaries, all compatibility fixed-function paths, Zink validation and Blender
+remain unverified. No API version override is used.

@@ -613,10 +613,29 @@ gl_VertexID 三角形和 gl_FragCoord 两色绘制通过，C/host 各校验全�
 Mali HAL；继续显式使用既有、限定 build-ID 的 Mali loader 选项。
 3.3 core `20260907T104053-34894e46` 返回 EGL_BAD_MATCH，明确
 UNSUPPORTED；红米 `20260907T104023-86f66a86` EGL 初始化失败，记 FAIL。
-固定 Zink 源码只识别 EXT_vertex_attribute_divisor，Mali 实际只提供 KHR
-名称，这是 3.3 的一个明确能力缺口，不能推定改此一处即可满足高版本。
+后续生成代码复核纠正了此前的诊断：生成器已识别 KHR 名称；首次 3.3
+阻塞项实际是打包顶点格式。KHR 属性结构还有独立缺陷，见后续修复记录。
 红米缺 timeline/maintenance5 等该版本需求；尚未隔离 EGL 失败的单一原因。
 构建源码、编译器/image、ELF 哈希、maps、image 和失败记录见新目录 README；
 未覆盖整套 GL 3.2、固定管线、UBO/SSBO/FBO/纹理/sRGB、GLX、窗口呈现、
 Zink validation 或 Blender。没有 GL/GLSL version override；不是 Gladio/
 Vortek 同等特性声明。G10 有首个实际功能进展，整体验收保持开放。
+
+2026-09-07 桌面 GL 打包顶点与实例化修复：实际 GL extension 枚举
+`20260907T104507-85166d8c` 证明实例化属性已支持，缺的是
+ARB_vertex_type_2_10_10_10_rev。纠正此前“只识别 EXT 名称”的错误诊断：
+生成器已有 KHR 名称支持。Mesa 依赖 `2e3d35e` 在现有 u_vbuf 转换器中
+加入八种 10/10/10/2 pipe 格式，缺失的原生取数转为四分量 float，GL
+能力查询检查同一目标格式；没有改变 Vulkan 格式宣告。
+不同实例数据揭露第二个缺陷 `20260907T105012-3a49ec45`：除数 1 通过，
+除数 2 六种组合各 128 像素错误。诊断确认 EXT 属性 sType 查询 KHR-only
+驱动得到 max=0，动态输入最终按 1 取数。`37f170c` 改为查询不同 sType
+及大小的 KHR 属性结构，保留 EXT-only 与 Vulkan 1.4 的对应路径。
+最终 X300 `20260907T105351-1b2678ab`（请求 core 3.3）、
+`20260907T105419-ad7a9372`（请求 compatibility 3.2）均通过十二次不同
+打包输入/除数组合及原绘制，每次 256 像素精确、GL error=0；每次先清蓝，
+避免旧帧假通过。实际自报 GL 4.4 / GLSL 4.40 不等于完整 4.4 验收。
+红米 `20260907T105351-89b27f4b` 仍 EGL 初始化 FAIL，未声称 EXT-only
+路径真机绘制通过。构建、哈希、反例与范围见 tests/desktop-gl/README.md；
+CPU 转换性能、边界值、indexed/base-instance/indirect、Zink validation、
+桌面窗口及 Blender 仍未覆盖，G07/G10/G13 未全面关闭。

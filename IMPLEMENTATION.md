@@ -738,3 +738,13 @@ with EGL_BAD_MATCH, and Redmi fails EGL initialization. See its README for
 artifacts and restrictions. This advances G10 beyond GLES passthrough, but
 neither full GL conformance nor windowed GL/Blender or Gladio/Vortek parity is
 proved. No GL version overrides or new Vulkan feature advertisements are used.
+
+Mesa dependency revisions 2e3d35e/37f170c add packed 10/10/10/2 vertex conversion
+through existing u_vbuf and fix the distinct KHR divisor property query. X300
+now accepts the GL 3.3 request and passes signed/unsigned, normalized/scaled,
+BGRA and divisor-1/2 draws with different instance data; the compatibility
+context also passes. Actual extension enumeration corrected the previous
+EXT-name-only diagnosis: the generator already handled KHR names, but the
+property sType was wrong. GL 4.4 is reported by Mesa, not certified by these
+small workloads. Redmi still fails EGL initialization. See desktop-gl README
+for the pre-fix divisor-2 failure and final evidence; Blender remains open.

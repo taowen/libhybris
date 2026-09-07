@@ -2,7 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 ardesk="$(cd "$root/../.." && pwd)"
-mesa_commit=1cb7f0a1c9a5438045f89ad4aa83eda8fbafa09e
+mesa_commit=37f170c789f75792c209fa9221f7ab67bbd5b87f
 [[ "$(git -C "$ardesk/third_party/mesa" rev-parse HEAD)" == "$mesa_commit" ]] || { echo 'unexpected Mesa revision' >&2; exit 1; }
 [[ -z "$(git -C "$ardesk/third_party/mesa" status --porcelain)" ]] || { echo 'Mesa checkout must be clean' >&2; exit 1; }
 image="${BUILDER_IMAGE:-localhost/ardesk-glibc-arm64:20d8189233233158}"
@@ -23,7 +23,7 @@ ninja -C "$build/mesa" -j12
 rm -rf "$build/install" "$build/runtime"
 DESTDIR="$build/install" ninja -C "$build/mesa" install
 python3 /work/third_party/libhybris/tests/desktop-gl/stage.py
-aarch64-linux-gnu-gcc -O2 -Wall -Wextra /work/third_party/libhybris/tests/desktop-gl/probe.c -ldl -o "$build/probe"
+aarch64-linux-gnu-gcc -O2 -Wall -Wextra /work/third_party/libhybris/tests/desktop-gl/probe.c /work/third_party/libhybris/tests/desktop-gl/packed_draw.c -ldl -o "$build/probe"
 aarch64-linux-gnu-gcc --version > "$build/compiler.txt"
 '
 python3 - "$out" "$image_id" "$mesa_commit" <<'PY'
