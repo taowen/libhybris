@@ -26,6 +26,7 @@
 #ifndef WAYLAND_WINDOW_H
 #define WAYLAND_WINDOW_H
 #include "wayland_window_common.h"
+#include <stdint.h>
 
 #include <hybris/gralloc/gralloc.h>
 
@@ -50,6 +51,12 @@ public:
     void frame();
     void resize(unsigned int width, unsigned int height);
     void releaseBuffer(struct wl_buffer *buffer);
+    int apiDisconnect(int api) override;
+    /* timeout_ns < 0 waits until a buffer is free; 0 never blocks; > 0 waits
+     * that many nanoseconds. Returns 0, -EAGAIN, -ETIMEDOUT or another -errno.
+     * Does not replace the blocking ANativeWindow dequeue used by EGL. */
+    int dequeueBufferTimeout(BaseNativeWindowBuffer **buffer, int *fenceFd,
+        int64_t timeout_ns);
 
     virtual int setSwapInterval(int interval);
 
@@ -80,7 +87,6 @@ protected:
     virtual int setBuffersFormat(int format);
     virtual int setBuffersDimensions(int width, int height);
     virtual int setBufferCount(int cnt);
-    int apiDisconnect(int api) override;
 
 private:
     WaylandNativeWindowBuffer *addBuffer();

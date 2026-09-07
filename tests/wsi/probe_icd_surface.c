@@ -188,19 +188,48 @@ int main(int argc, char **argv) {
     if (!families) return 2;
     vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families);
     if (!count) return 2;
+    uint32_t family = UINT32_MAX;
     for (uint32_t i = 0; i < count; ++i) {
         VkBool32 present = vkGetPhysicalDeviceWaylandPresentationSupportKHR(physical, i, w.display);
         VkBool32 supported = 0;
         CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physical, i, surface, &supported));
         printf("WSI_ICD family=%u graphics=%d present=%d support=%d\n", i,
                !!(families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT), present, supported);
-        if (supported || present) {
-            printf("WSI_ICD false presentation advertisement: swapchain is unimplemented\n");
-            return 2;
-        }
+        if (supported && present && families[i].queueCount &&
+            (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) family = i;
     }
     free(families);
-    printf("WSI_ICD presentation=UNSUPPORTED capability_queries=SKIPPED\n");
+    if (family == UINT32_MAX) {
+        printf("WSI_ICD presentation=UNSUPPORTED\n");
+        return 3;
+    }
+    VkSurfaceCapabilitiesKHR caps;
+    CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps));
+    printf("WSI_ICD currentExtent=%ux%u minImage=%u maxImage=%u usage=0x%x\n",
+           caps.currentExtent.width, caps.currentExtent.height,
+           caps.minImageCount, caps.maxImageCount, caps.supportedUsageFlags);
+    if (caps.currentExtent.width != 0xffffffffu || caps.currentExtent.height != 0xffffffffu) return 2;
+    count = 0;
+    CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, NULL));
+    VkSurfaceFormatKHR *formats = calloc(count, sizeof(*formats));
+    if (!formats) return 2;
+    CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, formats));
+    VkSurfaceFormatKHR format = {0};
+    for (uint32_t i = 0; i < count; ++i)
+        if (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR &&
+            (formats[i].format == VK_FORMAT_R8G8B8A8_UNORM || formats[i].format == VK_FORMAT_B8G8R8A8_UNORM))
+            format = formats[i];
+    free(formats);
+    if (!format.format) return 3;
+    count = 0;
+    CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &count, NULL));
+    VkPresentModeKHR *modes = calloc(count, sizeof(*modes));
+    if (!modes) return 2;
+    CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &count, modes));
+    int fifo = 0;
+    for (uint32_t i = 0; i < count; ++i) fifo |= modes[i] == VK_PRESENT_MODE_FIFO_KHR;
+    free(modes);
+    if (!fifo) return 2;
     vkDestroySurfaceKHR(instance, surface, NULL);
     vkDestroyInstance(instance, NULL);
     xdg_toplevel_destroy(toplevel);
@@ -211,6 +240,6 @@ int main(int argc, char **argv) {
     wl_registry_destroy(registry);
     wl_display_disconnect(w.display);
     dlclose(library);
-    printf("WSI_ICD surface=PASS swapchain=UNIMPLEMENTED\n");
+    printf("WSI_ICD surface=PASS presentation=ADVERTISED fifo=1 format=%u\n", format.format);
     return 0;
 }

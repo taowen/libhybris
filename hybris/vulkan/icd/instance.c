@@ -4,6 +4,7 @@
 #include "instance.h"
 #include "device.h"
 #include "wsi.h"
+#include "swapchain.h"
 #include "../compat/scaled_dispatch.h"
 #include <pthread.h>
 #include <inttypes.h>
@@ -311,6 +312,12 @@ static VkResult VKAPI_CALL create_device(VkPhysicalDevice physical,
     return hybris_icd_create_device(create, resolver, query, state->generation, physical, info, allocator, device);
 }
 
+static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical,
+    const char *layer, uint32_t *count, VkExtensionProperties *properties)
+{
+    return hybris_icd_enumerate_device_extensions(physical, layer, count, properties);
+}
+
 PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *name)
 {
     pthread_mutex_lock(&instance_guard);
@@ -323,6 +330,10 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     PFN_vkVoidFunction backend = resolver ? resolver(instance, name) : NULL;
     PFN_vkVoidFunction local_wsi = hybris_icd_wsi_proc(name, surface_enabled, wayland_enabled);
     if (local_wsi) return local_wsi;
+    /* Device WSI entry points are adapter-owned. Enablement is checked on the
+     * device object; GIPA may return the pointer before a device exists. */
+    PFN_vkVoidFunction swapchain = hybris_icd_swapchain_proc(name, 1);
+    if (swapchain) return swapchain;
     /* Preserve the HAL's command scope and extension gating. */
     if (backend && !strcmp(name, "vkDestroyInstance"))
         return (PFN_vkVoidFunction)destroy_instance;
@@ -334,6 +345,8 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
         return (PFN_vkVoidFunction)enumerate_groups_khr;
     if (backend && !strcmp(name, "vkCreateDevice"))
         return (PFN_vkVoidFunction)create_device;
+    if (backend && !strcmp(name, "vkEnumerateDeviceExtensionProperties"))
+        return (PFN_vkVoidFunction)enumerate_device_extensions;
     if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
         return (PFN_vkVoidFunction)hybris_icd_device_proc;
     if (backend && !strcmp(name, "vkDestroyDevice"))

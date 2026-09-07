@@ -45,8 +45,8 @@ def app(command, **kwargs): return shell('run-as ' + shlex.quote(a.package) + ' 
 def prop(name): return shell('getprop ' + shlex.quote(name), check=True, capture_output=True, text=True).stdout.strip()
 provenance = json.loads((a.build / 'manifest.json').read_text())
 probe_provenance = json.loads((a.probe / 'probe-manifest.json').read_text())
-probe_name = 'probe-icd-surface' if a.icd_hal else 'probe-wayland'
-probe_hash = 'icd_surface_sha256' if a.icd_hal else 'binary_sha256'
+probe_name = 'probe-wayland'
+probe_hash = 'binary_sha256'
 if sha256_file(a.probe / probe_name) != probe_provenance[probe_hash]:
     raise SystemExit('probe hash mismatch; rebuild it')
 verify_manifest(provenance, a.build / 'install/usr/lib/hybris', a.build / 'runtime')
@@ -203,7 +203,7 @@ finally:
     app('rm -rf ' + shlex.quote(remote), check=True)
     if archive.exists(): archive.unlink()
     diagnostics.finish()
-if code == 0 and not a.icd_hal:
+if code == 0:
     try:
         evidence = verify_screen(out)
     except (ValueError, OSError) as error:
@@ -215,7 +215,7 @@ if code not in (0, 3):
     (out / 'diagnostics.json').write_text(json.dumps(diagnostics.records, indent=2))
 status = 'PASS' if code == 0 else 'UNSUPPORTED' if code == 3 else 'TIMEOUT' if code in (124, 142) else 'CRASH' if code >= 128 else 'FAIL'
 (out / 'result.json').write_text(json.dumps({'status': status, 'exit_code': code,
-    'scope': 'icd-surface-lifecycle' if a.icd_hal else 'frontend-presentation'}, indent=2))
+    'scope': 'icd-presentation' if a.icd_hal else 'frontend-presentation'}, indent=2))
 print(out)
 print(status, code)
 raise SystemExit(0 if code in (0, 3) else 1)

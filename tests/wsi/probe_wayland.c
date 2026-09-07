@@ -65,7 +65,24 @@ static void dump_maps(const char *phase) {
     if (output) fclose(output);
 }
 
-int main(void) {
+static int icd_version(void) {
+    alarm(20);
+    void *library = dlopen("libhybris-vulkan-icd.so.0", RTLD_NOW | RTLD_LOCAL);
+    if (!library) { fprintf(stderr, "%s\n", dlerror()); return 2; }
+    PFN_vkGetInstanceProcAddr resolver = dlsym(library, "vk_icdGetInstanceProcAddr");
+    PFN_vkEnumerateInstanceVersion query = resolver
+        ? (PFN_vkEnumerateInstanceVersion)resolver(VK_NULL_HANDLE, "vkEnumerateInstanceVersion") : NULL;
+    uint32_t version = 0;
+    if (!query || query(&version) != VK_SUCCESS) return 2;
+    printf("WSI_ICD_VERSION %u.%u.%u\n", VK_VERSION_MAJOR(version),
+           VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
+    dlclose(library);
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc == 2 && !strcmp(argv[1], "--icd-version")) return icd_version();
+    if (argc != 1) return 2;
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("WSI_CLIENT pid=%ld\n", (long)getpid());
     alarm(45);

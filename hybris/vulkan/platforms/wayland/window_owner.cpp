@@ -106,3 +106,33 @@ void hybris_vk_wayland_window_resize(hybris_vk_wayland_window *owner,
 {
     owner->native->resize(width, height);
 }
+
+int hybris_vk_wayland_window_dequeue(hybris_vk_wayland_window *owner,
+    int64_t timeout_ns, ANativeWindowBuffer **buffer, int *fence_fd)
+{
+    if (!owner || !owner->native || !buffer || !fence_fd) return -EINVAL;
+    return owner->native->dequeueBufferTimeout(
+        reinterpret_cast<BaseNativeWindowBuffer **>(buffer), fence_fd, timeout_ns);
+}
+
+int hybris_vk_wayland_window_queue(hybris_vk_wayland_window *owner,
+    ANativeWindowBuffer *buffer, int fence_fd)
+{
+    if (!owner || !owner->native || !buffer) return -EINVAL;
+    ANativeWindow *window = owner->native;
+    return window->queueBuffer(window, buffer, fence_fd);
+}
+
+int hybris_vk_wayland_window_cancel(hybris_vk_wayland_window *owner,
+    ANativeWindowBuffer *buffer, int fence_fd)
+{
+    if (!owner || !owner->native || !buffer) return -EINVAL;
+    ANativeWindow *window = owner->native;
+    return window->cancelBuffer(window, buffer, fence_fd);
+}
+
+void hybris_vk_wayland_window_disconnect(hybris_vk_wayland_window *owner)
+{
+    if (!owner || !owner->native) return;
+    owner->native->apiDisconnect(0);
+}

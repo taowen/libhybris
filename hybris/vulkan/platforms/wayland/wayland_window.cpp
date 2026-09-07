@@ -32,8 +32,10 @@
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "logging.h"
 #include <vulkanhybris.h>
@@ -178,6 +180,107 @@ int WaylandNativeWindow::dequeueBuffer(BaseNativeWindowBuffer **buffer, int *fen
 
     unlock();
     return NO_ERROR;
+}
+
+int WaylandNativeWindow::dequeueBufferTimeout(BaseNativeWindowBuffer **buffer, int *fenceFd,
+    int64_t timeout_ns)
+{
+    HYBRIS_TRACE_BEGIN("wayland-platform", "dequeueBufferTimeout", "");
+    lock();
+    readQueue(false);
+    struct timespec deadline = {0, 0};
+    if (timeout_ns > 0) {
+        clock_gettime(CLOCK_MONOTONIC, &deadline);
+        deadline.tv_sec += timeout_ns / 1000000000LL;
+        deadline.tv_nsec += timeout_ns % 1000000000LL;
+        if (deadline.tv_nsec >= 1000000000L) {
+            deadline.tv_sec++;
+            deadline.tv_nsec -= 1000000000L;
+        }
+    }
+    while (m_freeBufs == 0) {
+        if (timeout_ns == 0) {
+            unlock();
+            *buffer = 0;
+            *fenceFd = -1;
+            HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
+            return -EAGAIN;
+        }
+        if (timeout_ns < 0) {
+            readQueue(true);
+            continue;
+        }
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        int64_t remain = (int64_t)(deadline.tv_sec - now.tv_sec) * 1000000000LL +
+            (deadline.tv_nsec - now.tv_nsec);
+        if (remain <= 0) {
+            unlock();
+            *buffer = 0;
+            *fenceFd = -1;
+            HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
+            return -ETIMEDOUT;
+        }
+        wl_display_flush(m_display);
+        struct pollfd wait = {.fd = wl_display_get_fd(m_display), .events = POLLIN, .revents = 0};
+        int timeout_ms = (int)((remain + 999999LL) / 1000000LL);
+        if (timeout_ms < 1) timeout_ms = 1;
+        int status = poll(&wait, 1, timeout_ms);
+        if (status < 0 && errno == EINTR) continue;
+        if (status == 0) {
+            unlock();
+            *buffer = 0;
+            *fenceFd = -1;
+            HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
+            return -ETIMEDOUT;
+        }
+        if (status < 0) {
+            int error = -errno;
+            unlock();
+            *buffer = 0;
+            *fenceFd = -1;
+            HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
+            return error;
+        }
+        readQueue(false);
+    }
+
+    std::list<WaylandNativeWindowBuffer *>::iterator it = m_bufList.begin();
+    for (; it != m_bufList.end(); ++it)
+    {
+         if ((*it)->busy)
+             continue;
+         if ((*it)->youngest == 1)
+             continue;
+         break;
+    }
+    if (it==m_bufList.end()) {
+        it = m_bufList.begin();
+        for (; it != m_bufList.end() && (*it)->busy; ++it)
+        {}
+    }
+    if (it==m_bufList.end()) {
+        *buffer = 0;
+        *fenceFd = -1;
+        unlock();
+        HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
+        return -EAGAIN;
+    }
+    WaylandNativeWindowBuffer *wnb = *it;
+    if (wnb->width != m_width || wnb->height != m_height
+        || wnb->format != m_format || wnb->usage != m_usage)
+    {
+        destroyBuffer(wnb);
+        m_bufList.erase(it);
+        wnb = addBuffer();
+    }
+    wnb->busy = 1;
+    *buffer = wnb;
+    --m_freeBufs;
+    *fenceFd = -1;
+    unlock();
+    HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
+    return 0;
 }
 
 void WaylandNativeWindow::presentBuffer(WaylandNativeWindowBuffer *wnb)

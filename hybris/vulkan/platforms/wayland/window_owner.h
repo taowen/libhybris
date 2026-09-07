@@ -2,9 +2,12 @@
 #ifndef HYBRIS_VULKAN_WAYLAND_OWNER_H
 #define HYBRIS_VULKAN_WAYLAND_OWNER_H
 
+#include <stdint.h>
+
 struct wl_display;
 struct wl_surface;
 struct ANativeWindow;
+struct ANativeWindowBuffer;
 struct hybris_vk_wayland_window;
 
 #ifdef __cplusplus
@@ -20,6 +23,13 @@ int hybris_vk_wayland_window_create(struct wl_display *display,
 struct ANativeWindow *hybris_vk_wayland_window_native(struct hybris_vk_wayland_window *window);
 void hybris_vk_wayland_window_resize(struct hybris_vk_wayland_window *window,
     unsigned width, unsigned height);
+int hybris_vk_wayland_window_dequeue(struct hybris_vk_wayland_window *window,
+    int64_t timeout_ns, struct ANativeWindowBuffer **buffer, int *fence_fd);
+int hybris_vk_wayland_window_queue(struct hybris_vk_wayland_window *window,
+    struct ANativeWindowBuffer *buffer, int fence_fd);
+int hybris_vk_wayland_window_cancel(struct hybris_vk_wayland_window *window,
+    struct ANativeWindowBuffer *buffer, int fence_fd);
+void hybris_vk_wayland_window_disconnect(struct hybris_vk_wayland_window *window);
 void hybris_vk_wayland_window_destroy(struct hybris_vk_wayland_window *window);
 #ifdef __cplusplus
 }

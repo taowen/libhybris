@@ -4,6 +4,8 @@
 #include <vulkan/vulkan.h>
 #include "hwvulkan.h"
 
+struct hybris_vk_wayland_window;
+
 struct hybris_icd_physical {
     VkInstance instance;
     uint64_t generation;
@@ -24,5 +26,9 @@ int hybris_icd_lookup_instance_wsi(VkInstance instance, int *surface_enabled,
     int *wayland_enabled, uint64_t *generation);
 int hybris_icd_lookup_physical(VkPhysicalDevice physical,
     struct hybris_icd_physical *out);
+int hybris_icd_physical_has_native_buffer(VkPhysicalDevice physical);
+int hybris_icd_wsi_graphics_family(VkPhysicalDevice physical, uint32_t index);
+struct hybris_vk_wayland_window *hybris_icd_wsi_surface_window(VkSurfaceKHR surface,
+    VkInstance *instance, uint64_t *generation);
 
 #endif

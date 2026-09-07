@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
 #include "device.h"
+#include "swapchain.h"
 #include "../compat/scaled_dispatch.h"
 #include <pthread.h>
 #include <inttypes.h>
@@ -17,6 +18,8 @@ struct device_state {
     uint64_t generation, instance_generation;
     PFN_vkGetDeviceProcAddr resolver;
     PFN_vkDestroyDevice destroy;
+    VkPhysicalDevice physical;
+    int swapchain_enabled;
     VkAllocationCallbacks allocator;
     int custom_allocator;
     struct device_state *next;
@@ -68,6 +71,7 @@ void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCal
     }
     pthread_mutex_unlock(&device_guard);
     if (!state) return;
+    hybris_icd_swapchain_release_device(device);
     hybris_scaled_device_destroy(device);
     state->destroy(device, allocator);
     free_state(state);
@@ -95,12 +99,22 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     }
     state->generation = ++next_generation;
     pthread_mutex_unlock(&device_guard);
-    VkResult result = create(physical, info, allocator, device);
+    VkDeviceCreateInfo filtered = *info;
+    const char **wsi_names = NULL;
+    VkResult prepared = hybris_icd_prepare_device(physical, NULL, VK_NULL_HANDLE, info,
+        &filtered, &wsi_names, &state->swapchain_enabled);
+    if (prepared != VK_SUCCESS) {
+        free_state(state);
+        return prepared;
+    }
+    VkResult result = create(physical, &filtered, allocator, device);
+    hybris_icd_finish_device(wsi_names);
     if (result != VK_SUCCESS) {
         free_state(state);
         return result;
     }
     state->handle = *device;
+    state->physical = physical;
     state->instance_generation = instance_generation;
     state->resolver = resolver;
     state->destroy = (PFN_vkDestroyDevice)resolver(*device, "vkDestroyDevice");
@@ -126,12 +140,34 @@ PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char
     const struct device_state *state = devices;
     while (state && state->handle != device) state = state->next;
     PFN_vkGetDeviceProcAddr resolver = state ? state->resolver : NULL;
+    int swapchain_enabled = state ? state->swapchain_enabled : 0;
     pthread_mutex_unlock(&device_guard);
     PFN_vkVoidFunction backend = resolver ? resolver(device, name) : NULL;
+    PFN_vkVoidFunction local = hybris_icd_swapchain_proc(name, swapchain_enabled);
+    if (local) return local;
     if (backend && !strcmp(name, "vkDestroyDevice"))
         return (PFN_vkVoidFunction)hybris_icd_destroy_device;
     if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
         return (PFN_vkVoidFunction)hybris_icd_device_proc;
     PFN_vkVoidFunction compat = backend ? hybris_scaled_proc(name) : NULL;
     return compat ? compat : backend;
+}
+
+int hybris_icd_lookup_device(VkDevice device, struct hybris_icd_device *out)
+{
+    if (!device || !out) return 0;
+    pthread_mutex_lock(&device_guard);
+    const struct device_state *state = devices;
+    while (state && state->handle != device) state = state->next;
+    int found = state != NULL;
+    if (found) {
+        out->handle = state->handle;
+        out->generation = state->generation;
+        out->instance_generation = state->instance_generation;
+        out->resolver = state->resolver;
+        out->physical = state->physical;
+        out->swapchain_enabled = state->swapchain_enabled;
+    }
+    pthread_mutex_unlock(&device_guard);
+    return found;
 }

@@ -22,7 +22,7 @@ CreateInstance list; other enabled names and the original pNext chain are
 left unchanged. Instance proc queries retain HAL scope/enable checks, then
 return those local surface entry points when the instance enabled them. GIPA
 and destruction stay in the adapter. The resolver still does not scan the ICD
-ELF export table. Device/resource state, swapchain and the replacement
+ELF export table. Device/resource state beyond this local swapchain and the replacement
 libvulkan frontend are not covered by this table.
 
 `HYBRIS_ICD_INSTANCE_TRACE=1` emits create/destroy generation and raw HAL handle
@@ -44,13 +44,13 @@ still rejects HALs advertising driver-owned `VK_KHR_surface` or
 `VK_KHR_display` rather than passing incompatible surfaces through. When
 built with Wayland, it advertises `VK_KHR_surface` and
 `VK_KHR_wayland_surface` itself, creates local `VkSurfaceKHR` objects with
-the existing `window_owner` native-window factory. Both presentation-support
-queries return `VK_FALSE`: graphics queue capability alone is not a working
-presentation engine. Required capability/format/present-mode entry points are
-retained, but return `VK_ERROR_UNKNOWN` if called on these unsupported surfaces;
-they do not fabricate successful swapchain limits or format lists. Vulkan
-requires a supported surface before these queries. Missing `android_wlegl`
-also maps to `VK_ERROR_UNKNOWN`. Swapchain import/present, windowed validation
+the existing `window_owner` native-window factory. When the HAL advertises
+`VK_ANDROID_native_buffer` and a graphics queue exists, presentation-support
+is true and the adapter implements `VK_KHR_swapchain` locally: window buffers
+are imported with `VkNativeBufferANDROID`, acquired with a finite dequeue
+timeout, and presented through `vkQueueSignalReleaseImageANDROID` plus the
+native-window queue. Capability, format and FIFO queries report that engine.
+Missing `android_wlegl` still maps to `VK_ERROR_UNKNOWN`. Windowed validation
 and capture/replay remain open.
 
 ## Sources

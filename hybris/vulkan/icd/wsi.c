@@ -232,15 +232,72 @@ static struct surface_state *owned_surface(VkPhysicalDevice physical,
     return state;
 }
 
+int hybris_icd_physical_has_native_buffer(VkPhysicalDevice physical)
+{
+    struct hybris_icd_physical context;
+    if (!hybris_icd_lookup_physical(physical, &context)) return 0;
+    PFN_vkEnumerateDeviceExtensionProperties enumerate =
+        (PFN_vkEnumerateDeviceExtensionProperties)
+        context.resolver(context.instance, "vkEnumerateDeviceExtensionProperties");
+    if (!enumerate) return 0;
+    uint32_t count = 0;
+    if (enumerate(physical, NULL, &count, NULL) != VK_SUCCESS) return 0;
+    VkExtensionProperties *extensions = count ? calloc(count, sizeof(*extensions)) : NULL;
+    if (count && !extensions) return 0;
+    if (enumerate(physical, NULL, &count, extensions) != VK_SUCCESS) {
+        free(extensions);
+        return 0;
+    }
+    int found = 0;
+    for (uint32_t i = 0; i < count; ++i)
+        if (!strcmp(extensions[i].extensionName, "VK_ANDROID_native_buffer"))
+            found = 1;
+    free(extensions);
+    return found;
+}
+
+int hybris_icd_wsi_graphics_family(VkPhysicalDevice physical, uint32_t index)
+{
+    struct hybris_icd_physical context;
+    if (!hybris_icd_lookup_physical(physical, &context)) return 0;
+    PFN_vkGetPhysicalDeviceQueueFamilyProperties query =
+        (PFN_vkGetPhysicalDeviceQueueFamilyProperties)
+        context.resolver(context.instance, "vkGetPhysicalDeviceQueueFamilyProperties");
+    if (!query) return 0;
+    uint32_t count = 0;
+    query(physical, &count, NULL);
+    if (index >= count) return 0;
+    VkQueueFamilyProperties *families = calloc(count, sizeof(*families));
+    if (!families) return 0;
+    query(physical, &count, families);
+    int ok = families[index].queueCount && (families[index].queueFlags & VK_QUEUE_GRAPHICS_BIT);
+    free(families);
+    return ok;
+}
+
+struct hybris_vk_wayland_window *hybris_icd_wsi_surface_window(VkSurfaceKHR surface,
+    VkInstance *instance, uint64_t *generation)
+{
+    struct surface_state *state = find_surface(surface);
+    if (!state) return NULL;
+    if (instance) *instance = state->instance;
+    if (generation) *generation = state->generation;
+    return state->window;
+}
+
+static int present_engine(VkPhysicalDevice physical, uint32_t queue_family)
+{
+    return hybris_icd_physical_has_native_buffer(physical) &&
+        hybris_icd_wsi_graphics_family(physical, queue_family);
+}
+
 static VkBool32 VKAPI_CALL wayland_presentation_support(VkPhysicalDevice physical,
     uint32_t queue_family, struct wl_display *display)
 {
     struct hybris_icd_physical context;
     if (!display || !hybris_icd_lookup_physical(physical, &context))
         return VK_FALSE;
-    (void)queue_family;
-    /* Queue graphics capability does not implement a presentation engine. */
-    return VK_FALSE;
+    return present_engine(physical, queue_family) ? VK_TRUE : VK_FALSE;
 }
 
 static VkResult VKAPI_CALL surface_support(VkPhysicalDevice physical,
@@ -250,9 +307,21 @@ static VkResult VKAPI_CALL surface_support(VkPhysicalDevice physical,
     if (!supported) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context))
         return VK_ERROR_SURFACE_LOST_KHR;
-    (void)queue_family;
-    *supported = VK_FALSE;
+    *supported = present_engine(physical, queue_family) ? VK_TRUE : VK_FALSE;
     return VK_SUCCESS;
+}
+
+static VkResult fill_array(uint32_t available, uint32_t *count, void *out,
+    const void *src, size_t element)
+{
+    if (!out) {
+        *count = available;
+        return VK_SUCCESS;
+    }
+    uint32_t written = *count < available ? *count : available;
+    if (written) memcpy(out, src, written * element);
+    *count = written;
+    return written < available ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
 static VkResult VKAPI_CALL surface_capabilities(VkPhysicalDevice physical,
@@ -262,9 +331,26 @@ static VkResult VKAPI_CALL surface_capabilities(VkPhysicalDevice physical,
     if (!capabilities) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context))
         return VK_ERROR_SURFACE_LOST_KHR;
-    /* Unsupported surfaces must not be queried for swapchain capabilities.
-     * Keep the required entry point, but never fabricate successful output. */
-    return VK_ERROR_UNKNOWN;
+    if (!hybris_icd_physical_has_native_buffer(physical))
+        return VK_ERROR_UNKNOWN;
+    memset(capabilities, 0, sizeof(*capabilities));
+    capabilities->minImageCount = 2;
+    capabilities->maxImageCount = 8;
+    capabilities->currentExtent.width = 0xffffffffu;
+    capabilities->currentExtent.height = 0xffffffffu;
+    capabilities->minImageExtent.width = 1;
+    capabilities->minImageExtent.height = 1;
+    capabilities->maxImageExtent.width = 16384;
+    capabilities->maxImageExtent.height = 16384;
+    capabilities->maxImageArrayLayers = 1;
+    capabilities->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    capabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    capabilities->supportedCompositeAlpha =
+        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR | VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    capabilities->supportedUsageFlags =
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    return VK_SUCCESS;
 }
 
 static VkResult VKAPI_CALL get_surface_formats(VkPhysicalDevice physical,
@@ -274,8 +360,28 @@ static VkResult VKAPI_CALL get_surface_formats(VkPhysicalDevice physical,
     if (!count) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context))
         return VK_ERROR_SURFACE_LOST_KHR;
-    (void)formats;
-    return VK_ERROR_UNKNOWN;
+    if (!hybris_icd_physical_has_native_buffer(physical))
+        return VK_ERROR_UNKNOWN;
+    PFN_vkGetPhysicalDeviceFormatProperties query =
+        (PFN_vkGetPhysicalDeviceFormatProperties)
+        context.resolver(context.instance, "vkGetPhysicalDeviceFormatProperties");
+    if (!query) return VK_ERROR_INITIALIZATION_FAILED;
+    const VkFormat candidates[] = {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM};
+    VkSurfaceFormatKHR supported[2];
+    uint32_t available = 0;
+    for (uint32_t i = 0; i < 2; ++i) {
+        VkFormatProperties properties;
+        query(physical, candidates[i], &properties);
+        if (properties.optimalTilingFeatures &
+            (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+             VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+            supported[available].format = candidates[i];
+            supported[available].colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+            ++available;
+        }
+    }
+    if (!available) return VK_ERROR_UNKNOWN;
+    return fill_array(available, count, formats, supported, sizeof(*supported));
 }
 
 static VkResult VKAPI_CALL get_surface_present_modes(VkPhysicalDevice physical,
@@ -285,8 +391,10 @@ static VkResult VKAPI_CALL get_surface_present_modes(VkPhysicalDevice physical,
     if (!count) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context))
         return VK_ERROR_SURFACE_LOST_KHR;
-    (void)modes;
-    return VK_ERROR_UNKNOWN;
+    if (!hybris_icd_physical_has_native_buffer(physical))
+        return VK_ERROR_UNKNOWN;
+    const VkPresentModeKHR fifo = VK_PRESENT_MODE_FIFO_KHR;
+    return fill_array(1, count, modes, &fifo, sizeof(fifo));
 }
 
 void hybris_icd_wsi_release_instance(VkInstance instance)
@@ -315,6 +423,25 @@ void hybris_icd_wsi_release_instance(VkInstance instance)
 void hybris_icd_wsi_release_instance(VkInstance instance)
 {
     (void)instance;
+}
+int hybris_icd_physical_has_native_buffer(VkPhysicalDevice physical)
+{
+    (void)physical;
+    return 0;
+}
+int hybris_icd_wsi_graphics_family(VkPhysicalDevice physical, uint32_t index)
+{
+    (void)physical;
+    (void)index;
+    return 0;
+}
+struct hybris_vk_wayland_window *hybris_icd_wsi_surface_window(VkSurfaceKHR surface,
+    VkInstance *instance, uint64_t *generation)
+{
+    (void)surface;
+    (void)instance;
+    (void)generation;
+    return NULL;
 }
 #endif
 

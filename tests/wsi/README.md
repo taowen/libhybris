@@ -259,12 +259,15 @@ clients. See [the fixture](compositor/README.md) for failure evidence and scope.
 discovery, its private queue/wrapper, android_wlegl and the native window.
 The internal C interface has no Vulkan types or loader callbacks; the frontend
 keeps only its VkSurfaceKHR-to-owner mapping and Android Vulkan translation.
-The standard ICD now compiles the same factory and implements local Wayland
-surface create/destroy. Presentation-support queries return false until a
-presentation engine exists. Successful capabilities/formats/FIFO query output
-is not implemented. It advertises `VK_KHR_surface`/`VK_KHR_wayland_surface` itself and
-strips those names before HAL `vkCreateInstance`. Swapchain import/present is
-not implemented.
+The standard ICD compiles the same factory, implements local Wayland
+surface create/destroy, and implements `VK_KHR_swapchain` by importing
+window buffers with `VK_ANDROID_native_buffer`. Presentation-support is true
+only when that HAL extension is present and a graphics queue exists.
+Acquire uses a timed native-window dequeue rather than the blocking
+ANativeWindow path. It advertises `VK_KHR_surface`/`VK_KHR_wayland_surface`
+itself and strips those names before HAL `vkCreateInstance`; `VK_KHR_swapchain`
+is advertised on the device and replaced with `VK_ANDROID_native_buffer` for
+the HAL. Windowed validation and capture/replay remain open.
 
 ```sh
 python3 tests/wsi/run.py --serial SERIAL \
@@ -273,9 +276,10 @@ python3 tests/wsi/run.py --serial SERIAL \
 ```
 
 That ICD path stages `libhybris-vulkan-icd.so.0` and the standard loader,
-runs `probe-icd-surface`, and does not take present screenshots. Missing
-`android_wlegl` still requires eight `VK_ERROR_UNKNOWN` rejections. This is
-not a replacement-frontend window PASS and not swapchain coverage.
+runs the same `probe-wayland` window/readback/screenshot gate, and records
+screen evidence. Missing `android_wlegl` still requires eight
+`VK_ERROR_UNKNOWN` rejections. This is not windowed validation or
+capture/replay coverage.
 
 The frontend destroys the Android Vulkan surface before releasing the owner's
 native-window reference, then destroys the window before its protocol objects.
