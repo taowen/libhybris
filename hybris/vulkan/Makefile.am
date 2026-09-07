@@ -37,14 +37,54 @@ libvulkan_la_LDFLAGS = \
 	-version-info 3:183:2
 
 # Optional standard-loader backend; no default ICD JSON is installed.
-libhybris_vulkan_icd_la_SOURCES = icd/icd.c icd/instance.c icd/instance.h icd/device.c icd/device.h icd/hwvulkan.h icd/physical_commands.inc \
+libhybris_vulkan_icd_la_SOURCES = icd/icd.c icd/instance.c icd/instance.h icd/device.c icd/device.h icd/wsi.c icd/wsi.h icd/hwvulkan.h icd/physical_commands.inc \
     compat/spirv_decorations.c compat/spirv_decorations.h compat/spirv_constants.c compat/spirv_constants.h compat/spirv_aggregate.c compat/spirv_aggregate.h compat/spirv_entry.c compat/spirv_entry.h compat/spirv_results.inc compat/spirv_literals.inc compat/scaled_dump.c compat/scaled_dispatch.c compat/scaled_dispatch.h compat/scaled_formats.c compat/scaled_formats.h compat/scaled_spirv.c compat/scaled_vertex.h
 EXTRA_DIST = icd/README.md
 libhybris_vulkan_icd_la_CFLAGS = $(libvulkan_la_CFLAGS) -fvisibility=hidden
+libhybris_vulkan_icd_la_CXXFLAGS = $(libvulkan_la_CXXFLAGS) -fvisibility=hidden
 libhybris_vulkan_icd_la_LDFLAGS = \
     -ldl -pthread -Wl,-z,nodelete \
     $(top_builddir)/common/libhybris-common.la \
     $(top_builddir)/hardware/libhardware.la \
     -version-info 0:0:0
+if WANT_WAYLAND
+libhybris_vulkan_icd_la_SOURCES += \
+    platforms/wayland/window_owner.cpp platforms/wayland/window_owner.h \
+    platforms/wayland/wayland_window.cpp \
+    $(top_srcdir)/platforms/wayland/wayland_window_common.cpp
+libhybris_vulkan_icd_la_CFLAGS += \
+    -I$(top_srcdir)/platforms/common \
+    -I$(top_srcdir)/platforms/wayland \
+    -I$(top_srcdir)/vulkan \
+    -I$(top_srcdir)/vulkan/platforms/wayland \
+    -I$(top_builddir)/platforms/common \
+    $(WAYLAND_CLIENT_CFLAGS) $(WAYLAND_EGL_CFLAGS)
+libhybris_vulkan_icd_la_CXXFLAGS += \
+    -I$(top_srcdir)/platforms/common \
+    -I$(top_srcdir)/platforms/wayland \
+    -I$(top_srcdir)/vulkan \
+    -I$(top_srcdir)/vulkan/platforms/common \
+    -I$(top_srcdir)/vulkan/platforms/wayland \
+    -I$(top_builddir)/platforms/common \
+    $(ANDROID_HEADERS_CFLAGS) \
+    $(WAYLAND_CLIENT_CFLAGS) $(WAYLAND_EGL_CFLAGS)
+if WANT_TRACE
+libhybris_vulkan_icd_la_CXXFLAGS += -DDEBUG
+endif
+if !WANT_WL_SERVERSIDE_BUFFERS
+libhybris_vulkan_icd_la_CXXFLAGS += -DHYBRIS_NO_SERVER_SIDE_BUFFERS
+endif
+libhybris_vulkan_icd_la_LDFLAGS += \
+    $(top_builddir)/platforms/common/libhybris-platformcommon.la \
+    $(top_builddir)/gralloc/libgralloc.la \
+    $(WAYLAND_CLIENT_LIBS) \
+    $(WAYLAND_EGL_LIBS)
+if HAS_ANDROID_4_2_0
+libhybris_vulkan_icd_la_LDFLAGS += $(top_builddir)/libsync/libsync.la
+endif
+if HAS_ANDROID_5_0_0
+libhybris_vulkan_icd_la_LDFLAGS += $(top_builddir)/libsync/libsync.la
+endif
+endif
 
 endif

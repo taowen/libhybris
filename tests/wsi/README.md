@@ -259,8 +259,22 @@ clients. See [the fixture](compositor/README.md) for failure evidence and scope.
 discovery, its private queue/wrapper, android_wlegl and the native window.
 The internal C interface has no Vulkan types or loader callbacks; the frontend
 keeps only its VkSurfaceKHR-to-owner mapping and Android Vulkan translation.
-This is reusable source for the standard ICD's upcoming WSI, currently compiled
-into the existing frontend plugin. It does not add an ICD surface or swapchain.
+The standard ICD now compiles the same factory and implements local Wayland
+surface create/destroy plus presentation-support/capabilities/formats/FIFO
+queries. It advertises `VK_KHR_surface`/`VK_KHR_wayland_surface` itself and
+strips those names before HAL `vkCreateInstance`. Swapchain import/present is
+not implemented.
+
+```sh
+python3 tests/wsi/run.py --serial SERIAL \
+  --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
+  --vulkan-loader /path/to/standard/libvulkan.so.1
+```
+
+That ICD path stages `libhybris-vulkan-icd.so.0` and the standard loader,
+runs `probe-icd-surface`, and does not take present screenshots. Missing
+`android_wlegl` still requires eight `VK_ERROR_UNKNOWN` rejections. This is
+not a replacement-frontend window PASS and not swapchain coverage.
 
 The frontend destroys the Android Vulkan surface before releasing the owner's
 native-window reference, then destroys the window before its protocol objects.
@@ -285,5 +299,6 @@ sizes, all six screenshot comparisons, and normal teardown. Both isolated
 compositor identities stayed stable and their owned processes were absent after
 cleanup. Raw logs, staged ELF provenance and screenshot evidence remain under
 `tests/wsi/build/isolated/`. These are replacement-frontend regressions; acquire
-timeout, standard ICD presentation, asynchronous buffer retirement and presented
-frame capture remain open. No new unit test framework or test case was added.
+timeout, ICD swapchain/present, asynchronous buffer retirement and presented
+frame capture remain open. The ICD surface probe is built and wired through
+`--icd-hal`; it has no recorded device run in this batch.

@@ -283,8 +283,10 @@ nonempty mapping snapshots and driver/probe identities.
 
 The build also produces libhybris-vulkan-icd.so.0. It calls the vendor HAL
 directly through hybris, leaving dispatchable-object headers to the standard
-glibc loader. This path is opt-in and currently headless; no system ICD JSON
-is installed. See [adapter contract](../../hybris/vulkan/icd/README.md).
+glibc loader. This path is opt-in; no system ICD JSON is installed. Baseline
+ICD cases remain headless. Wayland surface create/query coverage lives in the
+separate WSI probe with `--icd-hal`. Swapchain/present is not implemented.
+See [adapter contract](../../hybris/vulkan/icd/README.md).
 
 Supply a glibc AArch64 standard loader from the pinned builder (its package is
 libvulkan1 1.4.309.0-1). For example, copy

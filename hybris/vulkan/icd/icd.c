@@ -11,6 +11,7 @@
 #include <hybris/common/dlfcn.h>
 #include "hwvulkan.h"
 #include "instance.h"
+#include "wsi.h"
 #include <dlfcn.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -96,6 +97,13 @@ static VkResult VKAPI_CALL create_instance(const VkInstanceCreateInfo *info,
     return hybris_icd_create_instance(hal, info, allocator, instance);
 }
 
+static VkResult VKAPI_CALL enumerate_instance_extensions(const char *layer,
+    uint32_t *count, VkExtensionProperties *properties)
+{
+    if (!ready()) return VK_ERROR_INITIALIZATION_FAILED;
+    return hybris_icd_wsi_enumerate(hal, layer, count, properties);
+}
+
 static VkResult VKAPI_CALL enumerate_instance_version(uint32_t *version)
 {
     if (!ready())
@@ -157,7 +165,7 @@ vk_icdGetInstanceProcAddr(VkInstance instance, const char *name)
     if (!strcmp(name, "vkCreateInstance"))
         return (PFN_vkVoidFunction)create_instance;
     if (!strcmp(name, "vkEnumerateInstanceExtensionProperties"))
-        return (PFN_vkVoidFunction)hal->EnumerateInstanceExtensionProperties;
+        return (PFN_vkVoidFunction)enumerate_instance_extensions;
     /* Instance-local lookup preserves the HAL's command/extension scope.
      * Global queries have no object state. */
     PFN_vkVoidFunction backend = instance ? hybris_icd_instance_proc(instance, name)

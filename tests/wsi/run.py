@@ -29,16 +29,22 @@ p.add_argument('--wayland', default='wayland-0')
 p.add_argument('--build', type=Path, default=ROOT / 'tests/baseline/build')
 p.add_argument('--probe', type=Path, default=ROOT / 'tests/wsi/build')
 p.add_argument('--out', type=Path, default=ROOT / 'tests/wsi/build/results')
+p.add_argument('--icd-hal', help='standard-loader ICD path: Android Vulkan HAL')
+p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
 a = p.parse_args()
 if not 5 <= a.timeout <= 300: p.error('timeout must be between 5 and 300 seconds')
 if not re.fullmatch(r'[A-Za-z0-9_.]+', a.package): p.error('invalid package')
+if (a.icd_hal is None) != (a.vulkan_loader is None):
+    p.error('--icd-hal and --vulkan-loader must be supplied together')
 adb = [os.environ.get('ADB', 'adb'), '-s', a.serial]
 def shell(command, **kwargs): return subprocess.run(adb + ['shell', command], **kwargs)
 def app(command, **kwargs): return shell('run-as ' + shlex.quote(a.package) + ' sh -c ' + shlex.quote(command), **kwargs)
 def prop(name): return shell('getprop ' + shlex.quote(name), check=True, capture_output=True, text=True).stdout.strip()
 provenance = json.loads((a.build / 'manifest.json').read_text())
 probe_provenance = json.loads((a.probe / 'probe-manifest.json').read_text())
-if sha256_file(a.probe / 'probe-wayland') != probe_provenance['binary_sha256']:
+probe_name = 'probe-icd-surface' if a.icd_hal else 'probe-wayland'
+probe_hash = 'icd_surface_sha256' if a.icd_hal else 'binary_sha256'
+if sha256_file(a.probe / probe_name) != probe_provenance[probe_hash]:
     raise SystemExit('probe hash mismatch; rebuild it')
 verify_manifest(provenance, a.build / 'install/usr/lib/hybris', a.build / 'runtime')
 run_id = time.strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8]
@@ -47,7 +53,7 @@ stage = out / 'stage'
 stage.mkdir(parents=True)
 shutil.copytree(a.build / 'install/usr/lib/hybris', stage / 'hybris', symlinks=True)
 shutil.copytree(a.build / 'runtime', stage / 'glibc', symlinks=True)
-shutil.copy2(a.probe / 'probe-wayland', stage / 'probe-wayland')
+shutil.copy2(a.probe / probe_name, stage / probe_name)
 verify_manifest(provenance, stage / 'hybris', stage / 'glibc')
 files = '/data/user/0/' + a.package + '/files'
 remote = files + '/hybris-wsi-' + run_id
@@ -55,15 +61,35 @@ sdk = prop('ro.build.version.sdk')
 env = {'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker',
        'HYBRIS_EGLPLATFORM_DIR': remote + '/hybris/libhybris',
        'HYBRIS_VULKANPLATFORM_DIR': remote + '/hybris/libhybris',
-       'HYBRIS_EGLPLATFORM': 'wayland', 'HYBRIS_VULKANPLATFORM': 'wayland',
        'HYBRIS_ANDROID_SDK_VERSION': sdk, 'XDG_RUNTIME_DIR': files + '/runtime',
        'WAYLAND_DISPLAY': a.wayland}
+libraries = './hybris:./glibc'
+if a.icd_hal:
+    adapter = stage / 'hybris/libhybris-vulkan-icd.so.0'
+    if not adapter.is_file():
+        raise SystemExit('ICD adapter missing from hybris install')
+    (stage / 'standard').mkdir()
+    shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
+    (stage / 'driver.json').write_text(json.dumps({
+        'file_format_version': '1.0.0',
+        'ICD': {'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
+                'api_version': '1.3.0'}}))
+    env['HYBRIS_VULKAN_HAL'] = a.icd_hal
+    env['VK_DRIVER_FILES'] = remote + '/driver.json'
+    libraries = './standard:./hybris:./glibc'
+else:
+    env['HYBRIS_EGLPLATFORM'] = 'wayland'
+    env['HYBRIS_VULKANPLATFORM'] = 'wayland'
 if a.trace: env.update(HYBRIS_TRACE='1', HYBRIS_LOGGING_LEVEL='warn')
 command = ' '.join(k + '=' + shlex.quote(v) for k, v in env.items())
-command += ' ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-wayland'
+command += ' ./glibc/ld-linux-aarch64.so.1 --library-path ' + libraries + ' ./' + probe_name
 metadata = {'run_id': run_id, 'serial': a.serial, 'package': a.package,
             'fingerprint': prop('ro.build.fingerprint'), 'sdk': sdk,
-            'command': command, 'remote': remote, 'host_timeout_seconds': a.timeout, 'runner_sha256': sha256_file(Path(__file__)), 'hybris': provenance, 'probe': probe_provenance}
+            'command': command, 'remote': remote, 'host_timeout_seconds': a.timeout, 'runner_sha256': sha256_file(Path(__file__)), 'hybris': provenance, 'probe': probe_provenance,
+            'path': 'icd' if a.icd_hal else 'frontend'}
+if a.icd_hal:
+    metadata['icd_hal'] = a.icd_hal
+    metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
 apk_paths = shell('pm path ' + shlex.quote(a.package), check=True, capture_output=True, text=True).stdout.splitlines()
 metadata['package_apks'] = []
 for apk in apk_paths:
@@ -159,7 +185,7 @@ finally:
     app('rm -rf ' + shlex.quote(remote), check=True)
     if archive.exists(): archive.unlink()
     diagnostics.finish()
-if code == 0:
+if code == 0 and not a.icd_hal:
     try:
         evidence = verify_screen(out)
     except (ValueError, OSError) as error:

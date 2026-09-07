@@ -16,10 +16,14 @@ destruction entry and a process-lifetime unique generation. Records are
 allocated before HAL creation, published only on success, removed at destroy
 and freed afterward; callbacks and HAL calls run outside the list lock.
 Application allocation callbacks also cover the record when supplied.
-No dispatch header, pNext list or extension list is rewritten. Instance proc
-queries retain HAL scope/enable checks; GIPA and destruction stay in the
-adapter. Device/resource state and the replacement-libvulkan frontend are
-not covered by this table.
+No dispatch header or pNext list is rewritten. Local Wayland WSI names are
+appended on instance extension enumeration and stripped from the HAL
+CreateInstance list; other enabled names and the original pNext chain are
+left unchanged. Instance proc queries retain HAL scope/enable checks, then
+return those local surface entry points when the instance enabled them. GIPA
+and destruction stay in the adapter. The resolver still does not scan the ICD
+ELF export table. Device/resource state, swapchain and the replacement
+libvulkan frontend are not covered by this table.
 
 `HYBRIS_ICD_INSTANCE_TRACE=1` emits create/destroy generation and raw HAL handle
 records to stderr. It is ignored in secure execution, disabled by default and
@@ -31,13 +35,20 @@ an arbitrary application resource trace or proof of full driver unloading.
 Interface version 5 is required. Instance version discovery uses the HAL query
 when available and otherwise Vulkan's 1.0 fallback. The physical-device resolver
 uses an exact registry-derived scope table, including aliases. That table is
-not proof of complete frontend export/dispatch coverage. It does not advertise
-functions absent from the HAL.
+not proof of complete frontend export/dispatch coverage. Aside from the local
+Wayland surface commands below, it does not advertise functions absent from
+the HAL.
 
 Android normally owns surface/swapchain behavior in its loader. This adapter
-does not implement WSI and rejects HALs advertising driver-owned KHR_surface
-or KHR_display instead of passing incompatible surfaces through. Windowed
-application compatibility, full validation and capture/replay remain open.
+still rejects HALs advertising driver-owned `VK_KHR_surface` or
+`VK_KHR_display` rather than passing incompatible surfaces through. When
+built with Wayland, it advertises `VK_KHR_surface` and
+`VK_KHR_wayland_surface` itself, creates local `VkSurfaceKHR` objects with
+the existing `window_owner` native-window factory, and answers presentation
+support, capabilities, formats and FIFO present modes. Missing `android_wlegl`
+still maps to `VK_ERROR_UNKNOWN`. `currentExtent` is `0xFFFFFFFF` so the
+client can choose a swapchain size later. Swapchain import/present, windowed
+validation and capture/replay remain open.
 
 ## Sources
 

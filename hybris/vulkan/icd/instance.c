@@ -3,6 +3,7 @@
 #define VK_NO_PROTOTYPES
 #include "instance.h"
 #include "device.h"
+#include "wsi.h"
 #include "../compat/scaled_dispatch.h"
 #include <pthread.h>
 #include <inttypes.h>
@@ -24,6 +25,8 @@ struct instance_state {
     PFN_vkDestroyInstance destroy;
     VkAllocationCallbacks allocator;
     int custom_allocator;
+    int surface_enabled;
+    int wayland_enabled;
     struct physical_state *physical;
     struct instance_state *next;
 };
@@ -87,6 +90,7 @@ static void VKAPI_CALL destroy_instance(VkInstance instance,
      * allocation callbacks run outside the guard; callbacks may use their own
      * locks but must not call Vulkan commands. */
     if (!state) return;
+    hybris_icd_wsi_release_instance(instance);
     state->destroy(instance, allocator);
     free_state(state);
 }
@@ -112,7 +116,16 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
     }
     state->generation = ++next_generation;
     pthread_mutex_unlock(&instance_guard);
-    VkResult result = hal->CreateInstance(info, allocator, instance);
+    VkInstanceCreateInfo filtered = *info;
+    const char **wsi_names = NULL;
+    VkResult prepared = hybris_icd_wsi_prepare_instance(info, &filtered, &wsi_names,
+        &state->surface_enabled, &state->wayland_enabled);
+    if (prepared != VK_SUCCESS) {
+        free_state(state);
+        return prepared;
+    }
+    VkResult result = hal->CreateInstance(&filtered, allocator, instance);
+    hybris_icd_wsi_finish_instance(wsi_names);
     if (result != VK_SUCCESS) {
         free_state(state);
         return result;
@@ -229,6 +242,28 @@ static struct instance_state *find_physical(VkPhysicalDevice physical)
     return state;
 }
 
+int hybris_icd_lookup_instance_wsi(VkInstance instance, int *surface_enabled,
+    int *wayland_enabled, uint64_t *generation)
+{
+    struct instance_state *state = find_instance(instance);
+    if (!state) return 0;
+    if (surface_enabled) *surface_enabled = state->surface_enabled;
+    if (wayland_enabled) *wayland_enabled = state->wayland_enabled;
+    if (generation) *generation = state->generation;
+    return 1;
+}
+
+int hybris_icd_lookup_physical(VkPhysicalDevice physical,
+    struct hybris_icd_physical *out)
+{
+    struct instance_state *state = find_physical(physical);
+    if (!state || !out) return 0;
+    out->instance = state->handle;
+    out->generation = state->generation;
+    out->resolver = state->resolver;
+    return 1;
+}
+
 static void VKAPI_CALL format_properties(VkPhysicalDevice physical, VkFormat format,
                                          VkFormatProperties *properties)
 {
@@ -282,8 +317,12 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     const struct instance_state *state = instances;
     while (state && state->handle != instance) state = state->next;
     PFN_vkGetInstanceProcAddr resolver = state ? state->resolver : NULL;
+    int surface_enabled = state ? state->surface_enabled : 0;
+    int wayland_enabled = state ? state->wayland_enabled : 0;
     pthread_mutex_unlock(&instance_guard);
     PFN_vkVoidFunction backend = resolver ? resolver(instance, name) : NULL;
+    PFN_vkVoidFunction local_wsi = hybris_icd_wsi_proc(name, surface_enabled, wayland_enabled);
+    if (local_wsi) return local_wsi;
     /* Preserve the HAL's command scope and extension gating. */
     if (backend && !strcmp(name, "vkDestroyInstance"))
         return (PFN_vkVoidFunction)destroy_instance;
