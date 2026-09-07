@@ -183,7 +183,12 @@ static VkResult convert_pipeline(struct scaled_device *device, VkGraphicsPipelin
         for (unsigned i = 0; i < FORMAT_COUNT; ++i)
             if ((device->mask & (1u << i)) && input->pVertexAttributeDescriptions[j].format == formats[i].scaled) ++count;
     if (!count) return VK_SUCCESS;
-    if (input->pNext) return VK_ERROR_UNKNOWN;
+    /* Scaled and integer fetch use the same bytes and binding cadence. Keep
+     * the divisor chain (EXT/KHR aliases) intact for the backend; reject other
+     * vertex-input extensions whose interaction has not been established. */
+    for (const VkBaseInStructure *chain = input->pNext; chain; chain = chain->pNext)
+        if (chain->sType != VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT)
+            return VK_ERROR_UNKNOWN;
     struct hybris_scaled_attribute *attrs = hybris_scaled_alloc(allocator, count * sizeof(*attrs), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
     copy->attributes = hybris_scaled_alloc(allocator, input->vertexAttributeDescriptionCount * sizeof(*copy->attributes), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
     copy->stages = hybris_scaled_alloc(allocator, info->stageCount * sizeof(*copy->stages), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);

@@ -2369,3 +2369,11 @@ not WSI capture/replay, arbitrary application diagnostics, general SPIR-V
 extension/debug semantics, a complete format fallback or a multi-version CTS
 baseline. The optional patched VVL build and the unchanged prebuilt archive
 must be distinguished in future reports.
+
+
+### Scaled instance divisors
+
+The fallback preserves static vertex-input divisor state. See
+[scaled instancing](scaled-instancing.md) for the four independent probe modes,
+capability gating, Adreno/Mali results, old-library failure control and remaining
+coverage limits.

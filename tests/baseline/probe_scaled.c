@@ -2,11 +2,14 @@
 #include "probe.h"
 #include "allocation_fixture.h"
 #include "scaled_fixture.h"
+#include "scaled_divisor.h"
 enum { kScaledImage = 16 };
 int scaled_vertex_probe(int validate, int route, const char *mode) {
   const struct scaled_shader *shader = shaders;
   while (!strstr(mode, shader->mode)) ++shader;
   const int multiple = shader->multiple, aggregate = shader->aggregate, specialized = shader->specialized;
+  const unsigned instance_mode = shader->instance_mode;
+  const uint32_t first_instance = instance_mode & 4 ? 3 : 0;
   struct allocation_probe allocations = {0};
   VkAllocationCallbacks callbacks = {.pUserData = &allocations,
     .pfnAllocation = instance_allocate, .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
@@ -136,6 +139,17 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
   VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                            .queueCreateInfoCount = 1,
                            .pQueueCreateInfos = &qc};
+  VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR divisor_features = {0};
+  const char *divisor_extension = NULL;
+  if (instance_mode) {
+    int status = scaled_divisor_features(gip, instance, pd, instance_mode, &dc, &divisor_features, &divisor_extension);
+    if (status) {
+      if (messenger) destroy_messenger(instance, messenger, NULL);
+      p_vkDestroyInstance(instance, NULL);
+      dlclose(h);
+      return status;
+    }
+  }
   VkDevice device;
   CHECK(p_vkCreateDevice(pd, &dc, NULL, &device));
   if (route) {
@@ -245,7 +259,7 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
   CHECK(p_vkCreateShaderModule(device, &vs_ci, &callbacks, &vs));
   if (multiple) fs = vs;
   else CHECK(p_vkCreateShaderModule(device, &fs_ci, &callbacks, &fs));
-  VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT, 0, aggregate ? 64 : 16};
+  VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT, 0, instance_mode ? 80 : aggregate ? 64 : 16};
   VkPipelineLayoutCreateInfo pl_ci = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     .pushConstantRangeCount = 1, .pPushConstantRanges = &push};
   VkPipelineLayout pipeline_layout;
@@ -335,7 +349,12 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
       .pColorBlendState = &blend,
       .layout = pipeline_layout,
       .renderPass = rp};
-  VkVertexInputBindingDescription binding = {.binding = 0, .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
+  VkVertexInputBindingDescription binding = {.binding = 0, .inputRate = instance_mode ? VK_VERTEX_INPUT_RATE_INSTANCE : VK_VERTEX_INPUT_RATE_VERTEX};
+  VkVertexInputBindingDivisorDescriptionKHR divisor_binding = {.binding = 0, .divisor = 1};
+  VkPipelineVertexInputDivisorStateCreateInfoKHR divisor_state = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_KHR,
+    .vertexBindingDivisorCount = 1, .pVertexBindingDivisors = &divisor_binding};
+  if (instance_mode) vi.pNext = &divisor_state;
   VkVertexInputAttributeDescription attributes[4] = {
     {.location = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT},
     {.location = 1, .offset = 16}, {.location = 2, .offset = 32},
@@ -376,7 +395,8 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
     attributes[aggregate ? 1 : 0].format = f->format;
     attributes[2].format = second->format;
     binding.stride = aggregate ? 64 : f->bits / 8 * f->components;
-    for (unsigned round = 0; round < (specialized ? 4u : 1u); ++round) {
+    unsigned rounds = instance_mode ? (instance_mode & 2 ? 1 : 3) : specialized ? 4 : 1;
+    for (unsigned round = 0; round < rounds; ++round) {
       const uint32_t column_counts[] = {2, 4, 3, 2};
       float tint = round == 2 ? 1.0f : 0.5f;
       VkBool32 invert = round == 0 || round == 3;
@@ -388,12 +408,16 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
       stages[0].pSpecializationInfo = specialized && round != 2 ? &spec : NULL;
       if (specialized) printf("SCALED SPEC case=%u round=%u columns=%u base=%d tint=%g invert=%u\n",
           c, round, column_counts[round], base, tint, invert);
+      if (instance_mode) {
+        divisor_binding.divisor = instance_mode & 2 ? 0 : round + 1;
+        printf("SCALED INSTANCE case=%u round=%u divisor=%u first=%u\n", c, round, divisor_binding.divisor, first_instance);
+      }
       VkPipeline pipeline;
       CHECK(p_vkCreateGraphicsPipelines(device, cache, 1, &gp, &callbacks, &pipeline));
       for (unsigned phase = 0; phase < 3; ++phase) {
-        float expected[16] = {0};
+        float expected[20] = {0};
         unsigned char data[192] = {0};
-        for (unsigned col = 0; col < (aggregate ? 4u : 1u); ++col) {
+        if (!instance_mode) for (unsigned col = 0; col < (aggregate ? 4u : 1u); ++col) {
           const struct scaled_case *format = aggregate && col == 2 ? second : f;
           expected[col * 4 + 3] = 1;
           for (unsigned component = 0; component < 4; ++component) {
@@ -415,7 +439,8 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
             }
           }
         }
-        if (phase == 2) expected[aggregate ? 4 : 0] += 1;
+        if (instance_mode) scaled_divisor_data(f, divisor_binding.divisor, first_instance, phase, data, expected);
+        else if (phase == 2) expected[aggregate ? 4 : 0] += 1;
         CHECK(p_vkMapMemory(device, imem, 0, sizeof(data), 0, &mapped));
         memcpy(mapped, data, sizeof(data));
         p_vkUnmapMemory(device, imem);
@@ -437,7 +462,7 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
         VkDeviceSize offset = 0;
         p_vkCmdBindVertexBuffers(cb, 0, 1, &ibo, &offset);
         p_vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, push.size, expected);
-        p_vkCmdDraw(cb, 3, 1, 0, 0);
+        p_vkCmdDraw(cb, instance_mode ? 6 : 3, instance_mode ? 4 : 1, 0, first_instance);
         p_vkCmdEndRenderPass(cb);
         VkBufferImageCopy copy = {
             .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},

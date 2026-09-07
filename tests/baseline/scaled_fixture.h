@@ -2,6 +2,7 @@
 #ifndef HYBRIS_SCALED_FIXTURE_H
 #define HYBRIS_SCALED_FIXTURE_H
 #include "shaders/scaled.vert.inc"
+#include "shaders/scaled.divisor.inc"
 #include "shaders/scaled.multi.inc"
 #include "shaders/scaled.literal.inc"
 #include "shaders/scaled.frag.inc"
@@ -26,9 +27,14 @@ static const struct scaled_shader {
   const char *mode;
   const uint32_t *code;
   size_t size;
-  unsigned multiple, aggregate, specialized, direct;
+  unsigned multiple, aggregate, specialized, direct, instance_mode;
 } shaders[] = {
-#define SHADER(mode, code, multi, aggregate, spec, direct) {mode, code, sizeof(code), multi, aggregate, spec, direct}
+#define SHADER(mode, code, multi, aggregate, spec, direct) {mode, code, sizeof(code), multi, aggregate, spec, direct, 0}
+  /* Bits: instanced input, zero divisor, nonzero firstInstance. */
+  {"divisor-zero-base", kScaledDivisorSpv, sizeof(kScaledDivisorSpv), 0, 0, 0, 0, 7},
+  {"divisor-zero", kScaledDivisorSpv, sizeof(kScaledDivisorSpv), 0, 0, 0, 0, 3},
+  {"divisor-base", kScaledDivisorSpv, sizeof(kScaledDivisorSpv), 0, 0, 0, 0, 5},
+  {"divisor", kScaledDivisorSpv, sizeof(kScaledDivisorSpv), 0, 0, 0, 0, 1},
   SHADER("group-multi", kScaledGroupMultiSpv, 1, 0, 0, 0),
   SHADER("group-spec", kScaledGroupSpecSpv, 0, 1, 1, 0),
   SHADER("group", kScaledGroupSpv, 0, 0, 0, 0),
