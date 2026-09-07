@@ -29,9 +29,11 @@ static inline void hybris_scaled_free(const VkAllocationCallbacks *allocator, vo
  * never a partially rewritten module. No capability is added to SPIR-V. */
 VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entry,
     const struct hybris_scaled_attribute *attributes, uint32_t attribute_count,
+    const VkSpecializationInfo *specialization,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
     const char **reason);
 void hybris_scaled_dump(const uint32_t *original, size_t original_size,
     const uint32_t *converted, size_t converted_size,
-    const struct hybris_scaled_attribute *attributes, uint32_t count);
+    const struct hybris_scaled_attribute *attributes, uint32_t count,
+    const VkSpecializationInfo *specialization);
 #endif

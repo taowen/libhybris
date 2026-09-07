@@ -2170,7 +2170,7 @@ it reconstructs a float aggregate from leaf inputs before existing shader code
 runs. It does not create illegal integer matrices or convert unaffected native
 float columns. Ordinary value operations and dynamic indices keep their types.
 The pass supports fixed arrays nested with matrices; interface blocks/member
-Locations, specialization-sized arrays, affected float16/64 aggregates and
+Locations, array lengths with unsupported specialization expressions, affected float16/64 aggregates and
 unhandled Input pointer producers/uses remain unsupported. Vulkan 1.2/SPIR-V
 1.5 array/nested/matrix-array variants passed offline validation of the Private
 entry-interface rule; that is not GPU coverage of newer SPIR-V versions.
@@ -2202,3 +2202,65 @@ Use `--case icd-scaled-vertex-SHAPE` or
 validation layer and compatibility arguments. G07/G08 remain open: general
 interfaces, specialization/cache keys, extension/pointer coverage, OOM-site
 sweeps, performance and arbitrary application rendering are not proven.
+
+
+### Specialization-sized scaled arrays
+
+`scaled-vertex-spec` uses an array length computed from a 32-bit integer and a
+boolean specialization constant (shift, signed division, addition and Select).
+`scaled-vertex-spec-direct` uses a directly specialized length. Both reuse one
+shader module across all twelve mixed-format configurations. Each configuration
+creates pipelines for lengths 2, 4, default 3, then 2 again, with three image
+checks per pipeline (48 pipelines / 144 images per fixture). The stage maps use
+unordered entries, unaligned byte offsets and an unused constant ID. Separate
+float tint and boolean inversion values affect every expected pixel, checking
+that the driver still receives specialization beyond the frozen array length.
+The third variant supplies no specialization info and uses shader defaults.
+
+All variants share a real pipeline cache; after six format configurations, the
+probe serializes its data, creates a replacement cache using that data, and
+continues drawing. This is same-process restoration, not cross-process cache
+portability or evidence for all possible driver cache keys. The adapter does
+not add its own cache: each conversion uses the current pipeline's stage map.
+The original shader module remains available for later specializations.
+
+The new `compat/spirv_constants.c` evaluates only scalar 32-bit integer/boolean
+length dependencies. The aggregate pass freezes their result IDs, preserving
+all other specialization and value operations. Direct frozen constants lose
+their SpecId decoration; expression dependencies retain theirs for other uses.
+Unsupported float, wide-integer or composite dependencies are rejected rather
+than guessed. The supported operation list is broader than the GPU fixture:
+only the operations named above are independently exercised by these shaders.
+
+The shader audit now retains raw specialization bytes and mapping entries,
+checks their exact values and hashes, verifies each frozen array length and
+resulting input interface, and requires repeated equal specializations to
+produce equal converted module hashes. Original/converted modules still pass
+`spirv-val` and original module hashes must match the built shader assets.
+The dump is capped at 128 modules, 64 KiB specialization data and 1024 mappings
+per module; a truncated/failed dump is not accepted as complete evidence.
+
+2026-09-07 final results:
+
+- Redmi Adreno missing-format mode `20260907T180513-61b0a616`: 13 PASS.
+- X300 Mali forced mode `20260907T180514-5240eb87`: 15 PASS, including both
+  native specialization probes as controls.
+- Mali missing-format control `20260907T180609-1e2911c2`: version and both
+  specialization probes PASS with `fallback_mask=0` and no converted modules.
+- Adreno negative control `20260907T180607-57f4ee3a` uses archived `d82165c`
+  libraries with byte-identical current probe binaries. Both specialization
+  fixtures fail at their first pipeline with `VK_ERROR_UNKNOWN` and
+  `unsupported aggregate vertex input`; no converted module is produced.
+  These expected failures are not acceptance passes.
+- Both final validation runs cover the two specialization validation cases, four fixed
+  aggregate cases, single-entry/multi-entry/literal validation, UBO validation,
+  lifecycle and allocator regressions. VVL/SyncVal errors and live callback
+  allocations are zero. Each device retains 96 specialization original/converted
+  pairs and 72 specialization byte dumps, plus the existing regression modules.
+
+Use `--case icd-scaled-vertex-spec-validation` and
+`--case icd-scaled-vertex-spec-direct-validation` with the existing compatibility,
+HAL/loader and validation arguments; omit `-validation` for plain ICD cases.
+G07/G08 remain open for general interfaces, unsupported specialization types
+and operations, extension/pointer semantics, complete cache-key coverage,
+OOM-site sweeps, performance and arbitrary application rendering.

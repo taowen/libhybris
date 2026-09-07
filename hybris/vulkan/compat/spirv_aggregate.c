@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "spirv_aggregate.h"
 #include "spirv_entry.h"
+#include "spirv_constants.h"
 #include <string.h>
 
 /* Integer matrices are not legal SPIR-V. Split affected aggregate inputs into
@@ -12,7 +13,7 @@
 struct aggregate_id {
     uint32_t op, type, element, count, storage, location, component, decorations;
     uint32_t private_pointer, input_pointer, root;
-    unsigned interface, component_set;
+    unsigned interface, component_set, resolved;
 };
 struct shape { size_t leaves, nodes, locations; unsigned depth, floating; };
 struct node {
@@ -21,6 +22,12 @@ struct node {
 };
 struct lowering {
     struct aggregate_id *ids;
+    struct hybris_spirv_constants *constants;
+    const uint32_t *code;
+    size_t size;
+    const VkSpecializationInfo *specialization;
+    const VkAllocationCallbacks *allocator;
+    VkResult constant_status;
     struct node *nodes;
     size_t used;
     uint32_t bound, next, integer;
@@ -30,21 +37,36 @@ static uint32_t fresh(struct lowering *l)
 {
     return l->next == UINT32_MAX ? 0 : l->next++;
 }
-static int shape_of(const struct aggregate_id *ids, uint32_t bound, uint32_t type,
-                    unsigned depth, struct shape *shape)
+static int shape_of(struct lowering *l, uint32_t type, unsigned depth, struct shape *shape)
 {
+    struct aggregate_id *ids = l->ids;
+    uint32_t bound = l->bound;
     if (!type || type >= bound || depth > 64) return 0;
     const struct aggregate_id *id = &ids[type];
     if (id->op == 24 || id->op == 28) {
         uint32_t count = id->count;
         if (id->op == 28) {
-            if (!count || count >= bound || ids[count].op != 43 ||
-                ids[count].type >= bound || ids[ids[count].type].op != 21 ||
-                ids[ids[count].type].count != 32) return 0;
-            count = ids[count].count;
+            if (!count || count >= bound) return 0;
+            struct aggregate_id *length = &ids[count];
+            if (length->op == 43) {
+                if (length->type >= bound || ids[length->type].op != 21 ||
+                    ids[length->type].count != 32 ||
+                    (ids[length->type].storage && (int32_t)length->count <= 0)) return 0;
+            } else if (!length->resolved) {
+                if (!l->constants) {
+                    l->constant_status = hybris_spirv_constants_create(l->code, l->size,
+                        l->specialization, l->allocator, &l->constants);
+                    if (l->constant_status != VK_SUCCESS) return 0;
+                }
+                int sign;
+                if (!hybris_spirv_constant_u32(l->constants, count, &length->count, &sign) ||
+                    (sign && (int32_t)length->count <= 0)) return 0;
+                length->resolved = 1;
+            }
+            count = length->count;
         }
         struct shape child;
-        if (!count || !shape_of(ids, bound, id->element, depth + 1, &child) ||
+        if (!count || !shape_of(l, id->element, depth + 1, &child) ||
             child.nodes > (SIZE_MAX - 1) / count || child.leaves > SIZE_MAX / count ||
             child.locations > SIZE_MAX / count) return 0;
         *shape = (struct shape){child.leaves * count, child.nodes * count + 1,
@@ -107,13 +129,15 @@ static void initialize_inputs(struct lowering *l, uint32_t *result, size_t *out)
 
 VkResult hybris_spirv_aggregate(const uint32_t *code, size_t size, const char *entry,
     const struct hybris_scaled_attribute *attributes, uint32_t attribute_count,
+    const VkSpecializationInfo *specialization,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
     const char **reason)
 {
     *output = NULL; *output_size = 0;
     *reason = "unsupported aggregate vertex input";
     if (size < 20 || size % 4 || code[0] != 0x07230203 || !code[3]) return VK_ERROR_UNKNOWN;
-    struct lowering l = {.bound = code[3], .next = code[3]};
+    struct lowering l = {.bound = code[3], .next = code[3], .code = code, .size = size,
+        .specialization = specialization, .allocator = allocator, .constant_status = VK_SUCCESS};
     if (sizeof(*l.ids) > SIZE_MAX / l.bound) return VK_ERROR_OUT_OF_HOST_MEMORY;
     l.ids = hybris_scaled_alloc(allocator, l.bound * sizeof(*l.ids), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
     if (!l.ids) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -156,7 +180,7 @@ VkResult hybris_spirv_aggregate(const uint32_t *code, size_t size, const char *e
                 if (op == 32) { id->storage = p[2]; id->element = p[3]; }
                 else { id->element = p[2]; id->count = p[3]; }
             }
-        } else if (op == 59 || op == 43) {
+        } else if (op == 59 || op == 43 || op == 50 || op == 52) {
             if (count < 4 || p[1] >= l.bound || p[2] >= l.bound) goto done;
             l.ids[p[2]].op = op; l.ids[p[2]].type = p[1];
             if (op == 59) l.ids[p[2]].storage = p[3];
@@ -183,7 +207,10 @@ VkResult hybris_spirv_aggregate(const uint32_t *code, size_t size, const char *e
         if (type >= l.bound) goto done;
         if (l.ids[type].op == 21 || l.ids[type].op == 22 || l.ids[type].op == 23) continue;
         struct shape shape;
-        if (!shape_of(l.ids, l.bound, type, 0, &shape)) goto done;
+        if (!shape_of(&l, type, 0, &shape)) {
+            if (l.constant_status != VK_SUCCESS) status = l.constant_status;
+            goto done;
+        }
         if (shape.locations > UINT32_MAX - id->location) goto done;
         int affected = 0;
         for (uint32_t j = 0; j < attribute_count; ++j)
@@ -289,7 +316,16 @@ VkResult hybris_spirv_aggregate(const uint32_t *code, size_t size, const char *e
             result[start] = ((uint32_t)(out - start) << 16) | 15;
             continue;
         }
-        if (op == 71 && l.ids[p[1]].root && p[2] != 0) continue;
+        if (op == 71 && ((l.ids[p[1]].root && p[2] != 0) ||
+                        (l.ids[p[1]].resolved && p[2] == 1))) continue;
+        /* Freeze only array-length result IDs used by this lowering. Other
+         * specialization constants still reach the driver with the original
+         * stage map, including dependencies used elsewhere in the shader. */
+        if ((op == 50 || op == 52) && l.ids[p[2]].resolved) {
+            result[out++] = (4u << 16) | 43; result[out++] = p[1];
+            result[out++] = p[2]; result[out++] = l.ids[p[2]].count;
+            continue;
+        }
         if (at < first_function && op == 59) continue;
         if (at == first_function) {
             if (l.integer >= l.bound) {
@@ -333,5 +369,6 @@ done:
     hybris_scaled_free(allocator, result);
     hybris_scaled_free(allocator, l.nodes);
     hybris_scaled_free(allocator, l.ids);
+    hybris_spirv_constants_destroy(l.constants, allocator);
     return status;
 }

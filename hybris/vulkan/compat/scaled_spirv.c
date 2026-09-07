@@ -247,6 +247,7 @@ done:
 
 VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entry,
     const struct hybris_scaled_attribute *attributes, uint32_t attribute_count,
+    const VkSpecializationInfo *specialization,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
     const char **reason)
 {
@@ -260,7 +261,7 @@ VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entr
         code = selected; size = selected_size;
     }
     result = hybris_spirv_aggregate(code, size, entry, attributes, attribute_count,
-                                    allocator, &flat, &flat_size, reason);
+                                    specialization, allocator, &flat, &flat_size, reason);
     if (result != VK_SUCCESS) goto done;
     if (flat) { code = flat; size = flat_size; }
     result = convert_scaled(code, size, entry, attributes, attribute_count, allocator, output, output_size, reason);

@@ -9,6 +9,8 @@
 #include "shaders/scaled.array.inc"
 #include "shaders/scaled.nested.inc"
 #include "shaders/scaled.matarray.inc"
+#include "shaders/scaled.spec.inc"
+#include "shaders/scaled.spec-direct.inc"
 enum { kScaledImage = 16 };
 static const struct scaled_case { VkFormat format; const char *name; unsigned bits, components, sign; } cases[] = {
 #define CASE(n,b,c) {VK_FORMAT_##n##_USCALED, #n "_USCALED", b,c,0}, {VK_FORMAT_##n##_SSCALED, #n "_SSCALED",b,c,1}
@@ -17,7 +19,7 @@ static const struct scaled_case { VkFormat format; const char *name; unsigned bi
 #undef CASE
 };
 int scaled_vertex_probe(int validate, int route, int variant) {
-  const int multiple = variant == 1, literal = variant == 2, aggregate = variant >= 3;
+  const int multiple = variant == 1, literal = variant == 2, aggregate = variant >= 3, specialized = variant >= 7;
   struct allocation_probe allocations = {0};
   VkAllocationCallbacks callbacks = {.pUserData = &allocations,
     .pfnAllocation = instance_allocate, .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
@@ -94,6 +96,9 @@ int scaled_vertex_probe(int validate, int route, int variant) {
   V(vkCreateFramebuffer);
   V(vkDestroyFramebuffer);
   V(vkCreateGraphicsPipelines);
+  V(vkCreatePipelineCache);
+  V(vkDestroyPipelineCache);
+  V(vkGetPipelineCacheData);
   V(vkDestroyPipeline);
   V(vkCreateCommandPool);
   V(vkDestroyCommandPool);
@@ -249,8 +254,8 @@ int scaled_vertex_probe(int validate, int route, int variant) {
     .codeSize = multiple ? sizeof(kScaledMultiSpv) : literal ? sizeof(kScaledLiteralSpv) : sizeof(kScaledVertSpv),
     .pCode = multiple ? kScaledMultiSpv : literal ? kScaledLiteralSpv : kScaledVertSpv};
   if (aggregate) {
-    const uint32_t *codes[] = {kScaledMatrixSpv, kScaledArraySpv, kScaledNestedSpv, kScaledMatarraySpv};
-    const size_t sizes[] = {sizeof(kScaledMatrixSpv), sizeof(kScaledArraySpv), sizeof(kScaledNestedSpv), sizeof(kScaledMatarraySpv)};
+    const uint32_t *codes[] = {kScaledMatrixSpv, kScaledArraySpv, kScaledNestedSpv, kScaledMatarraySpv, kScaledSpecSpv, kScaledSpecDirectSpv};
+    const size_t sizes[] = {sizeof(kScaledMatrixSpv), sizeof(kScaledArraySpv), sizeof(kScaledNestedSpv), sizeof(kScaledMatarraySpv), sizeof(kScaledSpecSpv), sizeof(kScaledSpecDirectSpv)};
     vs_ci.pCode = codes[variant - 3]; vs_ci.codeSize = sizes[variant - 3];
   }
   VkShaderModuleCreateInfo fs_ci = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -368,6 +373,9 @@ int scaled_vertex_probe(int validate, int route, int variant) {
       .commandBufferCount = 1};
   VkCommandBuffer cb;
   CHECK(p_vkAllocateCommandBuffers(device, &cba_info, &cb));
+  VkPipelineCache cache = VK_NULL_HANDLE;
+  VkPipelineCacheCreateInfo cache_ci = {.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+  if (specialized) CHECK(p_vkCreatePipelineCache(device, &cache_ci, &callbacks, &cache));
   unsigned tested = 0, unsupported = 0, failures = 0;
   for (unsigned c = 0; c < sizeof(cases)/sizeof(cases[0]); ++c) {
     const struct scaled_case *f = &cases[c];
@@ -387,92 +395,120 @@ int scaled_vertex_probe(int validate, int route, int variant) {
     attributes[aggregate ? 1 : 0].format = f->format;
     attributes[2].format = second->format;
     binding.stride = aggregate ? 64 : f->bits / 8 * f->components;
-    VkPipeline pipeline;
-    CHECK(p_vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gp, &callbacks, &pipeline));
-    for (unsigned phase = 0; phase < 3; ++phase) {
-      float expected[16] = {0};
-      unsigned char data[192] = {0};
-      for (unsigned col = 0; col < (aggregate ? 4u : 1u); ++col) {
-        const struct scaled_case *format = aggregate && col == 2 ? second : f;
-        expected[col * 4 + 3] = 1;
-        for (unsigned component = 0; component < 4; ++component) {
-          if (aggregate && (col == 0 || col == 3)) {
-            float value = (float)(col * 7 + component + phase) + 0.25f;
-            expected[col * 4 + component] = value;
-            for (unsigned vertex = 0; vertex < 3; ++vertex)
-              memcpy(data + vertex * binding.stride + col * 16 + component * 4, &value, 4);
-          } else if (component < format->components) {
-            int high = format->sign ? (1 << (format->bits - 1)) - 1 : (1 << format->bits) - 1;
-            int low = format->sign ? -(1 << (format->bits - 1)) : 0;
-            int value = (component + phase + col) % 2 ? high : low;
-            expected[col * 4 + component] = value;
-            for (unsigned vertex = 0; vertex < 3; ++vertex) {
-              unsigned offset = vertex * binding.stride + (aggregate ? col * 16 : 0) + component * format->bits / 8;
-              if (format->bits == 8) data[offset] = (uint8_t)value;
-              else { uint16_t v = value; memcpy(data + offset, &v, 2); }
+    for (unsigned round = 0; round < (specialized ? 4u : 1u); ++round) {
+      const uint32_t column_counts[] = {2, 4, 3, 2};
+      float tint = round == 2 ? 1.0f : 0.5f;
+      VkBool32 invert = round == 0 || round == 3;
+      int32_t base = column_counts[round] - (variant == 8 ? 0 : 1 + invert);
+      unsigned char spec_data[24] = {0};
+      memcpy(spec_data + 3, &base, 4); memcpy(spec_data + 9, &tint, 4); memcpy(spec_data + 17, &invert, 4);
+      const VkSpecializationMapEntry maps[] = {{23,17,4}, {999,0,1}, {7,3,4}, {19,9,4}};
+      VkSpecializationInfo spec = {4, maps, sizeof(spec_data), spec_data};
+      stages[0].pSpecializationInfo = specialized && round != 2 ? &spec : NULL;
+      if (specialized) printf("SCALED SPEC case=%u round=%u columns=%u base=%d tint=%g invert=%u\n",
+          c, round, column_counts[round], base, tint, invert);
+      VkPipeline pipeline;
+      CHECK(p_vkCreateGraphicsPipelines(device, cache, 1, &gp, &callbacks, &pipeline));
+      for (unsigned phase = 0; phase < 3; ++phase) {
+        float expected[16] = {0};
+        unsigned char data[192] = {0};
+        for (unsigned col = 0; col < (aggregate ? 4u : 1u); ++col) {
+          const struct scaled_case *format = aggregate && col == 2 ? second : f;
+          expected[col * 4 + 3] = 1;
+          for (unsigned component = 0; component < 4; ++component) {
+            if (aggregate && (col == 0 || col == 3)) {
+              float value = (float)(col * 7 + component + phase) + 0.25f;
+              expected[col * 4 + component] = value;
+              for (unsigned vertex = 0; vertex < 3; ++vertex)
+                memcpy(data + vertex * binding.stride + col * 16 + component * 4, &value, 4);
+            } else if (component < format->components) {
+              int high = format->sign ? (1 << (format->bits - 1)) - 1 : (1 << format->bits) - 1;
+              int low = format->sign ? -(1 << (format->bits - 1)) : 0;
+              int value = (component + phase + col) % 2 ? high : low;
+              expected[col * 4 + component] = value;
+              for (unsigned vertex = 0; vertex < 3; ++vertex) {
+                unsigned offset = vertex * binding.stride + (aggregate ? col * 16 : 0) + component * format->bits / 8;
+                if (format->bits == 8) data[offset] = (uint8_t)value;
+                else { uint16_t v = value; memcpy(data + offset, &v, 2); }
+              }
             }
           }
         }
+        if (phase == 2) expected[aggregate ? 4 : 0] += 1;
+        CHECK(p_vkMapMemory(device, imem, 0, sizeof(data), 0, &mapped));
+        memcpy(mapped, data, sizeof(data));
+        p_vkUnmapMemory(device, imem);
+        CHECK(p_vkResetCommandPool(device, cpool, 0));
+        VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        CHECK(p_vkBeginCommandBuffer(cb, &begin));
+        VkMemoryBarrier reuse = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+          .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+          .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT};
+        p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+          0, 1, &reuse, 0, NULL, 0, NULL);
+        VkClearValue clear = {.color = {{0,0,0,0}}};
+        VkRenderPassBeginInfo rpbi = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+          .renderPass = rp, .framebuffer = fb, .renderArea = {{0,0},{kScaledImage,kScaledImage}},
+          .clearValueCount = 1, .pClearValues = &clear};
+        p_vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+        p_vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        VkDeviceSize offset = 0;
+        p_vkCmdBindVertexBuffers(cb, 0, 1, &ibo, &offset);
+        p_vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, push.size, expected);
+        p_vkCmdDraw(cb, 3, 1, 0, 0);
+        p_vkCmdEndRenderPass(cb);
+        VkBufferImageCopy copy = {
+            .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+            .imageExtent = {kScaledImage, kScaledImage, 1}};
+        p_vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                 readback, 1, &copy);
+        VkMemoryBarrier to_host = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+        p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+          VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &to_host, 0, NULL, 0, NULL);
+        CHECK(p_vkEndCommandBuffer(cb));
+        VkFence fence;
+        VkFenceCreateInfo fc = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        CHECK(p_vkCreateFence(device, &fc, NULL, &fence));
+        VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cb};
+        CHECK(p_vkQueueSubmit(queue, 1, &si, fence));
+        CHECK(p_vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+        uint8_t *pixels;
+        CHECK(p_vkMapMemory(device, rmem, 0, kScaledImage*kScaledImage*4, 0, (void **)&pixels));
+        unsigned bad = 0;
+        for (unsigned pixel = 0; pixel < kScaledImage*kScaledImage; ++pixel)
+          for (unsigned component = 0; component < 4; ++component) {
+            unsigned expected_byte = phase == 2 && component == 0 ? 0 : 255;
+            if (alternate_entry || (specialized && invert)) expected_byte = 255 - expected_byte;
+            if (specialized && tint == 0.5f && expected_byte) expected_byte = 128;
+            if (pixels[pixel*4+component] != expected_byte) ++bad;
+          }
+        printf("SCALED format=%s entry=%s phase=%u expected=%g,%g,%g,%g pixel=%u,%u,%u,%u bad=%u\n",
+          f->name, stages[0].pName, phase, expected[0], expected[1], expected[2], expected[3], pixels[0],pixels[1],pixels[2],pixels[3],bad);
+        failures += !!bad;
+        p_vkUnmapMemory(device, rmem);
+        p_vkDestroyFence(device, fence, NULL);
       }
-      if (phase == 2) expected[aggregate ? 4 : 0] += 1;
-      CHECK(p_vkMapMemory(device, imem, 0, sizeof(data), 0, &mapped));
-      memcpy(mapped, data, sizeof(data));
-      p_vkUnmapMemory(device, imem);
-      CHECK(p_vkResetCommandPool(device, cpool, 0));
-      VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-      CHECK(p_vkBeginCommandBuffer(cb, &begin));
-      VkMemoryBarrier reuse = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT};
-      p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0, 1, &reuse, 0, NULL, 0, NULL);
-      VkClearValue clear = {.color = {{0,0,0,0}}};
-      VkRenderPassBeginInfo rpbi = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = rp, .framebuffer = fb, .renderArea = {{0,0},{kScaledImage,kScaledImage}},
-        .clearValueCount = 1, .pClearValues = &clear};
-      p_vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
-      p_vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-      VkDeviceSize offset = 0;
-      p_vkCmdBindVertexBuffers(cb, 0, 1, &ibo, &offset);
-      p_vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, push.size, expected);
-      p_vkCmdDraw(cb, 3, 1, 0, 0);
-      p_vkCmdEndRenderPass(cb);
-      VkBufferImageCopy copy = {
-          .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-          .imageExtent = {kScaledImage, kScaledImage, 1}};
-      p_vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                               readback, 1, &copy);
-      VkMemoryBarrier to_host = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-          .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-          .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
-      p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &to_host, 0, NULL, 0, NULL);
-      CHECK(p_vkEndCommandBuffer(cb));
-      VkFence fence;
-      VkFenceCreateInfo fc = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-      CHECK(p_vkCreateFence(device, &fc, NULL, &fence));
-      VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cb};
-      CHECK(p_vkQueueSubmit(queue, 1, &si, fence));
-      CHECK(p_vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
-      uint8_t *pixels;
-      CHECK(p_vkMapMemory(device, rmem, 0, kScaledImage*kScaledImage*4, 0, (void **)&pixels));
-      unsigned bad = 0;
-      for (unsigned pixel = 0; pixel < kScaledImage*kScaledImage; ++pixel)
-        for (unsigned component = 0; component < 4; ++component) {
-          unsigned expected_byte = phase == 2 && component == 0 ? 0 : 255;
-          if (alternate_entry) expected_byte = 255 - expected_byte;
-          if (pixels[pixel*4+component] != expected_byte) ++bad;
-        }
-      printf("SCALED format=%s entry=%s phase=%u expected=%g,%g,%g,%g pixel=%u,%u,%u,%u bad=%u\n",
-        f->name, stages[0].pName, phase, expected[0], expected[1], expected[2], expected[3], pixels[0],pixels[1],pixels[2],pixels[3],bad);
-      failures += !!bad;
-      p_vkUnmapMemory(device, rmem);
-      p_vkDestroyFence(device, fence, NULL);
+      p_vkDestroyPipeline(device, pipeline, &callbacks);
+      ++tested;
     }
-    p_vkDestroyPipeline(device, pipeline, &callbacks);
-    ++tested;
+    if (specialized && c == 5) {
+      size_t cache_size = 0;
+      CHECK(p_vkGetPipelineCacheData(device, cache, &cache_size, NULL));
+      void *cache_data = malloc(cache_size);
+      if (!cache_data) return 2;
+      CHECK(p_vkGetPipelineCacheData(device, cache, &cache_size, cache_data));
+      cache_ci.initialDataSize = cache_size; cache_ci.pInitialData = cache_data;
+      VkPipelineCache restored;
+      CHECK(p_vkCreatePipelineCache(device, &cache_ci, &callbacks, &restored));
+      p_vkDestroyPipelineCache(device, cache, &callbacks); cache = restored;
+      free(cache_data);
+      printf("SCALED cache restored bytes=%zu\n", cache_size);
+    }
   }
+  if (cache) p_vkDestroyPipelineCache(device, cache, &callbacks);
   p_vkDestroyCommandPool(device, cpool, NULL);
   p_vkDestroyFramebuffer(device, fb, NULL);
   p_vkDestroyRenderPass(device, rp, NULL);

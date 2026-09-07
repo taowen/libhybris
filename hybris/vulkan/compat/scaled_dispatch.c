@@ -220,7 +220,7 @@ static VkResult convert_pipeline(struct scaled_device *device, VkGraphicsPipelin
         uint32_t *code = NULL;
         size_t size = 0;
         if (vertex) result = hybris_scaled_spirv(shader->code, shader->size, stage->pName, attrs, count,
-                                                allocator, &code, &size, reason);
+                                                stage->pSpecializationInfo, allocator, &code, &size, reason);
         else {
             uint32_t model = 0;
             while (model < 5 && (1u << model) != (uint32_t)stage->stage) ++model;
@@ -228,7 +228,7 @@ static VkResult convert_pipeline(struct scaled_device *device, VkGraphicsPipelin
                 stage->pName, allocator, &code, &size, reason) : VK_ERROR_UNKNOWN;
         }
         if (result != VK_SUCCESS) goto done;
-        hybris_scaled_dump(shader->code, shader->size, code, size, vertex ? attrs : NULL, vertex ? count : 0);
+        hybris_scaled_dump(shader->code, shader->size, code, size, vertex ? attrs : NULL, vertex ? count : 0, stage->pSpecializationInfo);
         VkShaderModuleCreateInfo module = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = size, .pCode = code };
         result = device->create_shader(device->handle, &module, allocator, &copy->temporary[j]);
         hybris_scaled_free(allocator, code);

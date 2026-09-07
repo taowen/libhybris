@@ -37,6 +37,12 @@ with tempfile.TemporaryDirectory(prefix='hybris-scaled-shaders-') as temporary:
         subprocess.run(['glslangValidator', '-V', '-DHYBRIS_AGGREGATE=' + str(variant),
                         str(here / 'scaled.aggregate.vert'), '-o', str(target)], check=True)
         aggregates.append((target, 'scaled.' + name + '.inc', 'kScaled' + name.title() + 'Spv'))
+    specialized = output / 'specialized.spv'
+    subprocess.run(['glslangValidator', '-V', str(here / 'scaled.spec.vert'), '-o', str(specialized)], check=True)
+    aggregates.append((specialized, 'scaled.spec.inc', 'kScaledSpecSpv'))
+    direct = output / 'specialized-direct.spv'
+    subprocess.run(['glslangValidator', '-V', '-DHYBRIS_SPEC_DIRECT=1', str(here / 'scaled.spec.vert'), '-o', str(direct)], check=True)
+    aggregates.append((direct, 'scaled.spec-direct.inc', 'kScaledSpecDirectSpv'))
     for path, filename, symbol in ((vertex, 'scaled.vert.inc', 'kScaledVertSpv'),
                                    (fragment, 'scaled.frag.inc', 'kScaledFragSpv'),
                                    (multiple, 'scaled.multi.inc', 'kScaledMultiSpv'),

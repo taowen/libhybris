@@ -166,8 +166,19 @@ fetches, so native float columns can coexist with signed and unsigned scaled
 columns. Dynamic access chains and whole-aggregate value loads preserve their
 float types. SPIR-V 1.4+ entries retain the used Private global in the interface;
 earlier versions list only the new Input leaves.
-Interface blocks/member Locations, specialization-sized arrays, affected
-float16/float64 aggregates and unhandled Input pointer forms remain unsupported. Grammar-derived masks exclude definite literal operands
+Array lengths may also use scalar 32-bit integer specialization constants and
+supported integer/boolean expressions. A separate constant evaluator reads the
+current stage's `VkSpecializationInfo`, including defaults, and the aggregate
+pass freezes only the resolved array-length result IDs. It removes SpecId only
+from constants that were frozen. The original specialization map still reaches
+the driver for other uses, including float and boolean values; the original
+shader module and the application's pipeline cache are retained. Supported
+expression operations include integer arithmetic, comparisons, logical/bitwise
+operations, shifts, Select and same-width integer conversions. Zero divisors,
+invalid shifts and unsupported expression types fail conversion.
+Interface blocks/member Locations, float/64-bit/composite expressions in array
+lengths, affected float16/float64 aggregates and unhandled Input pointer forms
+remain unsupported. Grammar-derived masks exclude definite literal operands
 such as shuffle/extract indices and parameter-free enums from pointer/liveness
 scans. Ambiguous or variable-width operand sequences still use conservative
 scanning: a literal can cause rejection or retain an extra global declaration
@@ -179,7 +190,7 @@ a partially rewritten module. With an active fallback mask, graphics pipeline
 libraries and dynamic vertex input are rejected; shader objects, inline stage
 modules and shader-stage extension chains are not supported by this fallback.
 Do not enable it for applications requiring these paths. General SPIR-V
-interfaces/control flow, extensions, specialization/cache-key evidence and
+interfaces/control flow, extensions, general specialization/cache-key coverage and
 full pipeline state coverage remain open. No clip/cull, point-size, BC texture or timeline emulation
 is included. The replacement-libvulkan frontend does not apply this fallback.
 
@@ -209,3 +220,14 @@ operands and parameterized enums (after classifying the enum word itself).
 It does not guess the layout of 64-bit switch pairs or enum-dependent payloads.
 Unclassified words retain the conservative behavior above. This is a bounded
 operand classifier, not a complete SPIR-V validation grammar implementation.
+
+
+For specialization diagnostics, the bounded scaled dump also stores each
+supplied stage's raw specialization data (`NNN-specialization.bin`) and logs
+constant-ID/offset/size mappings. Data over 64 KiB or more than 1024 map entries
+is recorded as `saved=0`; the dump remains opt-in and limited to 128 modules.
+The `scaled-vertex-spec` and `scaled-vertex-spec-direct` headless fixtures cover
+expression/direct lengths, unrelated float/bool parameters, defaults, repeated
+pipeline variants and same-process cache serialization/restoration. See the
+baseline README for exact device results and remaining limits. Specialization
+map behavior follows the [Vulkan specialization constants rules](https://docs.vulkan.org/spec/latest/chapters/pipelines.html#pipelines-specialization-constants).
