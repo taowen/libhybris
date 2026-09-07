@@ -57,10 +57,10 @@ engine = os.environ.get('CONTAINER_ENGINE', 'podman')
 image = subprocess.check_output([str(ROOT / 'tools/ensure-builder.sh')], text=True).strip()
 image_id = subprocess.check_output([engine, 'image', 'inspect', '--format', '{{.Id}}', image], text=True).strip()
 client = out / 'client-source'; client.mkdir(exist_ok=True)
-for name in ('probe_xcb.c', 'render.c', 'render.h'): shutil.copy2(ROOT / 'tests/x11' / name, client / name)
+for name in ('probe_xcb.c', 'render.c', 'resize.c', 'render.h'): shutil.copy2(ROOT / 'tests/x11' / name, client / name)
 run(engine, 'run', '--rm', '--userns=keep-id', '--volume', str(out) + ':/out:Z', '--workdir', '/out/client-source',
     image_id, 'bash', '-eu', '-c',
-    'aarch64-linux-gnu-gcc -O2 -g -Wall -Wextra probe_xcb.c render.c -lxcb -lX11-xcb -lX11 -ldl -o /out/probe-xcb')
+    'aarch64-linux-gnu-gcc -O2 -g -Wall -Wextra probe_xcb.c render.c resize.c -lxcb -lX11-xcb -lX11 -ldl -o /out/probe-xcb')
 server = out / 'server'
 if server.exists(): shutil.rmtree(server)
 server.mkdir(); shutil.copy2(build / 'hw/xwayland/Xwayland', server / 'Xwayland')

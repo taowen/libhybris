@@ -80,12 +80,14 @@ With both Wayland and X11 enabled at build time, the adapter also exposes
 local Unix sockets to submit gralloc handles, retaining buffers until actual
 BufferRelease events. Missing protocol and incompatible visuals are rejected.
 Xlib shares its XCB connection without changing application event ownership.
-Current extent comes from X geometry; dynamic resize/out-of-date handling is
-not complete. This is a fixed-size experimental path, not full X11 conformance.
+Current extent comes from X geometry; stale-size chains now return
+OUT_OF_DATE on acquire/present and can be replaced. Rejected presents still
+consume application waits. This remains an experimental X11 path; rootless,
+multiwindow and broader resize race coverage are not established.
 
 The [independent X11 developer tool](../../../tests/x11/README.md) builds a
-private protocol-enabled Xwayland and runs one selected check in the disposable
-compositor APK. Both Adreno and Mali passed XCB/Xlib present, protocol rejection
+protocol-enabled Xwayland into the disposable anlabwc APK and runs selected
+checks through the unified `tests/wsi/run.py` entry. Both Adreno and Mali passed XCB/Xlib present, protocol rejection
 and acquire timeout with VVL/SyncVal. No Mesa or anlabwc change was required.
 See that document for protocol provenance, exact runs and remaining G11 scope.
 

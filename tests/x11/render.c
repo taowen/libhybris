@@ -174,7 +174,22 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
         printf("X11_ACQUIRE held=%u zero=NOT_READY finite=TIMEOUT elapsed_ns=%lld index_unchanged=1 fence_unsignaled=1\n", count, (long long)elapsed);
         goto finish;
     }
-    for (unsigned frame = 0; frame < 8; ++frame) {
+    unsigned epochs = getenv("HYBRIS_X11_RESIZE") ? 3 : 1;
+    for (unsigned epoch = 0; epoch < epochs; ++epoch) {
+      if (epoch) {
+        unsigned width = epoch == 1 ? 160 : 256, height = epoch == 1 ? 120 : 192;
+        if (x11_resize(gip, instance, physical, device, queue, connection, window,
+                &sw, &chain, command, fence, ready[0], epoch, width, height)) return 2;
+        for (uint32_t i = 0; i < count; ++i) vkDestroySemaphore(device, ready[i], NULL);
+        free(images); free(ready);
+        OK(vkGetSwapchainImagesKHR(device, chain, &count, NULL));
+        images = calloc(count, sizeof(*images)); ready = calloc(count, sizeof(*ready));
+        if (!images || !ready) return 2;
+        OK(vkGetSwapchainImagesKHR(device, chain, &count, images));
+        for (uint32_t i = 0; i < count; ++i) OK(vkCreateSemaphore(device, &sem, NULL, &ready[i]));
+      }
+      unsigned width = sw.imageExtent.width, height = sw.imageExtent.height;
+      for (unsigned frame = 0; frame < 8; ++frame) {
         uint32_t index; OK(vkAcquireNextImageKHR(device, chain, 2000000000ull, acquired, VK_NULL_HANDLE, &index));
         if (index >= count) return 2;
         OK(vkResetCommandBuffer(command, 0));
@@ -190,7 +205,7 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
-        VkBufferImageCopy copy = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, .imageExtent = {320, 240, 1}};
+        VkBufferImageCopy copy = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, .imageExtent = {width, height, 1}};
         vkCmdCopyImageToBuffer(command, images[index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &copy);
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT; barrier.dstAccessMask = 0;
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -205,7 +220,7 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
         OK(vkQueueSubmit(queue, 1, &submit, fence)); OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 2000000000ull));
         unsigned char *pixels; OK(vkMapMemory(device, memory, 0, 320 * 240 * 4, 0, (void **)&pixels));
         unsigned char rgba[320 * 240 * 4];
-        for (unsigned i = 0; i < 320 * 240; ++i) {
+        for (unsigned i = 0; i < width * height; ++i) {
             unsigned char *p = rgba + 4 * i;
             p[0] = pixels[4*i+(format == VK_FORMAT_B8G8R8A8_UNORM ? 2 : 0)]; p[1] = pixels[4*i+1];
             p[2] = pixels[4*i+(format == VK_FORMAT_B8G8R8A8_UNORM ? 0 : 2)]; p[3] = pixels[4*i+3];
@@ -213,15 +228,17 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
         }
         vkUnmapMemory(device, memory);
         if (frame == 0 || frame == 7) {
-            char path[32]; snprintf(path, sizeof(path), "image-0-%u.rgba", frame);
+            char path[32]; snprintf(path, sizeof(path), "image-%u-%u.rgba", epoch, frame);
             FILE *file = fopen(path, "wb"); if (!file) return 2;
-            size_t bytes = fwrite(rgba, 1, sizeof(rgba), file); if (fclose(file) || bytes != sizeof(rgba)) return 2;
+            size_t bytes = fwrite(rgba, 1, width * height * 4, file); if (fclose(file) || bytes != width * height * 4) return 2;
         }
         VkPresentInfoKHR pi = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .waitSemaphoreCount = 1,
             .pWaitSemaphores = &ready[index], .swapchainCount = 1, .pSwapchains = &chain, .pImageIndices = &index};
         OK(vkQueuePresentKHR(queue, &pi)); OK(vkResetFences(device, 1, &fence));
-        printf("X11_FRAME frame=%u image=%u pixels=76800 exact=1\n", frame, index);
-        if (frame == 0 || frame == 7) sleep(1);
+        if (epochs == 1) printf("X11_FRAME frame=%u image=%u pixels=76800 exact=1\n", frame, index);
+        else printf("X11_RESIZE_FRAME epoch=%u frame=%u image=%u size=%ux%u pixels=%u exact=1\n", epoch, frame, index, width, height, width * height);
+        if (frame == 0 || frame == 7) sleep(2);
+      }
     }
 finish: ;
     FILE *maps = fopen("/proc/self/maps", "r"), *saved = fopen("maps.txt", "w");

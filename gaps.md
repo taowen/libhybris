@@ -211,7 +211,7 @@ P0 = 兼容增强前的基础；P1 = 直接影响目标应用；P2 = 基础可�
 | G08 / P1 | SPIR-V 转换缺少语义保证 | 转换前后 spirv-val、反射 diff、源码/二进制 hash、pipeline specialization key；clip/cull 真使用时正确模拟或拒绝，不能简单删除改变画面。**实验性子集**：固定 scaled 探针的原始/转换后 SPIR-V 已保留哈希、spirv-val、反汇编和接口差异；原始模块匹配构建输入，四条 loader 路径像素正确。已补多入口模块按 pipeline 指定 stage 生成临时模块，并裁剪无关函数/全局变量；同一三入口模块供顶点/片元及后续 pipeline 复用，辅助函数读取 push constant 在 Adreno/Mali 真机通过。已修复 shuffle 等明确字面量被当作变量 ID 的误判，ID=3/索引=3 的合法 shader 经旧/新 Adreno 同探针对照确认；复杂操作数布局仍保守扫描。聚合输入由独立 pass 拆为逐 Location 输入并重建原 float Private 值，动态索引/整体值传参四种形状通过；实际模块的原始哈希、逐列接口和 spirv-val 已审计。已补按 pipeline 特化参数解析直接/表达式数组长度，默认值、混合 float/bool 参数、同 module 重复创建与 cache 保存/重建在 Adreno/Mali 通过，原始特化字节与映射已关联转换模块。已补独立装饰组展开，单入口、多入口、特化数组的 Location/成员布局/SpecId 经两台原厂驱动和修复后的验证层通过，并由 SPIRV-Tools 独立核对装饰语义。通用接口/扩展、完整 specialization/cache key 及 clip/cull 等仍未完成 |
 | G09 / P1 | 同步/内存模型模拟不完整 | non-coherent atom 对齐与 flush/invalidate、staging 多次写入、submit 重用、queue 间信号、wait-before-signal、销毁时仍在飞行测试；没有全局 wait-idle 才能运行的默认实现。**部分验证**：Mali 同 family 双 queue 的 consumer 先提交、producer 后 signal，四轮 fill→copy→1024 words 精确读回、timeline/fence 及资源重用在 native/frontend/ICD core/KHR 六路径通过；实际非 coherent 内存整块 invalidate，标准 ICD 两种 alias 的 SyncVal 零错误。Adreno 厂商不支持所需 timeline；绕过 libhybris 的独立官方 Turnip 对照在 Redmi 只有一个 queue，此用例返回不支持。新增 Vulkan 1.0 局部上传/读回探针，Mali native/frontend/ICD 及标准 validation 四路径通过：非零绑定偏移、跨 atom 写入、部分有限范围 flush/invalidate、相邻未改动数据及四轮 command buffer 重提交，SyncVal 零错误；Adreno 原厂无适用非 coherent 内存类型，四路径不支持。allocation 尾部非整 atom、部分 mapping、跨 family ownership、并发主机提交及其它在飞工作下的资源退役仍未覆盖；详见 baseline README |
 | G10 / P1 | 桌面 GL frontend | 分别声明 core/compat 版本；GLSL/link、VAO/VBO、UBO/SSBO、FBO、sRGB、texture、GLX/EGL contexts 回归；经 Zink/GL→GLES 的失败归属独立统计 |
-| G11 / P1 | Vulkan X11 已有固定尺寸初步路径，EGL X11 含旁路，完整 WSI release 正确性待验收 | Xlib/XCB/Wayland 分别创建、多窗口、resize/minimize、out-of-date、surface destroy/recreate；无提前复用，无 FD 泄漏，帧 ID 贯穿 compositor |
+| G11 / P1 | Vulkan X11 已有呈现/resize 初步路径，EGL X11 含旁路，完整 WSI release 正确性待验收 | Xlib/XCB/Wayland 分别创建、多窗口、resize/minimize、out-of-date、surface destroy/recreate；无提前复用，无 FD 泄漏，帧 ID 贯穿 compositor |
 | G12 / P1 | 黑屏/贴图错误没有可重复证据包 | 对指定 frame/draw 生成输入 shader、descriptor/resource、attachment 前后图、同步事件、present 记录；有容量上限，默认不开高开销捕获 |
 | G13 / P2 | 多厂商/驱动版本缺少回归与 CTS 指标 | Adreno/Mali 分开存版本化 baseline；不支持/失败/crash/timeout 分栏；每项 workaround 有原始失败、修复通过、其他设备无回归。shader 审计错误已单独记录并保留探针原始退出码；旧 VVL 停顿实测记录为 TIMEOUT 142，未扩大 CTS 覆盖 |
 
@@ -794,3 +794,14 @@ compositor APK。高通 OnePlus 8T 与 Mali 的两种 API × 呈现/缺协议/�
 没有修改 Mesa，也无需修改 anlabwc；记录与复现见 [X11 README](tests/x11/README.md)。
 此批限 rootful 单窗口固定尺寸，rootless、多窗口、resize/out-of-date、minimize、
 断连恢复、长期 FD 统计和 X11 capture/replay 仍未闭合，G11 不关闭。
+
+
+2026-09-08 WSI 测试收敛：固定 anlabwc＋Xwayland 测试 APK，唯一入口
+`tests/wsi/run.py --platform wayland|xcb|xlib`；删除重复启动脚本和未使用的
+surface-only 二进制，将其独有检查并入真实呈现探针。红米取代一加作为本批
+高通设备，与 Mali 完成 26 次调用／28 个客户端的呈现、resize、负对照、
+超时、Wayland review 和 capture/replay；故意 host timeout 正确分类并清理。
+X11 acquire/present 已处理窗口尺寸失配及被拒 present 的等待信号量消费。
+旧截图时机失败原样保留；新公共采样等待 0.6 秒，完整像素门槛未降低。
+详见 [收敛与 resize 审查](tests/wsi/integration-review.md)。已阻塞 acquire 期间
+resize、present-first/race、多窗口、minimize、长期 FD 与 CTS 仍需推进，G11 不关闭。

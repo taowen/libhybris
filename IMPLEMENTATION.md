@@ -4,6 +4,22 @@ The active objective is to complete the acceptance criteria in [gaps.md](gaps.md
 and improve maintainability without changing API/ABI contracts during structural
 refactors. A probe passing does not close an entire gap.
 
+## Unified window integration tests (2026-09-08)
+
+One `tests/wsi/run.py --platform wayland|xcb|xlib` entry now owns the disposable
+anlabwc/Xwayland APK lifecycle. Xwayland and its native dependencies are bundled
+in the APK; glibc probes and libhybris remain independently deployable. Duplicate
+runners and the obsolete surface-only executable are removed; its unique checks
+are folded into the live presentation probe. The shared code retains identity,
+FD snapshots, validation, capture/replay, diagnostics and cleanup.
+
+X11 resize now marks stale chains out of date, preserves failed-acquire outputs
+and consumes waits even when presentation is rejected. Redmi and Mali passed
+all 26 unified invocations (28 clients), including XCB/Xlib resize and Wayland
+validation/capture regressions. An intentional host timeout also cleaned up.
+[Review and exact evidence](tests/wsi/integration-review.md) retain earlier
+failures and state the remaining race, multiwindow and lifetime gaps.
+
 ## X11 Vulkan developer path (2026-09-08)
 
 The standard ICD now provides experimental XCB/Xlib WSI using TAWC-DRI 0.3.

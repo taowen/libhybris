@@ -40,6 +40,8 @@ struct swapchain_state {
     VkSurfaceKHR surface;
     struct hybris_icd_window *window;
     uint32_t count;
+    VkExtent2D extent;
+    VkResult presentation_status;
     struct swapchain_image *images;
     int retired;
     VkAllocationCallbacks allocator;
@@ -208,6 +210,10 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     VkSurfaceCapabilitiesKHR capabilities;
     VkResult checked = hybris_icd_wsi_capabilities(context.physical, info->surface, &capabilities);
     if (checked != VK_SUCCESS) return checked;
+    if (capabilities.currentExtent.width != UINT32_MAX &&
+        (info->imageExtent.width != capabilities.currentExtent.width ||
+         info->imageExtent.height != capabilities.currentExtent.height))
+        return VK_ERROR_OUT_OF_DATE_KHR;
     if (info->imageExtent.width > capabilities.maxImageExtent.width ||
         info->imageExtent.height > capabilities.maxImageExtent.height ||
         (info->imageUsage & ~capabilities.supportedUsageFlags) ||
@@ -237,6 +243,7 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     state->device_generation = context.generation;
     state->surface = info->surface;
     state->window = window;
+    state->extent = info->imageExtent;
     state->custom_allocator = allocator != NULL;
     if (allocator) state->allocator = *allocator;
     state->images = object_alloc(allocator, count * sizeof(*state->images),
@@ -342,6 +349,22 @@ static int64_t dequeue_timeout(uint64_t timeout)
     return (int64_t)timeout;
 }
 
+/* A size mismatch is sticky until the application replaces the chain. The
+ * Wayland owner reports zero extent because its size is application selected.
+ * Keep this separate from retirement: already acquired retired images may
+ * still be presented if the native surface remains compatible. */
+static VkResult presentation_status(struct swapchain_state *state)
+{
+    if (state->presentation_status != VK_SUCCESS) return state->presentation_status;
+    uint32_t width = 0, height = 0;
+    if (state->window->ops->extent(state->window, &width, &height))
+        state->presentation_status = VK_ERROR_SURFACE_LOST_KHR;
+    else if ((width && width != state->extent.width) ||
+             (height && height != state->extent.height))
+        state->presentation_status = VK_ERROR_OUT_OF_DATE_KHR;
+    return state->presentation_status;
+}
+
 static VkResult acquire_slot(struct swapchain_state *state, int64_t timeout_ns, uint32_t *index,
     int *fence)
 {
@@ -355,6 +378,10 @@ static VkResult acquire_slot(struct swapchain_state *state, int64_t timeout_ns, 
         }
     struct ANativeWindowBuffer *buffer = NULL;
     int error = state->window->ops->dequeue(state->window, timeout_ns, &buffer, fence);
+    if (error == -ESTALE) {
+        state->presentation_status = VK_ERROR_OUT_OF_DATE_KHR;
+        return state->presentation_status;
+    }
     if (error == -EAGAIN) return VK_NOT_READY;
     if (error == -ETIMEDOUT) return VK_TIMEOUT;
     if (error || !buffer) {
@@ -381,9 +408,11 @@ static VkResult VKAPI_CALL acquire_next_image(VkDevice device, VkSwapchainKHR sw
     struct swapchain_state *state = find_swapchain(swapchain);
     if (!state || state->device != device || state->retired)
         return VK_ERROR_OUT_OF_DATE_KHR;
+    VkResult result = presentation_status(state);
+    if (result != VK_SUCCESS) return result;
     int native_fence = -1;
     uint32_t slot = 0;
-    VkResult result = acquire_slot(state, dequeue_timeout(timeout), &slot, &native_fence);
+    result = acquire_slot(state, dequeue_timeout(timeout), &slot, &native_fence);
     if (result != VK_SUCCESS) return result;
     PFN_vkAcquireImageANDROID acquire = (PFN_vkAcquireImageANDROID)
         context.resolver(device, "vkAcquireImageANDROID");
@@ -491,6 +520,15 @@ static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
         state->images[index].image, &fence);
     if (result != VK_SUCCESS) {
         if (fence >= 0) close(fence);
+        return result;
+    }
+    /* Even a rejected present consumes its semaphore waits and releases the
+     * image acquisition. The Android release above supplies that dependency;
+     * cancellation consumes its fence without sending an obsolete-size frame. */
+    result = presentation_status(state);
+    if (result != VK_SUCCESS) {
+        state->window->ops->cancel(state->window, state->images[index].native, fence);
+        state->images[index].state = IMAGE_FREE;
         return result;
     }
     int error = state->window->ops->queue(state->window, state->images[index].native, fence);

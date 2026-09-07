@@ -12,6 +12,7 @@ import zipfile
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--backend-apk', type=Path, required=True)
 p.add_argument('--backend-library', type=Path, help='replace libanlabwc.so with a locally rebuilt backend; dependencies/assets still come from the APK')
+p.add_argument('--x11-build', type=Path, default=Path(__file__).resolve().parents[2] / 'x11/build', help='built Xwayland bundle to include in the test APK')
 p.add_argument('--sdk', type=Path, default=Path(os.environ.get('ANDROID_HOME', str(Path.home() / 'Android/Sdk'))))
 p.add_argument('--ndk', default='29.0.14206865')
 p.add_argument('--build-tools', default='36.0.0')
@@ -42,6 +43,21 @@ with zipfile.ZipFile(a.backend_apk) as archive:
         if name.startswith('assets/xkb/') and not name.endswith('/'):
             path = work / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(archive.read(name))
 if not (work / 'assets/xkb').is_dir(): raise ValueError('backend APK has no xkb assets')
+# One fixed server bundle in the APK; only the glibc client/ICD are deployed
+# per run. Verify every input before packaging, including transitive ELF deps.
+x11 = json.loads((a.x11_build / 'manifest.json').read_text())
+server = work / 'assets/x11'; server.mkdir(parents=True)
+server_files = {}
+for name, digest in x11['files'].items():
+    if not name.startswith('server/'): continue
+    if Path(name).parent != Path('server'): raise ValueError('invalid server manifest path')
+    original = a.x11_build / name
+    if sha(original) != digest: raise ValueError('Xwayland bundle hash mismatch: ' + name)
+    shutil.copy2(original, server / original.name)
+    server_files[original.name] = digest
+if 'Xwayland' not in server_files: raise ValueError('bundle has no Xwayland')
+server_manifest = {'files': server_files, 'build': x11['server_inputs']}
+(server / 'manifest.json').write_text(json.dumps(server_manifest, indent=2) + '\n')
 bt = a.sdk / 'build-tools' / a.build_tools
 android = a.sdk / 'platforms/android-35/android.jar'
 cc = a.sdk / 'ndk' / a.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang'
@@ -61,7 +77,7 @@ run(bt / 'apksigner', 'sign', '--ks', key, '--ks-pass', 'pass:android', '--out',
 run(bt / 'apksigner', 'verify', out / 'hybris-wsi-test.apk')
 (out / 'manifest.json').write_text(json.dumps({'backend_apk': str(a.backend_apk.resolve()), 'backend_sha256': sha(a.backend_apk),
     'backend_library_override': ({'path': str(a.backend_library.resolve()), 'sha256': sha(a.backend_library)} if a.backend_library else None),
-    'apk_sha256': sha(out / 'hybris-wsi-test.apk'), 'libraries': {x.name: sha(x) for x in libs.glob('*.so')},
+    'xwayland': server_manifest, 'apk_sha256': sha(out / 'hybris-wsi-test.apk'), 'libraries': {x.name: sha(x) for x in libs.glob('*.so')},
     'external_dependencies': sorted(external), 'sources': {x.name: sha(x) for x in source.iterdir() if x.is_file()},
     'ndk': a.ndk, 'build_tools': a.build_tools,
     'note': 'APK dependencies with optional local backend replacement; hashes identify inputs, not source reproducibility.'}, indent=2))

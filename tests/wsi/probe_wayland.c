@@ -140,6 +140,7 @@ int main(int argc, char **argv) {
     if (!library) { printf("Vulkan dlopen: %s\n", dlerror()); return 2; }
     PFN_vkGetInstanceProcAddr gip = dlsym(library, "vkGetInstanceProcAddr");
     if (!gip) return 2;
+    if (getenv("VK_DRIVER_FILES") && surface_extension_checks(gip)) return 2;
     VkInstance instance = VK_NULL_HANDLE;
     V(vkCreateInstance);
     const char *layer = "VK_LAYER_KHRONOS_validation";
@@ -241,6 +242,7 @@ int main(int argc, char **argv) {
     }
     free(families);
     if (family == UINT32_MAX) return 3;
+    if (getenv("VK_DRIVER_FILES") && surface_presentation_checks(gip, instance, physical, family, surface, w.display)) return 2;
     float priority = 1;
     VkDeviceQueueCreateInfo qc = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex = family, .queueCount = 1, .pQueuePriorities = &priority};

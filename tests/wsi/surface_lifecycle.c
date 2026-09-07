@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int fd_count(void) {
@@ -106,4 +107,53 @@ int surface_lifecycle(struct wl_display *display, struct wl_compositor *composit
     int after = fd_count();
     printf("WSI_LIFECYCLE surfaces=128 concurrent=16 fd-before=%d fd-after=%d\n", before, after);
     return ok && before >= 0 && before == after ? 0 : 2;
+}
+
+/* Checks retained from the retired surface-only executable. They now run in
+ * the same client that creates swapchains and verifies displayed pixels. */
+int surface_extension_checks(PFN_vkGetInstanceProcAddr gip) {
+    PFN_vkEnumerateInstanceExtensionProperties enumerate = (PFN_vkEnumerateInstanceExtensionProperties)gip(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties");
+    PFN_vkCreateInstance create = (PFN_vkCreateInstance)gip(VK_NULL_HANDLE, "vkCreateInstance");
+    uint32_t count = 0;
+    if (!enumerate || !create || enumerate(NULL, &count, NULL) != VK_SUCCESS) return 2;
+    VkExtensionProperties *extensions = calloc(count, sizeof(*extensions));
+    if (!extensions) return 2;
+    VkResult result = enumerate(NULL, &count, extensions);
+    int surface = 0, wayland = 0;
+    for (uint32_t i = 0; result == VK_SUCCESS && i < count; ++i) {
+        surface |= !strcmp(extensions[i].extensionName, VK_KHR_SURFACE_EXTENSION_NAME);
+        wayland |= !strcmp(extensions[i].extensionName, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+    }
+    free(extensions);
+    if (!surface || !wayland) return 2;
+    VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_0};
+    VkInstanceCreateInfo info = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app};
+    VkInstance instance;
+    if (create(&info, NULL, &instance) != VK_SUCCESS) return 2;
+    int disabled = gip(instance, "vkCreateWaylandSurfaceKHR") == NULL;
+    PFN_vkDestroyInstance destroy = (PFN_vkDestroyInstance)gip(instance, "vkDestroyInstance");
+    if (!destroy) return 2;
+    destroy(instance, NULL);
+    printf("WSI_SURFACE_EXTENSIONS surface=%d wayland=%d disabled_create_null=%d\n", surface, wayland, disabled);
+    return disabled ? 0 : 2;
+}
+
+int surface_presentation_checks(PFN_vkGetInstanceProcAddr gip, VkInstance instance,
+    VkPhysicalDevice physical, uint32_t family, VkSurfaceKHR surface, struct wl_display *display) {
+    PFN_vkGetPhysicalDeviceWaylandPresentationSupportKHR support = (PFN_vkGetPhysicalDeviceWaylandPresentationSupportKHR)gip(instance, "vkGetPhysicalDeviceWaylandPresentationSupportKHR");
+    PFN_vkGetPhysicalDeviceSurfacePresentModesKHR modes = (PFN_vkGetPhysicalDeviceSurfacePresentModesKHR)gip(instance, "vkGetPhysicalDeviceSurfacePresentModesKHR");
+    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR capabilities = (PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)gip(instance, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+    VkSurfaceCapabilitiesKHR caps;
+    if (!capabilities || capabilities(physical, surface, &caps) != VK_SUCCESS ||
+        caps.currentExtent.width != UINT32_MAX || caps.currentExtent.height != UINT32_MAX) return 2;
+    uint32_t count = 0;
+    if (!support || !modes || !support(physical, family, display) || modes(physical, surface, &count, NULL) != VK_SUCCESS) return 2;
+    VkPresentModeKHR *values = calloc(count, sizeof(*values));
+    if (!values) return 2;
+    VkResult result = modes(physical, surface, &count, values);
+    int fifo = 0;
+    for (uint32_t i = 0; result == VK_SUCCESS && i < count; ++i) fifo |= values[i] == VK_PRESENT_MODE_FIFO_KHR;
+    free(values);
+    printf("WSI_SURFACE_PRESENT support=1 extent_app_selected=1 fifo=%d\n", fifo);
+    return fifo ? 0 : 2;
 }

@@ -84,8 +84,10 @@ static int version(void) {
 }
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "version")) return version();
-    if (argc != 2 || (strcmp(argv[1], "control") && strcmp(argv[1], "present") && strcmp(argv[1], "missing-protocol") && strcmp(argv[1], "acquire-timeout"))) return 2;
-    setvbuf(stdout, NULL, _IONBF, 0); alarm(15);
+    if (argc != 2 || (strcmp(argv[1], "control") && strcmp(argv[1], "present") && strcmp(argv[1], "missing-protocol") && strcmp(argv[1], "acquire-timeout") && strcmp(argv[1], "resize"))) return 2;
+    setvbuf(stdout, NULL, _IONBF, 0); alarm(22);
+    printf("X11_CLIENT pid=%ld\n", (long)getpid());
+    if (!strcmp(argv[1], "resize")) setenv("HYBRIS_X11_RESIZE", "1", 1);
     if (!strcmp(argv[1], "acquire-timeout")) setenv("HYBRIS_X11_ACQUIRE_TIMEOUT", "1", 1);
     if (!strcmp(argv[1], "missing-protocol")) setenv("HYBRIS_X11_EXPECT_MISSING", "1", 1);
     Display *display = NULL;

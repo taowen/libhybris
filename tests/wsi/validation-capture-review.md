@@ -100,7 +100,7 @@ rejected before launching or stopping a compositor:
   `20260907T230941-f6bc1afd`. Their raw captures remain saved. The pinned tool's
   `framework/graphics/vulkan_device_util.h` extension set confirms the omission;
   no tool-source or ICD capability change was made to conceal this error.
-- `--swapchain-review` with `--capture-tools`: the boundary workload deliberately
+- `--case swapchain-review` with `--capture-tools`: the boundary workload deliberately
   fails one application allocation to retire the old swapchain. Replay does not
   reproduce that callback failure; its later successful replacement instead
   returns `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`, then the tool exits 139. Failures

@@ -57,7 +57,9 @@ int main(int argc, char **argv) {
         close(log);
         const char *xkb = getenv("XKB_CONFIG_ROOT");
         if (!xkb) _exit(126);
-        execl("./x11/Xwayland", "Xwayland", display_name, "-listenfd", fd,
+        const char *server_path = getenv("HYBRIS_X11_SERVER");
+        if (!server_path) _exit(126);
+        execl(server_path, "Xwayland", display_name, "-listenfd", fd,
               "-displayfd", notify, "-nolisten", "tcp", "-nolisten", "unix",
               "-nolock", "-ac", "-geometry", "320x240", "-xkbdir", xkb, (char *)NULL);
         _exit(127);

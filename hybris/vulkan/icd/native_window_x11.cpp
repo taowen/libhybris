@@ -42,7 +42,7 @@ struct Owner {
     uint32_t eid, serial, width, height;
     xcb_special_event_t *events;
     Buffer *pool[8];
-    unsigned count;
+    unsigned count, pool_width, pool_height;
     bool trace;
     unsigned trace_count;
     Pending *pending;
@@ -101,6 +101,7 @@ static int configure(hybris_icd_window *base, unsigned width, unsigned height,
     if (!width || !height || width > INT_MAX || height > INT_MAX || count < 2 || count > 8) return -EINVAL;
     Owner *o = get(base); pthread_mutex_lock(&o->mutex);
     if (o->count) { pthread_mutex_unlock(&o->mutex); return -EBUSY; }
+    o->pool_width = width; o->pool_height = height;
     int error = 0;
     for (unsigned i = 0; i < count; ++i) {
         Buffer *b = new (std::nothrow) Buffer;
@@ -125,6 +126,7 @@ static int dequeue(hybris_icd_window *base, int64_t timeout, ANativeWindowBuffer
     for (;;) {
         drain(o);
         if (xcb_connection_has_error(o->connection)) { error = -EPIPE; break; }
+        if ((o->width && o->width != o->pool_width) || (o->height && o->height != o->pool_height)) { error = -ESTALE; break; }
         for (unsigned i = 0; i < o->count; ++i) {
             if (!o->pool[i]->held) {
                 o->pool[i]->held = true; *buffer = o->pool[i];

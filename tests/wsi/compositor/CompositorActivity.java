@@ -40,6 +40,16 @@ public final class CompositorActivity extends Activity implements SurfaceHolder.
         new Thread(new Runnable() { public void run() {
             try {
                 copyAssets("xkb", new File(getFilesDir(), "xkb"));
+                File x11 = new File(getFilesDir(), "x11");
+                x11.mkdirs();
+                // The server bundle is flat. Remove stale dependencies after
+                // an APK update before extracting this APK's complete set.
+                File[] previous = x11.listFiles();
+                if (previous != null) for (File file : previous)
+                    if (!file.delete()) throw new Exception("cannot remove old Xwayland file");
+                copyAssets("x11", x11);
+                if (!new File(x11, "Xwayland").setExecutable(true, true))
+                    throw new Exception("cannot make Xwayland executable");
                 File runtime = new File(getFilesDir(), "runtime");
                 runtime.mkdirs();
                 int result = CompositorActivity.run(holder.getSurface(), width, height, runtime.getAbsolutePath(),

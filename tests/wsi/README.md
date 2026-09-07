@@ -1,405 +1,105 @@
-# Wayland window probe
+# Window integration tests
 
-This optional standalone probe exercises either the replacement Vulkan frontend
-or, with `--icd-hal`, the standard-loader ICD against a running Android compositor exposing `wl_compositor`, `xdg_wm_base`
-and `android_wlegl`. The default
-endpoint is the existing debuggable `io.taowen.ardesk` app's `files/runtime/wayland-0`.
-Start that app and its desktop before running; the runner does not install,
-restart or update it. A stale socket is not evidence that a compositor is running.
+One entry point runs Wayland, XCB and Xlib against the disposable
+`io.taowen.hybriswsitest` APK. The APK contains **anlabwc, TAWC-DRI Xwayland,
+their Android libraries and xkb assets**. The runner starts that APK, deploys
+the selected glibc probe and libhybris, checks the results, then stops it.
+It never launches the Ardesk desktop or accepts an arbitrary application UID.
+
+## Build and install
+
+Build the client libraries and both platform probes, then build the test APK:
 
 ```sh
 tools/build-aarch64.sh
 tests/wsi/build.sh
-python3 tests/wsi/run.py --serial 10AFA31610002QH
+python3 tests/x11/build.py \
+  --xwayland-source /path/to/ardesk/third_party/xwayland \
+  --ndk-prefix /path/to/ardesk/build/ndk-prefix
+python3 tests/wsi/compositor/build.py \
+  --backend-apk /path/to/ardesk-debug.apk \
+  --backend-library /path/to/libanlabwc.so \
+  --x11-build tests/x11/build
+/path/to/ardesk/tools/install-apk.sh --serial SERIAL \
+  tests/wsi/build/compositor/hybris-wsi-test.apk
 ```
 
-The build uses the repository's pinned cross-builder and its xdg-shell protocol;
-the manifest records generated sources, compiler/package versions, script hash
-and binary hash/build-id. Host dependencies are adb, Python 3 and Pillow with
-LittleCMS support. The compositor app must permit `run-as`. `--package` and
-`--wayland` select another existing endpoint; `--build`, `--probe` and `--out`
-select local build/results directories. This is not an APK installer. For existing native-window trace statements,
-build with `tools/build-aarch64.sh --debug --incremental --out tests/wsi/build/debug` and run
-with `--build tests/wsi/build/debug --trace`. This enables the upstream debug
-and trace configure options; runtime tracing alone cannot enable macros omitted
-from a release build. `--trace` uses warning-level ordinary logs plus compiled
-tracepoints, including producer disconnect counts and retired-buffer releases;
-it does not turn on verbose per-hook argument logging. The selected flags and ELF hashes remain in the manifest.
+`--backend-library` is optional: otherwise libanlabwc is taken from the supplied
+APK. This APK is a build input for native dependencies/assets; it is not run or
+installed by the test. The builder records its hash, selected backend hash,
+transitive libraries and the included Xwayland build manifest. See
+[APK build details](compositor/README.md) and [Xwayland inputs/protocol](../x11/README.md).
 
-The runner stages a separate directory under the app's files, validates the
-hybris/runtime and probe manifests, and retains the exact command, phone
-fingerprint, compositor APK hashes, mapped Android library hashes and staged
-ELFs. It removes only its own remote directory. The inferior has a 45-second
-watchdog; a 65-second host timeout targets its recorded PID only after checking
-that PID's current working directory still belongs to this run. Other desktop
-processes are left running.
+Rebuild the test APK only when changing its native server bundle or host.
+Rebuilding libhybris or a glibc probe does not require reinstalling the APK.
+Host tools include adb, Python 3, Pillow/LittleCMS, the pinned cross-builder,
+Meson/Ninja, patchelf and Android SDK/NDK.
 
-Before rendering, a separate surface lifecycle helper warms one surface and
-then starts four threads. Each thread creates four independent wl_surface /
-VkSurfaceKHR pairs, waits until all 16 are live, and destroys its pairs in reverse
-order. Eight cycles exercise 128 pairs. Thread-start failure releases already
-started workers instead of stranding the barrier. The helper roundtrips the
-shared display and requires the client process FD count to return to its warmed
-baseline. These extra surfaces have no xdg roles or swapchains: this checks
-surface metadata lifetime, not multiple displayed windows or GPU buffer release.
-
-The same window renders at 320x240, then 448x288, then 256x192. Each size
-submits eight alternating green/red frames using FIFO presentation. Rebuilds
-pass the preceding swapchain as oldSwapchain and destroy it after successful
-replacement. The probe changes xdg window geometry and checks capabilities
-for each size; this is client-initiated resizing, not a compositor drag test. Each acquired swapchain image is cleared, copied to coherent
-host memory, checked pixel by pixel, then presented. Acquire semaphores are
-reused only after their consuming submit completes; present-wait semaphores are
-allocated per swapchain image. Each frame waits for a compositor callback.
-QueueWaitIdle is used at rebuild and teardown boundaries. The first/final
-frames of each size are deliberately held for screenshots; this is not a frame-rate or nonblocking-presentation test.
-
-The result directory includes:
-
-- `probe.log`: API results, chosen format/color space, image indices and frame callbacks.
-- `image-{epoch}-{frame}.rgba` (epochs 0/1/2, frames 0/7): tightly packed RGBA8 readback, normalized from BGRA when necessary.
-- `screen-{epoch}-{frame}.png`: actual Android screenshots, with their color profiles preserved.
-- `screen-evidence.json`: verifies all six complete readbacks, transforms the expected sRGB primaries
-  into each screenshot's embedded ICC profile, and checks that each size occupies its complete expected screen rectangle and
-  changes from the expected green to red. It records profile/checker/image hashes and library versions.
-  Unknown profiles, scaling, movement within a size pair, or incomplete matches fail.
-  Expected dimensions are fixed independently of the probe log.
-- `device.json`, `maps-*.txt`, `android-library-hashes.json`, `stage/`: provenance and loaded-library evidence.
-- `result.json`: PASS, UNSUPPORTED, FAIL, CRASH or TIMEOUT. PASS requires screen evidence as well as probe exit 0.
-
-On X300 the screenshots carry a Display P3 profile: expected encoded green is
-(117,251,76), red (234,51,35). Comparing those bytes directly to sRGB primaries
-would misclassify this display. The comparison uses the actual embedded profile,
-not these hard-coded values. A frame callback alone is not proof of release or
-correct displayed pixels.
-
-This gate does not cover compositor-initiated resize/minimize/out-of-date,
-multiple windows, full surface generation tracking, release-fence retirement,
-swapchain FD leak accounting,
-scaled outputs, arbitrary image contents, standard-loader WSI, validation-layer
-chaining on this frontend, or capture/replay of a presented frame. A compositor
-that lacks `android_wlegl` now exercises eight surface creation attempts. Each
-must return `VK_ERROR_UNKNOWN`, followed by normal instance/Wayland teardown;
-the log records `WSI_MISSING_WLEGL rejection=PASS`. The overall window result
-remains UNSUPPORTED. This verifies graceful rejection, not rendering support.
-
-
-## Recorded device runs (2026-09-07)
-
-X300 initial `20260907T075124-f24a7774` advertised android_wlegl version 2,
-but Vulkan platform loading aborted because libwayland-egl.so.1 was missing
-from the staged runtime. The build now collects the installed ELF dependency
-closure instead of a headless-only list. It stages 17 runtime ELFs, including
-that library; unused libbsd/libmd are omitted. The interpreter is selected from
-the same cross-sysroot search order as libc, and its new hash is in the manifest.
-
-Final X300 `20260907T080229-0e2a8fd6` is PASS: eight presents/readbacks/callbacks,
-a complete 76,800-pixel green-to-red display transition at screen bounds
-[1219,501,1539,741], and 70 mapped Android library hashes collected successfully.
-This validates the fixed window against the recorded APK, not all X300 firmware
-or compositor versions. Redmi `20260907T080319-6c3d459b` reports UNSUPPORTED:
-its running compositor advertises wl_compositor/xdg_wm_base but no android_wlegl.
-No APK was installed or replaced for these runs.
-
-The new runtime was also used for the full headless baseline: X300
-`20260907T080304-6c3bd550` has 135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi
-`20260907T080125-f9ffdff6` has 98 PASS / 47 UNSUPPORTED / 1 CRASH.
-The remaining crash is native-groups on each phone. Existing validation,
-SyncVal and both capture/replay gates pass; X300 ICD cases use the scoped Mali
-option. Those captures remain headless and do not capture this Wayland window.
-
-
-Surface concurrency checkpoint (2026-09-07): the frontend surface map now locks
-lookup/insertion/removal, and destruction atomically takes its record before
-calling the backend. It does not hold this lock around driver/Wayland operations.
-Calls involving the same surface still follow the
-[Vulkan external synchronization requirements](https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroySurfaceKHR.html).
-
-X300 `20260907T081226-add42893` passes four workers × eight cycles × four surfaces,
-with 16 surfaces live at each barrier, client FD count 7 before and 7 after,
-and the subsequent eight-frame window/readback/screenshot gate. The old-library
-comparison `20260907T081105-efeb0f17` also passes: this is a code-identified map
-race fix with exercised regression coverage, not a dynamically reproduced race.
-The 67 exported Wayland platform symbol names are unchanged. Redmi
-`20260907T081226-1182df69` remains UNSUPPORTED because its compositor does not
-advertise android_wlegl. No compositor-side FD count, heap leak measurement,
-rendering on concurrent surfaces, resize or release-fence proof is provided by
-the extra lifecycle workload; its additional surfaces have no swapchains.
-
-Full headless runs using the rebuilt library: X300 `20260907T081302-cd38e27b`
-135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi `20260907T081302-0f50a7a0`
-98 PASS / 47 UNSUPPORTED / 1 CRASH. Native-groups remains the sole crash;
-validation, SyncVal and both capture/replay workloads pass.
-
-
-Discovery failure checkpoint (2026-09-07): old platform run
-`20260907T081905-2e8ed7fc` on Redmi aborts with exit 134 when its compositor
-lacks android_wlegl. With the final platform, `20260907T082144-82103b66`
-returns VK_ERROR_UNKNOWN (-13) on all eight attempts and tears down normally.
-The rejection check passes; the overall window remains UNSUPPORTED.
-X300 `20260907T082144-8ee218a3` passes the 128-surface concurrency workload
-(client FD 7→7), eight-frame readback and complete 76,800-pixel screen gate.
-Platform exported symbol names remain identical (67). Allocation errors,
-disconnected displays and backend creation errors were not fault-injected.
-
-Full baseline on the final build: X300 `20260907T082214-6907c912` has
-135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi `20260907T082214-648d0d5c` has
-98 PASS / 47 UNSUPPORTED / 1 CRASH. Both remaining crashes are native-groups.
-Validation, SyncVal and both headless capture/replay gates pass. X300 ICD
-continues to use the scoped Mali option.
-
-
-Resize / reconnect checkpoint (2026-09-07): old frontend
-`20260907T082626-c5caa97e` times out (142) during the second CreateSwapchainKHR.
-Debug/trace build `20260907T083148-f82d7506` shows native-window disconnect
-was a no-op: the new swapchain dequeues three buffers, then waits for the fourth
-which the compositor still displays. Vulkan's native window now disconnects
-the producer pool. Displayed buffers stay outside the new pool until their
-wl_buffer.release; their release does not add a free slot to the new pool.
-Other platform implementations retain their default disconnect behavior.
-This adds a C++ virtual hook and changes a private buffer helper signature,
-so rebuild the complete platform bundle; do not mix old/new platform libraries.
-The public Vulkan export set stays at 643 symbols.
-
-Final release-build X300 `20260907T084008-36e56a41` passes 24 frames and screen
-rectangles [1219,501,1539,741], [1219,501,1667,789], [1219,501,1475,693].
-That is 76,800 + 129,024 + 49,152 = 254,976 matched pixels across three
-green-to-red pairs, plus all six full readbacks. The checker rejects a copied
-320x240 pair substituted for the larger epoch even with correct larger readback.
-Debug build `20260907T084042-7f9dc528` also passes; each reconnect retains one
-displayed buffer, followed by its retired-buffer release after new presentation.
-This proves the observed Wayland release sequence, not GPU release-fence
-retirement, arbitrary in-flight recreation, resize failure recovery or FD
-leak freedom for swapchains. Redmi `20260907T083436-db561ef3` passes eight
-missing-protocol rejections; its overall window result remains UNSUPPORTED.
-
-The screen gate initially failed after many separate probe processes, including
-on the old frontend. The checked compositor source has an eight-slot GPU binding table keyed by
-client PID and does not reclaim exited clients. The observed failure and
-restart recovery are consistent with exhaustion; the installed APK was not
-instrumented to measure its exact live slot count. The API/readback
-continued to pass while the displayed content became transparent. After checking
-that the test session held only its startup xterm, the X300 test app was restarted
-at 08:39; both final runs above use that fresh session. No APK was installed or
-modified. This dependency leak remains open: the runner does not restart the
-app automatically and must not hide exhausted-compositor failures as PASS.
-A process-isolated test compositor and bounded cross-process diagnostics are
-still needed for repeated development. The trace runner now avoids the verbose
-per-hook debug logs recorded in that initial diagnosis.
-
-Full release-build baseline: X300 `20260907T084136-0606339b` has
-135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi `20260907T084044-c173adc0` has
-98 PASS / 47 UNSUPPORTED / 1 CRASH. Both crashes remain native-groups.
-Validation, SyncVal and both headless capture/replay gates pass; X300 ICD
-still uses the scoped Mali option. No real-window capture or standard ICD
-WSI coverage is inferred from those headless checks.
-
-## Automatic failure evidence
-
-The runner starts a PID-filtered compositor log reader before launching the
-client. It keeps at most 512 KiB in a rolling memory buffer, records bytes seen
-and truncation, then saves `compositor.log` and stops its own adb reader. The
-initial one-line logcat tail may predate the run; use timestamps, not mere log
-presence, to associate an event. A compositor restart is not followed to a new
-PID. Log access failures are recorded in `diagnostics.json`.
-
-After ten seconds without client output, once per run, the runner snapshots the
-owned client (PID plus working-directory check) and the compositor. It records
-status, mappings, FDs and client thread wait channels, with each text snapshot
-limited to 256 KiB and each collection command timed out after five seconds.
-`diagnostic-screen.png` is captured before timeout termination. An unsuccessful
-client exit also attempts a snapshot, which may report that the client has
-already gone. `failure-screen.png` records the screen for failed final results,
-including screenshot-checker failures. These diagnostic screenshots do not
-replace the six image acceptance checks. This is read-only process evidence,
-not a stack unwind, GPU trace, release-fence proof or exact compositor slot count.
-
-`--timeout SECONDS` adjusts the host watchdog (5–300, default 65); the existing
-45-second client alarm remains. Collection can add bounded command time beyond
-the requested deadline. Failure to collect a diagnostic is recorded separately
-and does not turn it into evidence of successful collection. PID-filtered logs
-and snapshots may contain other activity within that compositor process.
-
-Final old-library check `20260907T094746-e0dc168e` on X300 used `--timeout 25`
-and reproduced the known resize stall: TIMEOUT 124, client main thread in
-`do_sys_poll`, 70,618 bytes of client snapshot, 155,310 bytes of compositor
-snapshot, and 17,596 bytes of compositor log, without truncation. Both diagnostic
-screenshots were saved; the owned client was terminated and its directory
-removed. A prior host interruption `20260907T090508-6caffb44` was recorded as
-INTERRUPTED after confirming the client had exited; it is not a passing run.
-
-Final current-library X300 `20260907T094825-24bddd09` passes the three-size,
-24-frame and 254,976-pixel gate. Redmi `20260907T094825-0f077796` passes eight
-missing-protocol rejections and remains window-UNSUPPORTED. Both log reader
-processes exited. The unchanged library bundle was rebuilt incrementally in
-9.885 seconds; this batch changes host diagnostics only and does not claim a
-new full headless baseline. The test desktops had stopped during the interrupted
-session and were started again; no APK was installed. Standalone compositor
-isolation still requires a separate Android Surface/process lifecycle and is
-not implemented by this collector.
-
-A separate [disposable compositor APK](compositor/README.md) now provides the
-same fixed-window probe with its own package, process and Android Surface.
-Its wrapper restarts only that test package for each run, avoiding pollution
-of the Ardesk desktop's native compositor state. Backend binaries are imported
-from an explicitly selected APK and hashed; this does not fix the backend's
-long-lived binding-table reclamation gap.
-
-For client-exit retirement regression, build the latest probe and run
-`python3 tests/wsi/compositor/run.py --serial SERIAL --repeat 10`. The dedicated
-compositor remains alive while sequential probe processes exit and reconnect;
-all requested runs must pass, with unchanged compositor PID/start time. Each
-probe logs its PID, and the wrapper saves compositor FD snapshots between
-clients. See [the fixture](compositor/README.md) for failure evidence and scope.
-
-
-## Native-window ownership split (2026-09-07)
-
-`hybris/vulkan/platforms/wayland/window_owner.{h,cpp}` now owns registry
-discovery, its private queue/wrapper, android_wlegl and the native window.
-The internal C interface has no Vulkan types or loader callbacks; the frontend
-keeps only its VkSurfaceKHR-to-owner mapping and Android Vulkan translation.
-The standard ICD compiles the same factory, implements local Wayland
-surface create/destroy, and implements `VK_KHR_swapchain` by importing
-window buffers with `VK_ANDROID_native_buffer`. Presentation-support is true
-only when revision 8 or later of that HAL extension, a graphics queue and usable
-color-attachment formats are present. This is an experimental FIFO subset;
-see [swapchain review](swapchain-review.md) for supported boundaries and gaps.
-Acquire uses a timed native-window dequeue rather than the blocking
-ANativeWindow path. It advertises `VK_KHR_surface`/`VK_KHR_wayland_surface`
-itself and strips those names before HAL `vkCreateInstance`; `VK_KHR_swapchain`
-is advertised on the device and replaced with `VK_ANDROID_native_buffer` for
-the HAL. Standard-loader window validation and presented-frame capture are
-opt-in on the ICD path; they are not implied by a presentation PASS.
+## Run one selected check
 
 ```sh
-python3 tests/wsi/run.py --serial SERIAL \
+python3 tests/wsi/run.py --serial SERIAL --platform xcb --case resize \
   --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
-  --vulkan-loader /path/to/standard/libvulkan.so.1
+  --vulkan-loader /path/to/glibc/libvulkan.so.1 \
+  --validation-layer /path/to/libVkLayer_khronos_validation.so \
+  --validation-manifest /path/to/VkLayer_khronos_validation.json
 ```
 
-That ICD path stages `libhybris-vulkan-icd.so.0` and the standard loader,
-runs the same `probe-wayland` window/readback/screenshot gate, and records
-screen evidence. Missing `android_wlegl` still requires eight
-`VK_ERROR_UNKNOWN` rejections.
+Use `--platform xlib` or `--platform wayland`. For the tested Mali firmware use
+`vulkan.mali.so` and explicit `--icd-mali-loader-quirk`; its scope is documented
+in the ICD README. Omitting HAL/loader arguments selects the replacement
+libvulkan frontend for Wayland. XCB/Xlib Vulkan checks require the standard ICD.
 
-Windowed Khronos validation and GFXReconstruct capture are separate ICD-only
-options. They use the existing standard layer/tools, do not build a private
-layer chain, and do not rewrite dispatch headers:
-
-```sh
-python3 tests/wsi/compositor/run.py --serial 192.168.1.28:5555 \
-  --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
-  --vulkan-loader /path/to/standard/libvulkan.so.1 --swapchain-review \
-  --validation-layer tests/baseline/build/validation-build/install/lib/libVkLayer_khronos_validation.so \
-  --validation-manifest tests/baseline/build/validation-build/install/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
-python3 tests/wsi/compositor/run.py --serial 192.168.1.28:5555 \
-  --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
-  --vulkan-loader /path/to/standard/libvulkan.so.1 \
-  --capture-tools tests/baseline/build/gfxreconstruct/install
-```
-
-Validation enables `VK_LAYER_KHRONOS_validation` plus SyncVal through
-`CreateInstance` and a live debug-utils messenger; any ERROR, including instance
-destruction, fails the probe. The error count is safe for concurrent callbacks.
-Capture records the live window probe, then dumps the 24 `vkCmdCopyImageToBuffer`
-commands through `gfxrecon-replay --swapchain virtual` and compares the six
-saved readbacks. That is not a second present, and it does not implement
-swapchain image aliasing. The raw `.gfxr`, six compared replay binaries, tool
-commands, exit codes and timeout logs are retained in `capture/`. Tool timeouts
-clean up their own PID after checking its working directory.
-
-With the pinned tools, `--capture-tools` cannot be combined with either
-`--validation-layer` or `--swapchain-review`: the former exposes an injected
-extension dependency error; the latter cannot replay the deliberate allocation
-callback failure. Both combinations are rejected before device work. Validation
-and boundaries can be used together. Layered runs default to a 180-second host
-timeout; an explicit `--timeout` remains authoritative. The isolated wrapper
-also accepts `--probe` for a separately built probe. See
-[the validation/capture review](validation-capture-review.md) for negative
-controls, successful separate runs and retained failures.
-
-The frontend destroys the Android Vulkan surface before releasing the owner's
-native-window reference, then destroys the window before its protocol objects.
-Creation failures clean up the constructed discovery objects. A missing
-android_wlegl still maps to VK_ERROR_UNKNOWN in this frontend. The factory
-installs both registry listener callbacks and binds only the first matching
-global. This batch does not establish allocation-failure safety inside the
-existing WaylandNativeWindow constructor or connection-loss recovery.
-
-Actual clean aarch64 build (48.236 seconds) and independent WSI probe build
-passed. The built source snapshot matches all four changed build/source files.
-The factory object's undefined symbols contain no Vulkan entry points.
-The existing dedicated compositor runner passed on both vendor drivers:
-
-| Device | Isolated run / client run | Evidence |
+| Platform | Case | Evidence |
 | --- | --- | --- |
-| Adreno 29854870 | `20260907T204530-9fd97e0d` / `20260907T204531-878d0df4` | 128 surface pairs, 16 concurrent; warmed client FD count 13 → 13 |
-| Mali 10AFA31610002QH | `20260907T204530-1a387e69` / `20260907T204531-1d63c8f7` | 128 surface pairs, 16 concurrent; warmed client FD count 7 → 7 |
+| Wayland | `present` | 24 GPU readbacks, three sizes, six physical screenshots, surface lifetimes |
+| Wayland | `swapchain-review` | Present plus allocator, timeout, retirement, old images and multi-present boundaries |
+| XCB/Xlib | `present` | Eight GPU readbacks, two physical screenshots, TAWC-DRI release before reuse |
+| XCB/Xlib | `resize` | 24 readbacks, three sizes, six screenshots, acquire/present out-of-date, semaphore reuse and swapchain replacement |
+| XCB/Xlib | `acquire-timeout` | Zero/finite acquire timeout with unchanged index and unsignaled fence |
+| XCB/Xlib | `missing-protocol` | Support false and eight surface rejections; requires explicit `--server-binary /path/to/unextended/Xwayland` |
+| XCB/Xlib | `control` | XCB create/map/clear/GetImage environment check; no Vulkan or GPU claim |
 
-Each client passed 24 render/readback/present/frame-callback rounds at three
-sizes, all six screenshot comparisons, and normal teardown. Both isolated
-compositor identities stayed stable and their owned processes were absent after
-cleanup. Raw logs, staged ELF provenance and screenshot evidence remain under
-`tests/wsi/build/isolated/`. These historical runs were replacement-frontend regressions. They did not
-establish ICD swapchain/present or timeout behavior. Subsequent surface review
-is recorded below; current swapchain results are in
-[swapchain review](swapchain-review.md). Windowed Khronos validation and
-GFXReconstruct virtual-swapchain capture of the three-size copies now have
-OnePlus 8T and Mali evidence there; that dump is not a second present.
+`--repeat N` runs sequential clients under the same compositor identity and
+records compositor FD snapshots before/after each. It does not itself assert
+that all resource leaks are absent. `--build`, `--probe` and `--out` select
+local library/probe/result directories. `--timeout` bounds the host watchdog;
+X11 also has a 25-second native supervisor deadline.
 
+Validation requires both layer arguments and enables SyncVal. Capture uses
+`--platform wayland --case present --capture-tools /path/to/gfxreconstruct/install`
+in a separate invocation. The pinned capture tool cannot combine with VVL or
+the allocator-failure workload. Capture retains file identity, metadata,
+conversion and virtual-swapchain replay checks from the previous runner.
+`--trace` enables compiled Wayland tracepoints; build with
+`tools/build-aarch64.sh --debug --incremental` first. X11 protocol serials are
+always collected with a per-owner bound.
 
-## ICD surface review (2026-09-07)
+## Evidence and implementation
 
-The surface-only implementation is preserved in `75953aa`. Its review in
-`1b8f9dc` removed the assumption that a graphics queue can present: that revision
-had no swapchain engine, so both support queries reported false. The later
-swapchain implementation and its corrections are recorded separately. Hard-coded RGBA/BGRA formats,
-16384 limits, usages and FIFO success were removed. The required query entry
-points remain, but return VK_ERROR_UNKNOWN for unsupported queries. The
-[capability query contract](https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceSurfaceCapabilitiesKHR.html)
-requires surface support first. The probe therefore checks lifecycle and false
-presentation support; it does not interpret fabricated capabilities as coverage.
-It also requires a disabled instance-extension entry point to resolve to NULL,
-without invoking it in an invalid extension configuration. Instance preparation
-no longer silently marks KHR_surface enabled when only the Wayland name appears.
+Every invocation writes `build/results/<run>/result.json` plus `isolation.json`.
+Each client directory contains its result, input manifests, logs, mappings,
+Android library hashes, readbacks and screenshots. The runner records APK identity; X11 runs also verify the actual extracted
+Xwayland/dependency hashes. It holds a per-device lock, checks
+PID plus process start time, and reports cleanup failures. The default Xwayland
+is executed from APK assets extracted into its private directory. An explicit
+`--server-binary` override is hashed; its dependencies still come from the APK.
+There is no implicit fallback to a host-built server.
 
-The runner queries the staged adapter before writing `driver.json`, rather than
-hard-coding API 1.3. It records that query's command, log and version, and hashes
-the staged standard loader. `--icd-mali-loader-quirk` explicitly enables the
-existing build-id-scoped MMUD workaround; the isolated compositor wrapper now
-forwards the ICD options. Results distinguish `icd-surface-lifecycle` from
-`frontend-presentation`. For example:
+Both probes keep screenshot frames still for two seconds. The shared collector
+waits 0.6 seconds after the marker before sampling the physical screen. It
+still requires the complete expected color transition and dimensions; this is
+not proof of presentation completion timing or a performance measurement.
 
-```sh
-python3 tests/wsi/compositor/run.py --serial 10AFA31610002QH \
-  --icd-hal /vendor/lib64/hw/vulkan.mali.so --icd-mali-loader-quirk \
-  --vulkan-loader /path/to/standard/libvulkan.so.1
-```
+`run.py` owns argument validation and orchestration; `host.py` owns device
+lifecycle, transport and screenshots. `wayland.py` and `x11.py` contain platform
+staging and evidence checks, with no standalone CLI. The obsolete compositor
+wrapper, X11 runner and surface-only binary have been removed. Its extension
+and FIFO checks now execute in the actual Wayland presentation probe.
 
-Actual aarch64 library build (incremental, 16.41 seconds), independent probe
-build and Python syntax checks passed. Final source bytes match their build
-snapshots. Final device results under `build/isolated/`:
-
-| Path / device | Isolated run / client run | Result |
-| --- | --- | --- |
-| Standard ICD / Adreno | `20260907T211953-81a53337` / `20260907T211954-2942050b` | Surface lifecycle PASS, presentation unsupported; queried API 1.1.128 |
-| Standard ICD / Mali | `20260907T211953-f2055694` / `20260907T211954-c9c34b7a` | Surface lifecycle PASS, presentation unsupported; queried API 1.3.305 |
-| Frontend / Adreno | `20260907T211808-60e19b23` / `20260907T211809-79fc403a` | Presentation and screenshot PASS |
-| Frontend / Mali | `20260907T211808-11e6c4cd` / `20260907T211809-c9fb93a4` | Presentation and screenshot PASS |
-
-Each run passed 128 surface pairs with 16 concurrently live, with warmed client
-FD counts unchanged (Adreno 13, Mali 7). All four compositor identities stayed
-stable and owned processes were absent after cleanup. ICD mappings contain the
-staged standard loader and adapter, without Android libvulkan. Each frontend
-run passed 24 frames at three sizes and six screenshot comparisons. Initial
-ICD runs before the manifest-version correction also passed lifecycle checks
-(`20260907T211740-24ecd4d9`, `20260907T211741-6391e50c`); the final runs above
-supersede them. No standard-ICD rendering, windowed validation/capture, allocator
-failure sweep, missing-wlegl device case or non-Wayland build is claimed here.
-
-
-The current ICD presentation path and `--swapchain-review` boundary probe are
-documented in [swapchain-review.md](swapchain-review.md). Its results include
-an actual OnePlus 8T / Mali comparison; the earlier Redmi records above remain
-historical evidence for their own revisions.
+[Historical evidence](history.md), [swapchain review](swapchain-review.md),
+[validation/capture review](validation-capture-review.md) and
+[current consolidation results](integration-review.md) preserve the distinction
+between old and current test paths. Rootless/multiwindow X11, minimize,
+disconnect recovery, long-running FD accounting, X11 capture and CTS remain
+open. Headless baseline and desktop-GL application tests are separate suites.

@@ -61,19 +61,19 @@ and [Android acquire/release protocol](https://source.android.com/docs/core/grap
 
 ## Independent probe
 
-The existing presentation probe now has an optional `--swapchain-review` runner
+The existing presentation probe now has an optional `--case swapchain-review` runner
 mode. It requests Vulkan 1.1 and runs a fixed GPU boundary workload before the
 normal three-size window gate. This is not a unit-test framework.
 
 ```sh
 tools/build-aarch64.sh --incremental
 tests/wsi/build.sh
-python3 tests/wsi/compositor/run.py --serial 192.168.1.28:5555 \
+python3 tests/wsi/run.py --serial 192.168.1.28:5555 \
   --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
-  --vulkan-loader /path/to/standard/libvulkan.so.1 --swapchain-review
-python3 tests/wsi/compositor/run.py --serial 10AFA31610002QH \
+  --vulkan-loader /path/to/standard/libvulkan.so.1 --case swapchain-review
+python3 tests/wsi/run.py --serial 10AFA31610002QH \
   --icd-hal /vendor/lib64/hw/vulkan.mali.so --icd-mali-loader-quirk \
-  --vulkan-loader /path/to/standard/libvulkan.so.1 --swapchain-review
+  --vulkan-loader /path/to/standard/libvulkan.so.1 --case swapchain-review
 ```
 
 The boundary workload acquires all images, checks NOT_READY at zero timeout and
@@ -141,7 +141,7 @@ runs remain in the result archive but do not supersede the final fan-out runs.
 The existing window probe, not a private layer chain, is the validation and
 capture client. Khronos VVL 1.4.309.0 plus SyncVal covers create, render,
 client-initiated resize, old-swapchain retirement and destroy, including the
-`--swapchain-review` boundary workload. The first validation runs failed with
+`--case swapchain-review` boundary workload. The first validation runs failed with
 12 probe-side acquire-wait / SyncVal errors; after waiting acquire at
 `VK_PIPELINE_STAGE_ALL_COMMANDS_BIT` and giving the review presents dedicated
 fences, both devices reported `WSI_VALIDATION errors=0`.
