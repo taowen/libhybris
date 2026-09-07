@@ -151,3 +151,60 @@ and this directory's build pins their final revision. Unaligned access beyond
 the specified layout, indexed/base-instance/indirect draws, packed value
 boundaries, all compatibility fixed-function paths, Zink validation and Blender
 remain unverified. No API version override is used.
+
+## GLX frontend and Blender startup (2026-09-07)
+
+The build now includes Mesa's X11/DRI GLX frontend and stages `libGL.so.1`,
+its X11 dependencies and the installed DRI loader stub. The same stub is staged
+as `swrast_dri.so` for Mesa's drisw frontend; `GALLIUM_DRIVER=zink` still selects
+GPU rendering. `LIBGL_KOPPER_DISABLE=true` permits X11 transport without Vulkan
+WSI or DRI3. This is a CPU window transport, not llvmpipe rendering. Do not set
+`LIBGL_ALWAYS_SOFTWARE`: it requests a CPU Vulkan device. The GLX runner also
+omits the EGL path's `MESA_LOADER_DRIVER_OVERRIDE=zink`, which would require DRI3
+on the test X server. Runtime manifest hashes now include the DRI subdirectory.
+
+An independent host Xvfb was used, with only its Unix socket exposed to the
+phone through an ADB reverse (no changes to the running Ardesk desktop):
+
+```sh
+Xvfb :181 -screen 0 960x640x24 -nolisten tcp -ac -noreset
+# In another terminal; use an unused display/port and remove this reverse afterward.
+adb -s 10AFA31610002QH reverse tcp:6181 localfilesystem:/tmp/.X11-unix/X181
+python3 tests/desktop-gl/run.py --serial 10AFA31610002QH \
+  --hal /vendor/lib64/hw/vulkan.mali.so --api-version 1.3.305 \
+  --mali-loader-quirk --profile core33 --display 127.0.0.1:181
+adb -s 10AFA31610002QH reverse --remove tcp:6181
+```
+
+Final GLX runs `20260907T111445-3d509593` (core 3.3) and
+`20260907T111446-436745c5` (compatibility 3.2) both pass. The GLX context code
+is separate from the shared draw checks. Successful runs
+require the full image and all twelve packed vertex cases, plus mapped staged
+libGL, Gallium, standard Vulkan loader, hybris ICD and vendor HAL. These are
+pbuffer tests, not validation of swaps, resize or visible application rendering.
+The existing surfaceless EGL core-3.3 regression also passed in
+`20260907T111349-36d45a8a` after the shared-draw refactor.
+
+The actual installed Blender 4.3.2 was additionally launched under the Ardesk
+app UID using its rootfs dependencies, the newly built GLX runtime and a fresh
+HOME/config directory. It displayed the unsupported-platform dialog identifying
+Mesa/Zink and Mali, then logged:
+
+```text
+Warning: Unsupported platform as it supports max 0 SSBO binding locations
+```
+
+Local evidence is in `build/blender/run-67256c7b/` (`command.txt`, `blender.log`,
+`platform-unsupported.png`, staged libraries). The attempted Python draw check
+never ran and produced no result. This is a failed application startup, not a
+Blender rendering pass or a reproduction of the earlier widget corruption.
+The executable reports 4.3.2; the local Blender source is only explanatory,
+not proof that the installed binary was built from that exact revision.
+
+Actual GL queries report SSBO limits vertex=0, fragment=16, compute=16 with no
+GL error. Mesa's `zink_screen.c` suppresses vertex-stage shader buffers when
+`vertexPipelineStoresAndAtomics` is false, matching the previously recorded Mali
+Vulkan capability. Blender's `gl_backend.cc` requires a minimum of 12 across
+these three stages. Correct vertex SSBO support/emulation remains necessary;
+no feature or GL version was overridden to bypass the check. Redmi GLX, Zink
+validation, full GL conformance and useful Blender rendering remain unverified.

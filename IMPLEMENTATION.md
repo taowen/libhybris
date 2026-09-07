@@ -748,3 +748,12 @@ EXT-name-only diagnosis: the generator already handled KHR names, but the
 property sType was wrong. GL 4.4 is reported by Mesa, not certified by these
 small workloads. Redmi still fails EGL initialization. See desktop-gl README
 for the pre-fix divisor-2 failure and final evidence; Blender remains open.
+
+The desktop GL build now includes Mesa GLX and its staged X11/DRI dependencies.
+Mali core-3.3 and compatibility-3.2 GLX pbuffer draws pass the same complete
+pixel/packed-input checks as EGL. The real installed Blender 4.3.2 reaches a
+GLX/Mali unsupported-platform dialog but fails startup: actual vertex SSBO
+limit is 0, while fragment/compute limits are 16 and Blender requires at least
+12 in every stage. This is a concrete remaining capability gap, not application
+acceptance. See tests/desktop-gl/README.md for transport settings, artifacts and
+scope; neither Vulkan WSI nor visible Blender rendering is proved by GLX probes.

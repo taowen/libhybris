@@ -14,16 +14,18 @@ build=/work/third_party/libhybris/tests/desktop-gl/build
 if [ ! -f "$build/mesa/build.ninja" ]; then
 meson setup "$build/mesa" /work/third_party/mesa --cross-file /work/tools/build/mesa-aarch64.ini \
  --prefix=/usr --libdir=lib --buildtype=release -Dauto_features=disabled \
- -Dgallium-drivers=zink -Dvulkan-drivers= -Dplatforms= -Degl-native-platform=surfaceless \
- -Degl=enabled -Dgles1=disabled -Dgles2=enabled -Dopengl=true -Dglx=disabled -Dgbm=disabled \
+ -Dgallium-drivers=zink -Dvulkan-drivers= -Dplatforms=x11 -Degl-native-platform=surfaceless \
+ -Degl=enabled -Dgles1=disabled -Dgles2=enabled -Dopengl=true -Dglx=dri -Dgbm=disabled \
  -Dllvm=disabled -Dzstd=disabled -Dshader-cache=false -Dxmlconfig=disabled -Dexpat=disabled \
  -Dzlib=enabled -Dbuild-tests=false -Dtools= -Dvideo-codecs=
+else
+meson configure "$build/mesa" -Dplatforms=x11 -Dglx=dri
 fi
 ninja -C "$build/mesa" -j12
 rm -rf "$build/install" "$build/runtime"
 DESTDIR="$build/install" ninja -C "$build/mesa" install
 python3 /work/third_party/libhybris/tests/desktop-gl/stage.py
-aarch64-linux-gnu-gcc -O2 -Wall -Wextra /work/third_party/libhybris/tests/desktop-gl/probe.c /work/third_party/libhybris/tests/desktop-gl/packed_draw.c -ldl -o "$build/probe"
+aarch64-linux-gnu-gcc -O2 -Wall -Wextra /work/third_party/libhybris/tests/desktop-gl/probe.c /work/third_party/libhybris/tests/desktop-gl/packed_draw.c /work/third_party/libhybris/tests/desktop-gl/glx_context.c -lX11 -ldl -o "$build/probe"
 aarch64-linux-gnu-gcc --version > "$build/compiler.txt"
 '
 python3 - "$out" "$image_id" "$mesa_commit" <<'PY'
@@ -33,6 +35,6 @@ out=Path(sys.argv[1])
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 (out/'manifest.json').write_text(json.dumps({'builder_id':sys.argv[2],'mesa_commit':sys.argv[3],
  'compiler':(out/'compiler.txt').read_text(),'probe_sha256':sha(out/'probe'),
- 'runtime':{p.name:sha(p) for p in (out/'runtime').iterdir()},
+ 'runtime':{str(p.relative_to(out/'runtime')):sha(p) for p in (out/'runtime').rglob('*') if p.is_file()},
  'sources':{p.name:sha(p) for p in out.parent.iterdir() if p.is_file()}},indent=2))
 PY

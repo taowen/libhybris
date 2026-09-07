@@ -17,6 +17,8 @@
   if (!name)                                                                   \
   return 2
 int packed_draw(PFNEGLGETPROCADDRESSPROC lookup);
+static int desktop_draw(PFNEGLGETPROCADDRESSPROC p_eglGetProcAddress);
+int glx_probe(const char *profile, int (*draw)(PFNEGLGETPROCADDRESSPROC));
 static void maps(void) {
   FILE *in = fopen("/proc/self/maps", "r"), *out = fopen("maps.txt", "w");
   if (in && out) {
@@ -36,6 +38,8 @@ int main(int argc, char **argv) {
   printf("REQUEST_GL 3.%d %s\n", minor, compat ? "compat" : "core");
   setvbuf(stdout, NULL, _IONBF, 0);
   alarm(45);
+  if (getenv("HYBRIS_GLX_PROBE"))
+    return glx_probe(profile, desktop_draw);
   void *egl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!egl) {
     puts(dlerror());
@@ -109,6 +113,15 @@ int main(int argc, char **argv) {
     maps();
     return 2;
   }
+  int result = desktop_draw(p_eglGetProcAddress);
+  p_eglMakeCurrent(d, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+  p_eglDestroySurface(d, s);
+  p_eglDestroyContext(d, c);
+  p_eglTerminate(d);
+  return result;
+}
+
+static int desktop_draw(PFNEGLGETPROCADDRESSPROC p_eglGetProcAddress) {
   G(PFNGLGETSTRINGIPROC, glGetStringi);
   G(PFNGLGETINTEGERVPROC, glGetIntegerv);
   G(PFNGLGETSTRINGPROC, glGetString);
@@ -136,6 +149,17 @@ int main(int argc, char **argv) {
   printf("GL vendor=%s renderer=%s version=%s GLSL=%s\n",
          glGetString(GL_VENDOR), renderer, glGetString(GL_VERSION),
          glGetString(GL_SHADING_LANGUAGE_VERSION));
+  GLint major = 0, minor = 0;
+  glGetIntegerv(GL_MAJOR_VERSION, &major);
+  glGetIntegerv(GL_MINOR_VERSION, &minor);
+  if (major > 4 || (major == 4 && minor >= 3)) {
+    GLint vertex = -1, fragment = -1, compute = -1;
+    glGetIntegerv(GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS, &vertex);
+    glGetIntegerv(GL_MAX_FRAGMENT_SHADER_STORAGE_BLOCKS, &fragment);
+    glGetIntegerv(GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &compute);
+    printf("SSBO_LIMITS vertex=%d fragment=%d compute=%d error=0x%x\n",
+           vertex, fragment, compute, glGetError());
+  }
   GLint extension_count = 0;
   glGetIntegerv(GL_NUM_EXTENSIONS, &extension_count);
   for (GLint i = 0; i < extension_count; i++)
@@ -208,10 +232,6 @@ int main(int argc, char **argv) {
   glDeleteProgram(program);
   for (int i = 0; i < 2; i++)
     glDeleteShader(shaders[i]);
-  p_eglMakeCurrent(d, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-  p_eglDestroySurface(d, s);
-  p_eglDestroyContext(d, c);
-  p_eglTerminate(d);
   printf("DESKTOP_GL_DRAW %s bad_pixels=%d error=0x%x\n",
          !bad && !error ? "PASS" : "FAIL", bad, error);
   return bad || error ? 2 : 0;

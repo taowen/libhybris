@@ -19,6 +19,7 @@ p.add_argument('--hal',required=True)
 p.add_argument('--api-version',required=True,help='actual ICD version from baseline version discovery')
 p.add_argument('--mali-loader-quirk',action='store_true')
 p.add_argument('--profile',choices=['core32','compat32','core33'],default='core32')
+p.add_argument('--display',help='X11 DISPLAY for GLX; omit for surfaceless EGL')
 a=p.parse_args()
 if not re.fullmatch(r'\d+\.\d+\.\d+',a.api_version):p.error('invalid API version')
 root=Path(__file__).resolve().parents[2]
@@ -47,6 +48,10 @@ env={'EGL_PLATFORM':'surfaceless','MESA_LOADER_DRIVER_OVERRIDE':'zink','GALLIUM_
  'MESA_DEBUG':'1','VK_DRIVER_FILES':remote+'/driver.json','VK_LAYER_PATH':remote+'/layers',
  'HYBRIS_LINKER_DIR':remote+'/hybris/libhybris/linker','HYBRIS_ANDROID_SDK_VERSION':sdk,
  'HYBRIS_VULKAN_HAL':a.hal,'XDG_RUNTIME_DIR':remote}
+if a.display:
+    env.pop('MESA_LOADER_DRIVER_OVERRIDE')
+    env.update(DISPLAY=a.display, HYBRIS_GLX_PROBE='1', LIBGL_KOPPER_DISABLE='true',
+               LIBGL_DRIVERS_PATH=remote+'/runtime/dri')
 if a.mali_loader_quirk:env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK']='1'
 command='env '+' '.join(k+'='+shlex.quote(v) for k,v in env.items())+' ./runtime/ld-linux-aarch64.so.1 --library-path ./runtime:./hybris ./probe '+a.profile
 record={'serial':a.serial,'command':command,'mesa':manifest,'hybris':hybris_manifest,
@@ -82,6 +87,7 @@ if code==0:
         maps=(out/'maps.txt').read_text()
         for name in ['runtime/libgallium-', 'runtime/libvulkan.so.1', 'hybris/libhybris-vulkan-icd.so', 'vulkan.'+('mali' if 'mali' in a.hal else 'adreno')+'.so']:
             if name not in maps:raise ValueError('missing mapped backend '+name)
+        if a.display and 'runtime/libGL.so.1' not in maps:raise ValueError('missing mapped GLX frontend')
         record['evidence']='256 exact pixels; Mesa, standard loader, hybris ICD and selected vendor mapped'
     except (OSError,ValueError) as error:
         code=2;record['evidence_error']=str(error)
