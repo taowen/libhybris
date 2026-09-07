@@ -845,3 +845,14 @@ with the extended nine indexed cases, six pinned native/compute EGL/GLX runs
 produce 33 identical images and 495 valid SPIR-V modules without SyncVal errors.
 The desktop-gl README records the development failures and final evidence.
 Capabilities are unchanged; full SSBO semantics and application gates remain open.
+
+
+Mesa 597b753 extends experimental vertex conversion to direct multidraw,
+preserving DrawID across empty subdraws with state restoration and per-subdraw
+fallback. Five ordinary GL phases cover array/indexed 8/16/32-bit draws,
+GPU-copied EBOs, offsets, positive/negative base vertex and single-draw DrawID
+reset. Six clean-pinned Mali native/compute EGL core/compat/GLX runs pass 38
+identical images and 621 valid SPIR-V modules with zero SyncVal errors. Exact
+result IDs and the earlier aggregate-verifier failure are in desktop-gl README.
+GPU indirect arguments, custom restart CPU rewrite removal, all fallback/stage
+combinations, full SSBO semantics, performance and Blender remain open.

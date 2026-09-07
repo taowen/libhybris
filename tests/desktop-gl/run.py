@@ -92,7 +92,7 @@ try:
     except subprocess.TimeoutExpired as error:
         code=124;(out/'probe.log').write_bytes((error.stdout or b'')+(error.stderr or b''))
     artifacts=['maps.txt','image.rgba']
-    if a.vertex_execution:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)] + [f'attributes-{phase}.rgba' for phase in range(11)] + [f'indexed-{phase}.rgba' for phase in range(9)] + [f'resources-{phase}.rgba' for phase in range(6)]
+    if a.vertex_execution:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)] + [f'attributes-{phase}.rgba' for phase in range(11)] + [f'indexed-{phase}.rgba' for phase in range(9)] + [f'resources-{phase}.rgba' for phase in range(6)] + [f'multidraw-{phase}.rgba' for phase in range(5)]
     if a.vertex_prepass:artifacts += [f'vertex-prepass-{phase}.rgba' for phase in range(3)]
     if a.vertex_execution:
         listing=shell('cd '+shlex.quote(remote)+' && ls dump*.spv',capture_output=True,text=True)
@@ -117,11 +117,15 @@ if code==0:
                 raise ValueError('automatic Zink vertex prepass cases incomplete')
             if draws.count(('7','1','3'))!=3 or draws.count(('7','1','2'))!=2 or draws.count(('6','1','2'))!=3:
                 raise ValueError('indexed Zink vertex prepass cases incomplete')
-            if draws.count(('3','2','16'))!=3 or draws.count(('3','1','3'))!=1:
+            if draws.count(('3','2','16'))!=3 or draws.count(('3','1','3'))!=4:
                 raise ValueError('resource or sub-word conversion missing')
             bindings=re.findall(r'ZINK_VERTEX_PREPASS draw vertices=3 instances=2 inputs=(\d+) [^\n]*input_binding=(texel|ssbo|mixed)', (out/'probe.log').read_text())
             if bindings.count(('16','texel'))!=3 or bindings.count(('1','ssbo'))!=1 or bindings.count(('17','mixed'))!=1 or bindings.count(('18','mixed'))!=1:
                 raise ValueError('texel/SSBO resource pressure paths missing')
+            multi=re.findall(r'ZINK_VERTEX_PREPASS draw vertices=3 instances=1 inputs=\d+ index_size=(\d+) [^\n]*drawid=([23])', (out/'probe.log').read_text())
+            if sorted(multi)!=[(str(width),str(drawid)) for width in (0,1,2,4) for drawid in (2,3)]:
+                raise ValueError('multidraw conversion or DrawID progression missing')
+            record['multidraw_prepass_ids']=multi
             record['automatic_vertex_prepass_draws']=draws
         if a.vertex_prepass:
             for phase in range(3):
@@ -148,6 +152,11 @@ if code==0:
                 if f'INDEXED_VERTEX phase={phase} PASS bad_pixels=0 error=0x0' not in (out/'probe.log').read_text() or (out/f'indexed-{phase}.rgba').read_bytes()!=wanted:
                     raise ValueError('indexed vertex image failed or missing')
             record['indexed_vertex_cases']=9
+            for phase in range(5):
+                wanted=bytes(c for y in range(16) for x in range(16) for c in ((255,0,0,255) if x<5 else (0,0,0,255) if phase==4 else (0,255,0,255) if x<10 else (0,0,255,255)))
+                if f'MULTIDRAW_VERTEX phase={phase} PASS bad_pixels=0 error=0x0' not in (out/'probe.log').read_text() or (out/f'multidraw-{phase}.rgba').read_bytes()!=wanted:
+                    raise ValueError('multidraw vertex image failed or missing')
+            record['multidraw_vertex_cases']=5
             for phase in range(6):
                 if f'RESOURCE_VERTEX phase={phase} PASS bad_pixels=0 error=0x0' not in (out/'probe.log').read_text() or (out/f'resources-{phase}.rgba').read_bytes()!=expected:
                     raise ValueError('resource pressure image failed or missing')

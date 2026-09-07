@@ -747,3 +747,12 @@ GLX 均通过，33 张图像跨轮一致，SyncVal 零错误，495 份 SPIR-V �
 开发时缺少 NIR 资源引用的崩溃、错误容量假设与最终记录见桌面 GL README。
 未提高 GL/Vulkan 能力；完整顶点 SSBO、组合资源极限、别名/robust、性能、
 其他绘制阶段及 Blender 仍未验收，G07/G08/G10/G13 继续开放。
+
+
+2026-09-07 直接多重绘制：Mesa `597b753` 在计算顶点路径逐子绘制执行并恢复
+状态，空子绘制仍推进 DrawID。新增数组及 8/16/32 位索引多重绘制，检查
+非零 offset、正负 base vertex、DrawID 0/2/3 与后续单绘制归零；六轮
+native/compute EGL core/compat/GLX 真机结果包含 38 张一致图像、621 份
+通过验证的 SPIR-V，SyncVal 零错误，详见 desktop-gl README。未提高能力；
+GPU 间接参数、自定义 restart 去除 CPU 改写、全部回退组合、完整顶点
+SSBO/别名/robust、其他驱动、性能和 Blender 仍开放，G08/G10/G13 未关闭。

@@ -7,7 +7,7 @@ surfaceless EGL pbuffers, with no X server, APK or compositor. GLX pbuffer conte
 below. A working Blender renderer and displayed desktop GL windows remain open.
 
 Build prerequisites are the parent Ardesk checkout's clean Mesa revision
-`aa281c88d778716dcc39b6f3d72a85b6dd832f94`, its AArch64 cross file, Podman and
+`597b75359ae16357cfb5d183ea9c3ea0a6b12874`, its AArch64 cross file, Podman and
 its existing GL cross-builder. The default cached builder image is
 `localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` can select an
 explicit available replacement. The script records the resolved image ID,
@@ -665,3 +665,48 @@ Private Xvfb :187 and its ADB reverse were removed after GLX validation.
 This is still an experimental prepass. Full application vertex SSBO semantics,
 resource aliasing, robustness, all stage/draw forms, cache/performance and Blender
 remain open. Custom restart and indirect argument CPU rewrites are unchanged.
+
+
+## Direct multidraw vertex conversion (2026-09-07)
+
+Mesa `597b753` decomposes supported direct multidraw calls through Gallium's
+existing draw helper and re-enters the prepass for each nonempty subdraw. This
+preserves DrawID advancement across zero-count draws and restores compute and
+vertex state before the next subdraw, including local native fallback when a
+subdraw cannot be converted. Single-draw dispatch limits are checked per subdraw.
+Restart metadata is read only when restart is enabled. No capability is raised.
+
+The new ordinary GL fixture uses glMultiDrawArrays and
+glMultiDrawElementsBaseVertex with 8/16/32-bit GPU-copied index buffers,
+nonzero index offsets, base vertices +3/-2/+8, and an empty second subdraw.
+Each vertex checks its vertex range, base vertex, instance and DrawID. The
+fragment shader draws red/green/blue bands for DrawIDs 0/2/3. A subsequent
+single draw checks DrawID reset and produces red/black bands. The host checks
+all five full images and separately requires converted DrawIDs 2 and 3 for
+all four multidraw variants; a native fallback cannot satisfy those markers.
+
+Development result `20260907T143316-e498e39e` had all pixels passing but failed
+the old aggregate input count check. The verifier now accounts for the three
+additional sub-word indexed conversions and checks the new DrawID markers.
+Native development result `20260907T143315-fc9e567a` passed. These results precede
+the final deterministic disabled-restart diagnostic and are not the final pin.
+
+Final clean-pinned build, Mali X300, standard validation and SyncVal:
+
+| Mode | API | Result | SPIR-V modules |
+| --- | --- | --- | --- |
+| compute | compat | `20260907T143434-e9721755` PASS | 185 |
+| compute | core | `20260907T143434-31b9cbc2` PASS | 185 |
+| compute | glx | `20260907T143434-83f50542` PASS | 185 |
+| native | compat | `20260907T143434-97c8a52c` PASS | 22 |
+| native | core | `20260907T143434-98e45bc7` PASS | 22 |
+| native | glx | `20260907T143434-c7362d85` PASS | 22 |
+
+All six results match the final build manifest and contain 38 byte-identical
+images. All 621 dumped SPIR-V modules pass spirv-val with Vulkan 1.3 and uniform
+buffer standard layout; per-result spirv-validation.json retains commands,
+hashes, versions and disassembly hashes. SyncVal reports no errors. This covers
+direct multidraw on this Mali driver, not GPU indirect argument conversion,
+custom restart without CPU rewriting, every fallback combination, all stage
+forms, resource aliasing/robustness, performance or Blender. Vertex SSBO remains
+unadvertised. Private Xvfb :188 and its ADB reverse are removed after the runs.

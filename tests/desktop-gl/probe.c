@@ -17,6 +17,7 @@
   if (!name)                                                                   \
   return 2
 int resource_draw(PFNEGLGETPROCADDRESSPROC lookup);
+int multidraw_draw(PFNEGLGETPROCADDRESSPROC lookup);
 int indexed_draw(PFNEGLGETPROCADDRESSPROC lookup);
 int attribute_draw(PFNEGLGETPROCADDRESSPROC lookup);
 int procedural_draw(PFNEGLGETPROCADDRESSPROC lookup);
@@ -236,6 +237,8 @@ static int desktop_draw(PFNEGLGETPROCADDRESSPROC p_eglGetProcAddress) {
   if (getenv("HYBRIS_VERTEX_PREPASS") && vertex_prepass(p_eglGetProcAddress))
     bad++;
   if (getenv("HYBRIS_PROCEDURAL_VERTEX") && attribute_draw(p_eglGetProcAddress))
+    return 2;
+  if (getenv("HYBRIS_PROCEDURAL_VERTEX") && multidraw_draw(p_eglGetProcAddress))
     return 2;
   if (getenv("HYBRIS_PROCEDURAL_VERTEX") && indexed_draw(p_eglGetProcAddress))
     return 2;
