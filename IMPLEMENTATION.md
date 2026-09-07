@@ -618,3 +618,23 @@ thread. Missing implementations return an error without modifying output data.
 This forwards native timeline support; it neither emulates timeline semaphores
 nor changes advertised feature bits. Semaphore objects are not independently
 tracked by this dispatch helper.
+
+
+The cross-build now stages the transitive DT_NEEDED closure of all installed
+ELFs, including platform plugins, through `tools/stage-runtime.py`. Explicit
+roots retain the glibc interpreter and compatibility libpthread/libdl/librt
+DSOs. Search uses the AArch64 cross sysroot first, then target package library
+directories; missing dependencies fail the build. This adds the previously
+omitted libwayland-egl.so.1 and avoids staging unused libbsd/libmd. The interpreter
+now comes from the same first-choice cross sysroot as libc; its recorded hash
+changed and the full device regressions were rerun. Android libraries loaded
+by the separate linker remain runtime mapping/hash evidence, not part of this
+DT_NEEDED closure.
+
+`tests/wsi` independently builds/runs a Wayland Vulkan window in the existing
+compositor app's UID. It retains full first/final swapchain readbacks and real
+screenshots, checks the fixed window's expected color transition through the
+embedded screenshot profile, and records compositor APK and mapped library
+identities. See its README for the separate submission, callback and display
+checks. This does not add standard-loader ICD WSI or establish buffer-release,
+resize or application-level correctness.

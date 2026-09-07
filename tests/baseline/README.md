@@ -1716,3 +1716,17 @@ cases remain UNSUPPORTED. Existing validation and both capture/replay gates pass
 No unit-test suite was added. Timeline import/export, multiple semaphores with
 WAIT_ANY, concurrent monotonic signal ordering, multiqueue dependencies,
 resource visibility, and destruction with outstanding work remain uncovered.
+
+
+Wayland runtime closure (2026-09-07): a real window exposed the omitted
+libwayland-egl.so.1 dependency. `tools/build-aarch64.sh` now recursively stages
+DT_NEEDED dependencies of all installed ELF libraries/plugins, with explicit
+interpreter/libpthread/libdl/librt roots. The cross sysroot takes precedence;
+the interpreter hash changes accordingly, and unused libbsd/libmd are omitted.
+Full X300 `20260907T080304-6c3bd550` remains **135 PASS / 10 UNSUPPORTED /
+1 CRASH**; Redmi `20260907T080125-f9ffdff6` remains **98 PASS / 47 UNSUPPORTED /
+1 CRASH**. Both only crash in native-groups; validation and capture/replay pass.
+The separate [Wayland window probe](../wsi/README.md) now verifies an actual
+fixed X300 window, including swapchain readback and ICC-aware screen pixels.
+Redmi's current compositor lacks android_wlegl, so that optional gate is
+UNSUPPORTED. This does not supply standard-loader WSI or presented-frame replay.

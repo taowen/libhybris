@@ -64,6 +64,8 @@ rm -rf "$SRC_COPY" "$HEADERS_COPY" "$INSTALL" "$RUNTIME"
 mkdir -p "$SRC_COPY"
 cp -a "$ROOT/hybris" "$SRC_COPY/"
 cp -a "$ROOT/compat" "$SRC_COPY/"
+mkdir -p "$SRC_COPY/tools"
+cp "$ROOT/tools/stage-runtime.py" "$SRC_COPY/tools/"
 
 # Snapshot headers so external edits during compilation cannot change inputs.
 cp -a "$HEADERS" "$HEADERS_COPY"
@@ -210,28 +212,13 @@ case "$elf_class" in
     *) echo "ERROR: libhybris-common.so is not aarch64: $elf_class" >&2; exit 1 ;;
 esac
 
-# Stage glibc runtime files the probes actually load.
-copy_runtime() {
-    local src="$1" dest="$RUNTIME_DIR/$(basename "$1")"
-    if [[ -e "$src" && ! -e "$dest" ]]; then
-        cp -L --remove-destination "$src" "$dest"
-    fi
-}
-SYSROOT_LIB=/usr/aarch64-linux-gnu/lib
-copy_runtime /lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 || true
-copy_runtime "$SYSROOT_LIB/ld-linux-aarch64.so.1" || true
-for name in libc.so.6 libm.so.6 libpthread.so.0 libdl.so.2 librt.so.1 \
-            libstdc++.so.6 libgcc_s.so.1 libwayland-client.so.0 \
-            libwayland-server.so.0 libffi.so.8 libX11.so.6 libxcb.so.1 \
-            libX11-xcb.so.1 libXau.so.6 libXdmcp.so.6 libbsd.so.0 \
-            libmd.so.0; do
-    for dir in /usr/aarch64-linux-gnu/lib /lib/aarch64-linux-gnu /usr/lib/aarch64-linux-gnu; do
-        if [[ -e "$dir/$name" ]]; then
-            copy_runtime "$dir/$name"
-            break
-        fi
-    done
-done
+# Include every installed platform plugin, not only libraries used headlessly.
+# Android libraries loaded through the separate linker are recorded at runtime.
+python3 /src/tools/stage-runtime.py --hybris "$LIB_DIR" --runtime "$RUNTIME_DIR" \
+    --search /usr/aarch64-linux-gnu/lib --search /lib/aarch64-linux-gnu \
+    --search /usr/lib/aarch64-linux-gnu \
+    --require ld-linux-aarch64.so.1 --require libpthread.so.0 \
+    --require libdl.so.2 --require librt.so.1
 dpkg-query -W > /out/builder-packages.txt
 "$CC_BIN" --version > /out/compiler.txt
 "$CC_BIN" -dumpmachine >> /out/compiler.txt

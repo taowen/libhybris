@@ -102,3 +102,6 @@ tests/baseline/probe-glibc-linked
 
 __pycache__/
 *.pyc
+
+# Standalone Wayland WSI probe outputs
+tests/wsi/build/
