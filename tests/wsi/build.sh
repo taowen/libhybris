@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="${OUT:-$ROOT/tests/wsi/build}"
 mkdir -p "$OUT/src"
-cp "$ROOT/tests/wsi/probe_wayland.c" "$OUT/src/"
+cp "$ROOT/tests/wsi/probe_wayland.c" "$ROOT/tests/wsi/surface_lifecycle.c" "$ROOT/tests/wsi/surface_lifecycle.h" "$OUT/src/"
 engine="${CONTAINER_ENGINE:-podman}"
 image="${BUILDER_IMAGE:-$("$ROOT/tools/ensure-builder.sh")}"
 image_id="$("$engine" image inspect --format '{{.Id}}' "$image")"
@@ -14,7 +14,7 @@ wayland-scanner client-header xdg-shell.xml xdg-shell-client-protocol.h
 wayland-scanner private-code xdg-shell.xml xdg-shell-protocol.c
 aarch64-linux-gnu-gcc --version > /out/compiler.txt
 pkg-config --modversion wayland-client vulkan wayland-protocols > /out/dependency-versions.txt
-aarch64-linux-gnu-gcc -O2 -g -Wall -Wextra probe_wayland.c xdg-shell-protocol.c -lwayland-client -ldl -o /out/probe-wayland
+aarch64-linux-gnu-gcc -O2 -g -Wall -Wextra probe_wayland.c surface_lifecycle.c xdg-shell-protocol.c -lwayland-client -ldl -pthread -o /out/probe-wayland
 '
 python3 - "$ROOT" "$OUT" "$image_id" <<'PY'
 import json, sys

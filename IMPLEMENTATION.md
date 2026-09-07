@@ -638,3 +638,14 @@ embedded screenshot profile, and records compositor APK and mapped library
 identities. See its README for the separate submission, callback and display
 checks. This does not add standard-loader ICD WSI or establish buffer-release,
 resize or application-level correctness.
+
+
+Wayland Vulkan surface-map lookup, insertion and removal now share a mutex.
+Destruction removes a matching entry in one locked operation, then releases the
+lock before querying/calling the driver or touching native-window/Wayland state.
+Lookup returns a borrowed pointer; Vulkan external synchronization still governs
+same-surface use versus destruction. This protects distinct surfaces from map
+mutation races, not arbitrary stale-handle calls. The independent WSI lifecycle
+helper exercises four threads and checks warmed client FD balance before the
+existing displayed-window gate. It does not establish allocator cleanup or
+compositor-side FD balance.

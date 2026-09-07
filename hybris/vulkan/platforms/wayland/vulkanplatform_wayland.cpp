@@ -18,6 +18,7 @@
 #include <assert.h>
 #include <algorithm>
 #include <map>
+#include <mutex>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,26 +59,32 @@ static bool init_done = false;
 
 /* Keep track of active Vulkan window surfaces */
 static std::map<VkSurfaceKHR,struct WaylandDisplay *> _surface_window_map;
+static std::mutex surface_map_guard;
+/* The lock protects independent surfaces. Vulkan external synchronization
+ * still governs use versus destruction of the same surface. Never hold this
+ * lock across driver, native-window or Wayland calls. */
 
 int vulkan_wayland_has_mapping(VkSurfaceKHR surface)
 {
+    std::lock_guard<std::mutex> lock(surface_map_guard);
     return (_surface_window_map.find(surface) != _surface_window_map.end());
 }
 
 void vulkan_wayland_push_mapping(VkSurfaceKHR surface, struct WaylandDisplay *wdpy)
 {
-    assert(!vulkan_wayland_has_mapping(surface));
+    std::lock_guard<std::mutex> lock(surface_map_guard);
+    assert(_surface_window_map.find(surface) == _surface_window_map.end());
 
     _surface_window_map[surface] = wdpy;
 }
 
 struct WaylandDisplay *vulkan_wayland_pop_mapping(VkSurfaceKHR surface)
 {
+    std::lock_guard<std::mutex> lock(surface_map_guard);
     std::map<VkSurfaceKHR, struct WaylandDisplay *>::iterator it;
     it = _surface_window_map.find(surface);
 
-    /* Caller must check with vulkan_helper_has_mapping() before */
-    assert(it != _surface_window_map.end());
+    if (it == _surface_window_map.end()) return NULL;
 
     struct WaylandDisplay *result = it->second;
     _surface_window_map.erase(it);
@@ -86,6 +93,7 @@ struct WaylandDisplay *vulkan_wayland_pop_mapping(VkSurfaceKHR surface)
 
 struct WaylandDisplay *vulkan_wayland_get_mapping(VkSurfaceKHR surface)
 {
+    std::lock_guard<std::mutex> lock(surface_map_guard);
     std::map<VkSurfaceKHR, struct WaylandDisplay *>::iterator it;
     it = _surface_window_map.find(surface);
     if (it == _surface_window_map.end())
@@ -273,7 +281,8 @@ static VkBool32 waylandws_vkGetPhysicalDeviceWaylandPresentationSupportKHR(VkPhy
 
 static void waylandws_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator)
 {
-    if (vulkan_wayland_has_mapping(surface)) {
+    WaylandDisplay *wdpy = vulkan_wayland_pop_mapping(surface);
+    if (wdpy) {
         PFN_vkDestroySurfaceKHR destroy_surface = _vkGetInstanceProcAddr
             ? (PFN_vkDestroySurfaceKHR)_vkGetInstanceProcAddr(instance, "vkDestroySurfaceKHR")
             : NULL;
@@ -281,7 +290,6 @@ static void waylandws_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surf
             fprintf(stderr, "libhybris vulkan: no vkDestroySurfaceKHR for instance\n");
             abort();
         }
-        WaylandDisplay *wdpy = (WaylandDisplay *)vulkan_wayland_pop_mapping(surface);
         WaylandNativeWindow *window = (WaylandNativeWindow *)wdpy->window;
 
         window->destroyWlEGLWindow();

@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #include <wayland-client.h>
 #include "xdg-shell-client-protocol.h"
+#include "surface_lifecycle.h"
 #include <dlfcn.h>
 #include <errno.h>
 #include <stdint.h>
@@ -116,6 +117,7 @@ int main(void) {
     V(vkWaitForFences); V(vkResetFences);
     VkWaylandSurfaceCreateInfoKHR wc = {.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
         .display = w.display, .surface = wl_surface};
+    if (surface_lifecycle(w.display, w.compositor, instance, vkCreateWaylandSurfaceKHR, vkDestroySurfaceKHR)) return 2;
     VkSurfaceKHR surface;
     CHECK(vkCreateWaylandSurfaceKHR(instance, &wc, NULL, &surface));
     dump_maps("surface");

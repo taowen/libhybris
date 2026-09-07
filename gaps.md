@@ -446,3 +446,22 @@ UNSUPPORTED；未安装或替换 APK。runner 使用独立目录并仅清理自�
 frame callback 不等于 buffer release；截图有显式停顿，不能作无阻塞性能
 证据。标准 ICD WSI、带 present 的 capture/replay、真实应用故障闭环仍未
 完成，G04/G06/G11/G12 不据此关闭。
+
+
+2026-09-07 Wayland surface 并发与 FD 回归：surface map 的插入、查找和移除
+现由同一 mutex 保护；销毁一次性取走记录，释放锁后才调用 driver/Wayland。
+同一 surface 的使用/销毁仍要求调用方遵守 Vulkan 外部同步，未把非法并发
+或 stale handle 变成合法。额外生命周期探针独立在 surface_lifecycle.c，
+四线程各八轮，每轮创建四个独立 wl_surface/VkSurfaceKHR，barrier 保持
+16 个同时存活，再各自逆序销毁；创建线程失败会释放并 join 已启动线程。
+X300 `20260907T081226-add42893` 共 128 对成功，预热后 client FD 为 7→7，
+随后的八帧窗口与 76,800 像素屏幕比对通过。旧库对照
+`20260907T081105-efeb0f17` 也通过，故仅称代码识别出的无锁 map 竞争修复，
+不虚报动态复现；Wayland 平台 67 个导出名称不变。
+红米 `20260907T081226-1182df69` 当前 compositor 缺 android_wlegl，仍为
+UNSUPPORTED。新库完整 X300 `20260907T081302-cd38e27b` 为
+135 PASS / 10 UNSUPPORTED / 1 CRASH；红米 `20260907T081302-0f50a7a0` 为
+98 PASS / 47 UNSUPPORTED / 1 CRASH，均只剩 native-groups；校验与两种
+捕获回放通过。此 surface 压力部分无 swapchain，不证明多窗口绘制、
+compositor FD 无泄漏、heap 回收、resize/out-of-date 或 release-fence 退休。
+G03/G11 及窗口 capture/真实应用门槛继续保持未完成。

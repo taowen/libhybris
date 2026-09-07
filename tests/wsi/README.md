@@ -28,6 +28,15 @@ watchdog; a 65-second host timeout targets its recorded PID only after checking
 that PID's current working directory still belongs to this run. Other desktop
 processes are left running.
 
+Before rendering, a separate surface lifecycle helper warms one surface and
+then starts four threads. Each thread creates four independent wl_surface /
+VkSurfaceKHR pairs, waits until all 16 are live, and destroys its pairs in reverse
+order. Eight cycles exercise 128 pairs. Thread-start failure releases already
+started workers instead of stranding the barrier. The helper roundtrips the
+shared display and requires the client process FD count to return to its warmed
+baseline. These extra surfaces have no xdg roles or swapchains: this checks
+surface metadata lifetime, not multiple displayed windows or GPU buffer release.
+
 The fixed 320x240 window submits eight alternating green/red frames using
 FIFO presentation. Each acquired swapchain image is cleared, copied to coherent
 host memory, checked pixel by pixel, then presented. Acquire semaphores are
@@ -84,3 +93,26 @@ The new runtime was also used for the full headless baseline: X300
 The remaining crash is native-groups on each phone. Existing validation,
 SyncVal and both capture/replay gates pass; X300 ICD cases use the scoped Mali
 option. Those captures remain headless and do not capture this Wayland window.
+
+
+Surface concurrency checkpoint (2026-09-07): the frontend surface map now locks
+lookup/insertion/removal, and destruction atomically takes its record before
+calling the backend. It does not hold this lock around driver/Wayland operations.
+Calls involving the same surface still follow the
+[Vulkan external synchronization requirements](https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroySurfaceKHR.html).
+
+X300 `20260907T081226-add42893` passes four workers × eight cycles × four surfaces,
+with 16 surfaces live at each barrier, client FD count 7 before and 7 after,
+and the subsequent eight-frame window/readback/screenshot gate. The old-library
+comparison `20260907T081105-efeb0f17` also passes: this is a code-identified map
+race fix with exercised regression coverage, not a dynamically reproduced race.
+The 67 exported Wayland platform symbol names are unchanged. Redmi
+`20260907T081226-1182df69` remains UNSUPPORTED because its compositor does not
+advertise android_wlegl. No compositor-side FD count, heap leak measurement,
+rendering on concurrent surfaces, resize or release-fence proof is provided by
+the extra lifecycle workload; its additional surfaces have no swapchains.
+
+Full headless runs using the rebuilt library: X300 `20260907T081302-cd38e27b`
+135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi `20260907T081302-0f50a7a0`
+98 PASS / 47 UNSUPPORTED / 1 CRASH. Native-groups remains the sole crash;
+validation, SyncVal and both capture/replay workloads pass.
