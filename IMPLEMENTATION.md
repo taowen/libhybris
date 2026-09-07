@@ -757,3 +757,11 @@ limit is 0, while fragment/compute limits are 16 and Blender requires at least
 12 in every stage. This is a concrete remaining capability gap, not application
 acceptance. See tests/desktop-gl/README.md for transport settings, artifacts and
 scope; neither Vulkan WSI nor visible Blender rendering is proved by GLX probes.
+
+A compute vertex-prepass feasibility workload now passes on Mali through the
+staged desktop GL frontend: twelve SSBO inputs, generated vertex attributes,
+SSBO atomic writes, guard checks and changed/restored input images across three
+submissions. This verifies a building block for vertex SSBO emulation, not the
+emulation itself. No application shader is automatically converted, no vertex
+SSBO limit is raised and Blender remains unsupported. Core/compatibility results
+and exact remaining integration work are recorded in tests/desktop-gl/README.md.

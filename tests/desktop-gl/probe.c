@@ -16,6 +16,7 @@
   type name = (type)p_eglGetProcAddress(#name);                                \
   if (!name)                                                                   \
   return 2
+int vertex_prepass(PFNEGLGETPROCADDRESSPROC lookup);
 int packed_draw(PFNEGLGETPROCADDRESSPROC lookup);
 static int desktop_draw(PFNEGLGETPROCADDRESSPROC p_eglGetProcAddress);
 int glx_probe(const char *profile, int (*draw)(PFNEGLGETPROCADDRESSPROC));
@@ -227,6 +228,8 @@ static int desktop_draw(PFNEGLGETPROCADDRESSPROC p_eglGetProcAddress) {
   maps();
   int packed = packed_draw(p_eglGetProcAddress);
   if (packed)
+    bad++;
+  if (getenv("HYBRIS_VERTEX_PREPASS") && vertex_prepass(p_eglGetProcAddress))
     bad++;
   glDeleteVertexArrays(1, &vao);
   glDeleteProgram(program);

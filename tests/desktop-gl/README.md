@@ -208,3 +208,49 @@ Vulkan capability. Blender's `gl_backend.cc` requires a minimum of 12 across
 these three stages. Correct vertex SSBO support/emulation remains necessary;
 no feature or GL version was overridden to bypass the check. Redmi GLX, Zink
 validation, full GL conformance and useful Blender rendering remain unverified.
+
+## Compute vertex prepass feasibility
+
+`--vertex-prepass` additionally exercises an explicit compute → vertex-fetch
+path on the existing GL runtime. It requires actual GLSL 4.30 support. This is
+preparatory evidence for the missing vertex SSBO implementation, not automatic
+translation of application vertex shaders and not a capability override.
+
+The compute shader reads twelve separately bound SSBOs, generates six position/
+color records representing two triangle instances, writes an output SSBO and
+updates a separate SSBO with atomic count/ID bits. Eight compute invocations
+include two padding invocations that must not write. Guard records surround the
+output. A vertex shader fetches the generated records as ordinary attributes;
+it does not use vertex SSBOs. Explicit shader-storage, vertex-attribute and
+buffer-update barriers cover subsequent dispatch, draw and CPU readback use.
+
+Three phases reuse the same allocations. The first reads twelve distinct input
+values and draws red/green halves; the second changes the twelfth buffer and
+must draw magenta; the third restores it and must restore the original image.
+Each phase clears blue before drawing. Acceptance requires all 256 pixels per
+phase, unchanged guards, cumulative atomic counts 6/12/18, ID mask 63 and no GL
+error. The runner also retrieves and independently compares all three RGBA
+files. The original draw and all twelve packed-input cases remain required.
+
+```sh
+python3 tests/desktop-gl/run.py --serial 10AFA31610002QH \
+  --hal /vendor/lib64/hw/vulkan.mali.so --api-version 1.3.305 \
+  --mali-loader-quirk --profile core33 --vertex-prepass
+```
+
+This verifies the underlying compute/write/atomic → vertex-fetch route on Mali.
+It does not implement NIR vertex-to-compute translation, automatic descriptor
+remapping, indexed/base-instance/indirect draws, tessellation/geometry stages,
+transform feedback or application shader specialization. Mesa's existing
+`poly_nir_lower_sw_vs` is part of Asahi's software geometry path and relies on
+its parameter-buffer/input-lowering ABI; it is not directly usable as a Zink
+fallback. The Gallium draw interpreter is another possible implementation
+route but is likewise not currently attached to Zink. Vertex SSBO limits remain
+unchanged, and Blender startup remains failed. CPU readback synchronizes these
+checks; this is not proof of a fully asynchronous production fallback.
+
+Final source-built runs `20260907T112336-d7306baf` (core-3.3 request, actual
+4.4 core) and `20260907T112337-5d47f3ed` (compatibility-3.2 request, actual 4.4)
+pass all three prepass phases and the existing draws on X300. Artifacts are
+under `build/results/`, with runtime/source hashes and full per-phase images.
+No other device or GLX execution of this new workload has been established.

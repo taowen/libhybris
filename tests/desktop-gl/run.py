@@ -20,6 +20,7 @@ p.add_argument('--api-version',required=True,help='actual ICD version from basel
 p.add_argument('--mali-loader-quirk',action='store_true')
 p.add_argument('--profile',choices=['core32','compat32','core33'],default='core32')
 p.add_argument('--display',help='X11 DISPLAY for GLX; omit for surfaceless EGL')
+p.add_argument('--vertex-prepass',action='store_true',help='exercise explicit compute vertex prepass feasibility workload')
 a=p.parse_args()
 if not re.fullmatch(r'\d+\.\d+\.\d+',a.api_version):p.error('invalid API version')
 root=Path(__file__).resolve().parents[2]
@@ -48,6 +49,7 @@ env={'EGL_PLATFORM':'surfaceless','MESA_LOADER_DRIVER_OVERRIDE':'zink','GALLIUM_
  'MESA_DEBUG':'1','VK_DRIVER_FILES':remote+'/driver.json','VK_LAYER_PATH':remote+'/layers',
  'HYBRIS_LINKER_DIR':remote+'/hybris/libhybris/linker','HYBRIS_ANDROID_SDK_VERSION':sdk,
  'HYBRIS_VULKAN_HAL':a.hal,'XDG_RUNTIME_DIR':remote}
+if a.vertex_prepass:env['HYBRIS_VERTEX_PREPASS']='1'
 if a.display:
     env.pop('MESA_LOADER_DRIVER_OVERRIDE')
     env.update(DISPLAY=a.display, HYBRIS_GLX_PROBE='1', LIBGL_KOPPER_DISABLE='true',
@@ -68,7 +70,9 @@ try:
         (out/'probe.log').write_bytes(r.stdout+r.stderr)
     except subprocess.TimeoutExpired as error:
         code=124;(out/'probe.log').write_bytes((error.stdout or b'')+(error.stderr or b''))
-    for name in ['maps.txt','image.rgba']:
+    artifacts=['maps.txt','image.rgba']
+    if a.vertex_prepass:artifacts += [f'vertex-prepass-{phase}.rgba' for phase in range(3)]
+    for name in artifacts:
         r=shell('cat '+shlex.quote(remote+'/'+name),capture_output=True)
         if not r.returncode:(out/name).write_bytes(r.stdout)
 finally:
@@ -82,8 +86,17 @@ if code==0:
         if len(packed)!=12 or {row[:4] for row in packed}!=cases or any(row[4:]!=('0','0') for row in packed):
             raise ValueError('packed vertex draw matrix incomplete or failed')
         record['packed_vertex_cases']=12
+        if a.vertex_prepass:
+            for phase in range(3):
+                marker=f'VERTEX_PREPASS phase={phase} PASS bad_pixels=0 guards=0 count={6*(phase+1)} ids=63 error=0x0'
+                if marker not in (out/'probe.log').read_text():raise ValueError('vertex prepass failed or missing')
+            record['vertex_prepass']='PASS'
         expected=b''.join(bytes((255,0,0,255) if x<8 else (0,255,0,255)) for y in range(16) for x in range(16))
         if (out/'image.rgba').read_bytes()!=expected:raise ValueError('full image mismatch')
+        if a.vertex_prepass:
+            for phase in range(3):
+                wanted=bytes((255,0,255,255))*256 if phase==1 else expected
+                if (out/f'vertex-prepass-{phase}.rgba').read_bytes()!=wanted:raise ValueError('prepass image mismatch')
         maps=(out/'maps.txt').read_text()
         for name in ['runtime/libgallium-', 'runtime/libvulkan.so.1', 'hybris/libhybris-vulkan-icd.so', 'vulkan.'+('mali' if 'mali' in a.hal else 'adreno')+'.so']:
             if name not in maps:raise ValueError('missing mapped backend '+name)
