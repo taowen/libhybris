@@ -649,3 +649,17 @@ mutation races, not arbitrary stale-handle calls. The independent WSI lifecycle
 helper exercises four threads and checks warmed client FD balance before the
 existing displayed-window gate. It does not establish allocator cleanup or
 compositor-side FD balance.
+
+
+Wayland surface discovery now completes a roundtrip on its private event queue
+before constructing the native window. Missing android_wlegl or a failed
+discovery roundtrip returns VK_ERROR_UNKNOWN with a diagnostic instead of
+aborting in a sync callback. This command does not list INITIALIZATION_FAILED;
+UNKNOWN is the general unexpected-error result described in the
+[Vulkan return-code rules](https://docs.vulkan.org/refpages/latest/refpages/source/VkResult.html).
+Partial discovery allocations are checked and cleaned without further dispatch.
+A backend surface-creation failure also destroys the temporary wl_egl_window.
+The independent probe exercises repeated missing-protocol rejection on Redmi
+and the existing successful concurrent surfaces and window on X300. Allocation
+failure, display disconnect, vendor creation failure and heap reclamation have
+not been fault-injected; those branches are code-reviewed only.

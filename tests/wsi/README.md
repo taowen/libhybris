@@ -67,7 +67,10 @@ This first gate does not cover resize/minimize/out-of-date, multiple windows,
 multiple surface generations, release-fence retirement, FD leak accounting,
 scaled outputs, arbitrary image contents, standard-loader WSI, validation-layer
 chaining on this frontend, or capture/replay of a presented frame. A compositor
-that lacks `android_wlegl` reports UNSUPPORTED, not a passing Vulkan/WSI result.
+that lacks `android_wlegl` now exercises eight surface creation attempts. Each
+must return `VK_ERROR_UNKNOWN`, followed by normal instance/Wayland teardown;
+the log records `WSI_MISSING_WLEGL rejection=PASS`. The overall window result
+remains UNSUPPORTED. This verifies graceful rejection, not rendering support.
 
 
 ## Recorded device runs (2026-09-07)
@@ -116,3 +119,20 @@ Full headless runs using the rebuilt library: X300 `20260907T081302-cd38e27b`
 135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi `20260907T081302-0f50a7a0`
 98 PASS / 47 UNSUPPORTED / 1 CRASH. Native-groups remains the sole crash;
 validation, SyncVal and both capture/replay workloads pass.
+
+
+Discovery failure checkpoint (2026-09-07): old platform run
+`20260907T081905-2e8ed7fc` on Redmi aborts with exit 134 when its compositor
+lacks android_wlegl. With the final platform, `20260907T082144-82103b66`
+returns VK_ERROR_UNKNOWN (-13) on all eight attempts and tears down normally.
+The rejection check passes; the overall window remains UNSUPPORTED.
+X300 `20260907T082144-8ee218a3` passes the 128-surface concurrency workload
+(client FD 7→7), eight-frame readback and complete 76,800-pixel screen gate.
+Platform exported symbol names remain identical (67). Allocation errors,
+disconnected displays and backend creation errors were not fault-injected.
+
+Full baseline on the final build: X300 `20260907T082214-6907c912` has
+135 PASS / 10 UNSUPPORTED / 1 CRASH; Redmi `20260907T082214-648d0d5c` has
+98 PASS / 47 UNSUPPORTED / 1 CRASH. Both remaining crashes are native-groups.
+Validation, SyncVal and both headless capture/replay gates pass. X300 ICD
+continues to use the scoped Mali option.

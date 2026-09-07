@@ -465,3 +465,20 @@ UNSUPPORTED。新库完整 X300 `20260907T081302-cd38e27b` 为
 捕获回放通过。此 surface 压力部分无 swapchain，不证明多窗口绘制、
 compositor FD 无泄漏、heap 回收、resize/out-of-date 或 release-fence 退休。
 G03/G11 及窗口 capture/真实应用门槛继续保持未完成。
+
+
+2026-09-07 Wayland discovery 失败路径：缺少 android_wlegl 时不再在 sync
+callback 中 abort；私有队列 roundtrip 完成后返回 VK_ERROR_UNKNOWN(-13)，
+并清理已创建的 registry/wrapper/queue。临时 wl_egl_window 也会在后端
+surface 创建失败时销毁。旧库红米 `20260907T081905-2e8ed7fc` 实测
+CRASH 134；最终 `20260907T082144-82103b66` 八次均返回 -13 并正常清理，
+拒绝路径 PASS，窗口仍 UNSUPPORTED，不能据此声称红米 WSI 可用。
+X300 `20260907T082144-8ee218a3` 的 128 对并发 surface、client FD 7→7、
+八帧读回与 76,800 像素屏幕转换均 PASS。67 个平台导出名称不变。
+分配失败、display 断连、后端创建失败只检查代码，未注入验证；无 heap
+回收、resize、release-fence 或标准 ICD 窗口证明，G03/G11 继续开放。
+最终构建完整回归：X300 `20260907T082214-6907c912` 为
+135 PASS / 10 UNSUPPORTED / 1 CRASH；红米 `20260907T082214-648d0d5c`
+为 98 PASS / 47 UNSUPPORTED / 1 CRASH，均仅 native-groups 崩溃。
+校验、SyncVal 与两种离屏 capture/replay 均通过，X300 ICD 仍用限定 Mali
+选项；此次窗口仍走替代前端。

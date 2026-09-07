@@ -75,7 +75,7 @@ int main(void) {
     wl_registry_add_listener(registry, &registry_listener, &w);
     if (wl_display_roundtrip(w.display) < 0) return 2;
     printf("WSI globals compositor=%d xdg=%d android_wlegl=%d\n", w.compositor != NULL, w.shell != NULL, w.wlegl);
-    if (!w.compositor || !w.shell || !w.wlegl) return 3;
+    if (!w.compositor || !w.shell) return 3;
     struct wl_surface *wl_surface = wl_compositor_create_surface(w.compositor);
     struct xdg_surface *xdg_surface = xdg_wm_base_get_xdg_surface(w.shell, wl_surface);
     xdg_surface_add_listener(xdg_surface, &surface_listener, &w);
@@ -117,6 +117,27 @@ int main(void) {
     V(vkWaitForFences); V(vkResetFences);
     VkWaylandSurfaceCreateInfoKHR wc = {.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
         .display = w.display, .surface = wl_surface};
+    if (!w.wlegl) {
+        for (unsigned attempt = 0; attempt < 8; ++attempt) {
+            VkSurfaceKHR rejected = VK_NULL_HANDLE;
+            VkResult result = vkCreateWaylandSurfaceKHR(instance, &wc, NULL, &rejected);
+            printf("WSI_MISSING_WLEGL attempt=%u result=%d expected=%d\n",
+                   attempt, result, VK_ERROR_UNKNOWN);
+            if (result == VK_SUCCESS) vkDestroySurfaceKHR(instance, rejected, NULL);
+            if (result != VK_ERROR_UNKNOWN) return 2;
+        }
+        vkDestroyInstance(instance, NULL);
+        xdg_toplevel_destroy(toplevel);
+        xdg_surface_destroy(xdg_surface);
+        wl_surface_destroy(wl_surface);
+        xdg_wm_base_destroy(w.shell);
+        wl_compositor_destroy(w.compositor);
+        wl_registry_destroy(registry);
+        wl_display_disconnect(w.display);
+        dlclose(library);
+        printf("WSI_MISSING_WLEGL rejection=PASS window=UNSUPPORTED\n");
+        return 3;
+    }
     if (surface_lifecycle(w.display, w.compositor, instance, vkCreateWaylandSurfaceKHR, vkDestroySurfaceKHR)) return 2;
     VkSurfaceKHR surface;
     CHECK(vkCreateWaylandSurfaceKHR(instance, &wc, NULL, &surface));

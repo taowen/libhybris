@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <map>
 #include <mutex>
+#include <new>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -128,33 +129,12 @@ static const wl_registry_listener registry_listener = {
     registry_handle_global
 };
 
-static void callback_done(void *data, wl_callback *cb, uint32_t d)
-{
-    WaylandDisplay *dpy = (WaylandDisplay *)data;
-
-    wl_callback_destroy(cb);
-    if (!dpy->wlegl) {
-        fprintf(stderr, "Fatal: the server doesn't advertise the android_wlegl global!");
-        abort();
-    }
-}
-
-static const wl_callback_listener callback_listener = {
-    callback_done
-};
-
 void freeWaylandDisplay(WaylandDisplay *wdpy)
 {
-    int ret = 0;
-    // We still have the sync callback on flight, wait for it to arrive
-    while (ret == 0 && !wdpy->wlegl) {
-        ret = wl_display_dispatch_queue(wdpy->wl_dpy, wdpy->queue);
-    }
-    assert(ret >= 0);
-    android_wlegl_destroy(wdpy->wlegl);
-    wl_registry_destroy(wdpy->registry);
-    wl_proxy_wrapper_destroy(wdpy->wl_dpy_wrapper);
-    wl_event_queue_destroy(wdpy->queue);
+    if (wdpy->wlegl) android_wlegl_destroy(wdpy->wlegl);
+    if (wdpy->registry) wl_registry_destroy(wdpy->registry);
+    if (wdpy->wl_dpy_wrapper) wl_proxy_wrapper_destroy(wdpy->wl_dpy_wrapper);
+    if (wdpy->queue) wl_event_queue_destroy(wdpy->queue);
     delete wdpy;
 }
 
@@ -222,32 +202,44 @@ static VkResult waylandws_vkCreateWaylandSurfaceKHR(VkInstance instance,
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     VkAndroidSurfaceCreateInfoKHR createInfo;
     VkResult result;
-    WaylandDisplay *wdpy = new WaylandDisplay;
+    WaylandDisplay *wdpy = new (std::nothrow) WaylandDisplay{};
+    if (!wdpy) return VK_ERROR_OUT_OF_HOST_MEMORY;
     WaylandNativeWindow *win;
     struct wl_egl_window *window;
-    int ret;
-
-    HYBRIS_TRACE_BEGIN("hybris-vulkan", "vkCreateWaylandSurfaceKHR", "");
 
     wdpy->wl_dpy = pCreateInfo->display;
-    wdpy->wlegl = NULL;
     wdpy->queue = wl_display_create_queue(wdpy->wl_dpy);
+    if (!wdpy->queue) {
+        freeWaylandDisplay(wdpy);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
     wdpy->wl_dpy_wrapper = (struct wl_display *) wl_proxy_create_wrapper(wdpy->wl_dpy);
+    if (!wdpy->wl_dpy_wrapper) {
+        freeWaylandDisplay(wdpy);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
     wl_proxy_set_queue((struct wl_proxy *) wdpy->wl_dpy_wrapper, wdpy->queue);
     wdpy->registry = wl_display_get_registry(wdpy->wl_dpy_wrapper);
+    if (!wdpy->registry) {
+        freeWaylandDisplay(wdpy);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
     wl_registry_add_listener(wdpy->registry, &registry_listener, wdpy);
 
-    wl_callback *cb = wl_display_sync(wdpy->wl_dpy_wrapper);
-    wl_callback_add_listener(cb, &callback_listener, wdpy);
-
-    ret = 0;
-    while (ret == 0 && !wdpy->wlegl) {
-        ret = wl_display_dispatch_queue(wdpy->wl_dpy, wdpy->queue);
+    // Complete discovery on this surface's private queue. Its sync callback
+    // must finish before we can destroy the discovery state.
+    if (wl_display_roundtrip_queue(wdpy->wl_dpy, wdpy->queue) < 0 || !wdpy->wlegl) {
+        HYBRIS_ERROR("Wayland surface discovery failed or android_wlegl is unavailable");
+        freeWaylandDisplay(wdpy);
+        return VK_ERROR_UNKNOWN;
     }
-    assert(ret >= 0);
-
     window = wl_egl_window_create(pCreateInfo->surface, 1, 1);
+    if (!window) {
+        freeWaylandDisplay(wdpy);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
 
+    HYBRIS_TRACE_BEGIN("hybris-vulkan", "vkCreateWaylandSurfaceKHR", "");
     HYBRIS_TRACE_BEGIN("native-vulkan", "vkCreateWaylandSurfaceKHR", "");
 
     win = new WaylandNativeWindow((struct wl_egl_window *)window, wdpy->wl_dpy, wdpy->wlegl);
@@ -266,6 +258,7 @@ static VkResult waylandws_vkCreateWaylandSurfaceKHR(VkInstance instance,
         vulkan_wayland_push_mapping(*pSurface, wdpy);
     } else {
         HYBRIS_ERROR("vkCreateAndroidSurfaceKHR failed");
+        win->destroyWlEGLWindow();
         win->common.decRef(&win->common);
         freeWaylandDisplay(wdpy);
     }
