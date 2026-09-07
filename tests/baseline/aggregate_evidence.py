@@ -3,11 +3,13 @@ import hashlib
 import re
 import struct
 import subprocess
+from decoration_evidence import normalize_decorations
 
 
 def aggregate_evidence(directory, log, source):
     words = [int(word, 16) for word in re.findall(r'0x[0-9a-fA-F]{8}', source.read_text())]
-    specialized = source.name.startswith('scaled.spec')
+    specialized = source.name.startswith('scaled.spec') or source.name == 'scaled.group-spec.inc'
+    grouped = source.name.startswith('scaled.group')
     direct = source.name == 'scaled.spec-direct.inc'
     reference = hashlib.sha256(struct.pack('<' + 'I' * len(words), *words)).hexdigest()
     records = re.findall(r'^HYBRIS_SCALED_DUMP id=(\d+) original=(\d) converted=(\d) attributes=(\d+)$', log, re.M)
@@ -49,8 +51,11 @@ def aggregate_evidence(directory, log, source):
             subprocess.run(['spirv-val', '--target-env', 'vulkan1.1', str(path)], check=True, capture_output=True)
             text = subprocess.check_output(['spirv-dis', '--raw-id', str(path)], text=True)
             path.with_suffix('.spvasm').write_text(text)
+            normalized = None
+            if grouped:
+                text, normalized = normalize_decorations(path, text, kind == 'original')
             modules.append(text)
-            files.append({'name': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'spirv_val': 'PASS'})
+            files.append({'name': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'spirv_val': 'PASS', 'normalized_decorations': normalized})
         if files[0]['sha256'] != reference or files[0]['sha256'] == files[1]['sha256']:
             raise ValueError('aggregate source identity or conversion mismatch')
         before, after = [dict(re.findall(r'^\s*(%\d+) = (.+)$', text, re.M)) for text in modules]

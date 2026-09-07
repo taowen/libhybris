@@ -150,7 +150,14 @@ This is an experimental subset, not a conformant implementation of arbitrary
 scaled vertex pipelines. The rewriter selects the named vertex entry from a
 module, including modules with multiple vertex or other-stage entries. The
 temporary module exposes only that entry and its execution modes. A separate
-entry-extraction pass follows function calls and removes unreachable functions,
+decoration pass first expands group applications into direct variable/member
+decorations. Group definitions, original annotations and debug names remain;
+only the applications are replaced. This lets Location, member layout and
+SpecId decorations reach the later passes without treating member indices as
+IDs. Grouped string annotations and ID-operand decorations applied to members
+remain unsupported. Legacy grouped OpDecorateId applications to variables are
+implemented but are not independently GPU-tested.
+An entry-extraction pass follows function calls and removes unreachable functions,
 unreferenced global variables, and their names/decorations. Types and constants
 are retained. Other multi-entry stages in an affected graphics pipeline also
 receive temporary modules for their selected entries; the original module can
@@ -183,7 +190,7 @@ such as shuffle/extract indices and parameter-free enums from pointer/liveness
 scans. Ambiguous or variable-width operand sequences still use conservative
 scanning: a literal can cause rejection or retain an extra global declaration
 when its position cannot be classified statically. Function-pointer instructions, unknown opcodes,
-and grouped/nonsemantic debug references into removed code are rejected; this
+and unhandled nonsemantic debug references into removed code are rejected; this
 is not a general SPIR-V optimizer. Unsupported
 conversion returns `VK_ERROR_UNKNOWN`, with a diagnostic, rather than supplying
 a partially rewritten module. With an active fallback mask, graphics pipeline

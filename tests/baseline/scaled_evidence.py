@@ -4,6 +4,7 @@ import re
 import shutil
 import struct
 import subprocess
+from decoration_evidence import normalize_decorations
 
 
 def vertex_input(text, entry):
@@ -37,7 +38,8 @@ def scaled_evidence(directory, log, forced, source):
         raise ValueError('spirv-dis is required to audit vertex interfaces')
     words = [int(word, 16) for word in re.findall(r'0x[0-9a-fA-F]{8}', source.read_text())]
     reference = hashlib.sha256(struct.pack('<' + 'I' * len(words), *words)).hexdigest()
-    multiple = source.name == 'scaled.multi.inc'
+    multiple = source.name in ('scaled.multi.inc', 'scaled.group-multi.inc')
+    grouped = source.name.startswith('scaled.group')
     stages_per_pipeline = 2 if multiple else 1
     records = re.findall(r'^HYBRIS_SCALED_DUMP id=(\d+) original=(\d) converted=(\d) attributes=(\d+)$', log, re.M)
     masks = re.findall(r'^HYBRIS_SCALED_VERTEX experimental=1 force=[01] fallback_mask=0x([0-9a-f]+)$', log, re.M)
@@ -65,8 +67,11 @@ def scaled_evidence(directory, log, forced, source):
             subprocess.run([validator, '--target-env', 'vulkan1.1', str(path)], check=True, capture_output=True)
             disassembly = subprocess.check_output([disassembler, '--raw-id', str(path)], text=True)
             path.with_suffix('.spvasm').write_text(disassembly)
+            normalized = None
+            if grouped:
+                disassembly, normalized = normalize_decorations(path, disassembly, kind == 'original')
             modules.append(disassembly)
-            entry['files'].append({'name': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'spirv_val': 'PASS'})
+            entry['files'].append({'name': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'spirv_val': 'PASS', 'normalized_decorations': normalized})
         if entry['files'][0]['sha256'] == entry['files'][1]['sha256']:
             raise ValueError('converted module is identical to the original')
         if entry['files'][0]['sha256'] != reference:

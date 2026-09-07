@@ -1,25 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "probe.h"
 #include "allocation_fixture.h"
-#include "shaders/scaled.vert.inc"
-#include "shaders/scaled.multi.inc"
-#include "shaders/scaled.literal.inc"
-#include "shaders/scaled.frag.inc"
-#include "shaders/scaled.matrix.inc"
-#include "shaders/scaled.array.inc"
-#include "shaders/scaled.nested.inc"
-#include "shaders/scaled.matarray.inc"
-#include "shaders/scaled.spec.inc"
-#include "shaders/scaled.spec-direct.inc"
+#include "scaled_fixture.h"
 enum { kScaledImage = 16 };
-static const struct scaled_case { VkFormat format; const char *name; unsigned bits, components, sign; } cases[] = {
-#define CASE(n,b,c) {VK_FORMAT_##n##_USCALED, #n "_USCALED", b,c,0}, {VK_FORMAT_##n##_SSCALED, #n "_SSCALED",b,c,1}
- CASE(R8,8,1), CASE(R8G8,8,2), CASE(R8G8B8A8,8,4),
- CASE(R16,16,1), CASE(R16G16,16,2), CASE(R16G16B16A16,16,4)
-#undef CASE
-};
-int scaled_vertex_probe(int validate, int route, int variant) {
-  const int multiple = variant == 1, literal = variant == 2, aggregate = variant >= 3, specialized = variant >= 7;
+int scaled_vertex_probe(int validate, int route, const char *mode) {
+  const struct scaled_shader *shader = shaders;
+  while (!strstr(mode, shader->mode)) ++shader;
+  const int multiple = shader->multiple, aggregate = shader->aggregate, specialized = shader->specialized;
   struct allocation_probe allocations = {0};
   VkAllocationCallbacks callbacks = {.pUserData = &allocations,
     .pfnAllocation = instance_allocate, .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
@@ -251,13 +238,7 @@ int scaled_vertex_probe(int validate, int route, int variant) {
   CHECK(p_vkBindBufferMemory(device, readback, rmem, 0));
 
   VkShaderModuleCreateInfo vs_ci = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-    .codeSize = multiple ? sizeof(kScaledMultiSpv) : literal ? sizeof(kScaledLiteralSpv) : sizeof(kScaledVertSpv),
-    .pCode = multiple ? kScaledMultiSpv : literal ? kScaledLiteralSpv : kScaledVertSpv};
-  if (aggregate) {
-    const uint32_t *codes[] = {kScaledMatrixSpv, kScaledArraySpv, kScaledNestedSpv, kScaledMatarraySpv, kScaledSpecSpv, kScaledSpecDirectSpv};
-    const size_t sizes[] = {sizeof(kScaledMatrixSpv), sizeof(kScaledArraySpv), sizeof(kScaledNestedSpv), sizeof(kScaledMatarraySpv), sizeof(kScaledSpecSpv), sizeof(kScaledSpecDirectSpv)};
-    vs_ci.pCode = codes[variant - 3]; vs_ci.codeSize = sizes[variant - 3];
-  }
+    .codeSize = shader->size, .pCode = shader->code};
   VkShaderModuleCreateInfo fs_ci = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = sizeof(kScaledFragSpv), .pCode = kScaledFragSpv};
   VkShaderModule vs, fs;
@@ -399,7 +380,7 @@ int scaled_vertex_probe(int validate, int route, int variant) {
       const uint32_t column_counts[] = {2, 4, 3, 2};
       float tint = round == 2 ? 1.0f : 0.5f;
       VkBool32 invert = round == 0 || round == 3;
-      int32_t base = column_counts[round] - (variant == 8 ? 0 : 1 + invert);
+      int32_t base = column_counts[round] - (shader->direct ? 0 : 1 + invert);
       unsigned char spec_data[24] = {0};
       memcpy(spec_data + 3, &base, 4); memcpy(spec_data + 9, &tint, 4); memcpy(spec_data + 17, &invert, 4);
       const VkSpecializationMapEntry maps[] = {{23,17,4}, {999,0,1}, {7,3,4}, {19,9,4}};

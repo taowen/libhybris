@@ -2,6 +2,7 @@
 #include "scaled_vertex.h"
 #include "spirv_entry.h"
 #include "spirv_aggregate.h"
+#include "spirv_decorations.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -104,7 +105,7 @@ static VkResult convert_scaled(const uint32_t *code, size_t size, const char *en
     for (uint32_t i = 0; i < bound; ++i) {
         if (ids[i].opcode != OP_VARIABLE || ids[i].storage != 1 || !ids[i].interface) continue;
         if (ids[i].location == UINT32_MAX && !ids[i].builtin) {
-            *reason = "scaled vertex interface blocks or grouped locations are not handled";
+            *reason = "scaled vertex interface blocks without direct locations are not handled";
             goto done;
         }
         for (uint32_t j = 0; j < attribute_count; ++j) {
@@ -251,10 +252,13 @@ VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entr
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
     const char **reason)
 {
-    uint32_t *selected = NULL, *flat = NULL;
-    size_t selected_size = 0, flat_size = 0;
+    uint32_t *selected = NULL, *flat = NULL, *decorated = NULL;
+    size_t selected_size = 0, flat_size = 0, decorated_size = 0;
     VkResult result = VK_SUCCESS;
     *output = NULL; *output_size = 0;
+    result = hybris_spirv_decorations(code, size, allocator, &decorated, &decorated_size, reason);
+    if (result != VK_SUCCESS) goto done;
+    if (decorated) { code = decorated; size = decorated_size; }
     if (hybris_spirv_multiple(code, size)) {
         result = hybris_spirv_entry(code, size, 0, entry, allocator, &selected, &selected_size, reason);
         if (result != VK_SUCCESS) goto done;
@@ -268,5 +272,6 @@ VkResult hybris_scaled_spirv(const uint32_t *code, size_t size, const char *entr
 done:
     hybris_scaled_free(allocator, flat);
     hybris_scaled_free(allocator, selected);
+    hybris_scaled_free(allocator, decorated);
     return result;
 }

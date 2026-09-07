@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "spirv_entry.h"
+#include "spirv_decorations.h"
 #include <string.h>
 
 static const unsigned char result_positions[] = {
@@ -40,7 +41,7 @@ int hybris_spirv_multiple(const uint32_t *code, size_t size)
  * operands remain conservative and can retain extra declarations, never delete
  * a required one. Function-pointer extensions and nonsemantic debug references
  * into removed functions are explicitly unsupported. */
-VkResult hybris_spirv_entry(const uint32_t *code, size_t size, uint32_t model,
+static VkResult extract_entry(const uint32_t *code, size_t size, uint32_t model,
     const char *entry, const VkAllocationCallbacks *allocator, uint32_t **output,
     size_t *output_size, const char **reason)
 {
@@ -174,4 +175,19 @@ done:
     hybris_scaled_free(allocator, result);
     hybris_scaled_free(allocator, ids);
     return status;
+}
+
+VkResult hybris_spirv_entry(const uint32_t *code, size_t size, uint32_t model,
+    const char *entry, const VkAllocationCallbacks *allocator, uint32_t **output,
+    size_t *output_size, const char **reason)
+{
+    uint32_t *decorated = NULL;
+    size_t decorated_size = 0;
+    *output = NULL; *output_size = 0;
+    VkResult result = hybris_spirv_decorations(code, size, allocator, &decorated, &decorated_size, reason);
+    if (result == VK_SUCCESS)
+        result = extract_entry(decorated ? decorated : code, decorated ? decorated_size : size,
+                               model, entry, allocator, output, output_size, reason);
+    hybris_scaled_free(allocator, decorated);
+    return result;
 }

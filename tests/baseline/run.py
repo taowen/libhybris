@@ -34,6 +34,7 @@ p.add_argument('--scaled-vertex-compat', choices=('missing', 'force'), help='Ena
 p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
 p.add_argument('--icd-mali-loader-quirk', action='store_true', help='Opt in to the build-id-scoped Mali MMUD loader-check workaround for ICD cases')
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
+p.add_argument('--validation-build-manifest', type=Path, help='Build provenance from tools/build-validation-layer.sh')
 p.add_argument('--validation-manifest', type=Path, help='Original layer JSON matching --validation-layer')
 p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
 p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
@@ -46,6 +47,8 @@ if a.selected_cases and a.capture_tools:
     p.error('--case cannot be combined with --capture-tools; capture requires the full reference workload')
 if bool(a.validation_layer) != bool(a.validation_manifest):
     p.error('--validation-layer and --validation-manifest must be supplied together')
+if a.validation_build_manifest and not a.validation_layer:
+    p.error('--validation-build-manifest requires --validation-layer')
 if a.validation_layer and not a.icd_hal:
     p.error('--validation-layer requires --icd-hal')
 if a.capture_tools and not a.icd_hal:
@@ -246,7 +249,7 @@ for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'scaled-vertex', binary))
     cases.append((backend, 'scaled-vertex-multi', binary))
     cases.append((backend, 'scaled-vertex-literal', binary))
-    cases.extend((backend, 'scaled-vertex-' + shape, binary) for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct'))
+    cases.extend((backend, 'scaled-vertex-' + shape, binary) for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec'))
 
 timeline_queue_cases = ('timeline-queues-core', 'timeline-queues-khr')
 timeline_cases = tuple('timeline-' + family + suffix for family in ('core', 'khr')
@@ -274,7 +277,7 @@ if a.icd_hal:
               for mode in ('version', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
-    cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct'))
+    cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec'))
     cases.append(('icd-linked', 'scaled-vertex-linked', 'probe-glibc-linked'))
     cases.append(('icd-linked', 'scaled-vertex-multi-linked', 'probe-glibc-linked'))
     cases.append(('icd-linked', 'scaled-vertex-literal-linked', 'probe-glibc-linked'))
@@ -287,12 +290,19 @@ if a.icd_hal:
         shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
         metadata['validation_layer_sha256'] = sha256_file(a.validation_layer)
         metadata['validation_manifest_sha256'] = sha256_file(a.validation_manifest)
+        if a.validation_build_manifest:
+            validation_provenance = json.loads(a.validation_build_manifest.read_text())
+            expected_layer = validation_provenance.get('files', {}).get('lib/libVkLayer_khronos_validation.so', {})
+            if expected_layer.get('sha256') != metadata['validation_layer_sha256']:
+                raise SystemExit('validation build manifest does not identify the selected layer')
+            shutil.copy2(a.validation_build_manifest, a.out / 'validation-build-manifest.json')
+            metadata['validation_build_manifest_sha256'] = sha256_file(a.validation_build_manifest)
         layer_json = json.loads(a.validation_manifest.read_text())
         if layer_json['layer']['name'] != 'VK_LAYER_KHRONOS_validation':
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct'))
+        cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec'))
         cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
@@ -368,6 +378,8 @@ try:
             output, code = exc.stdout or b'', 124
             kill_remote()
         (a.out / (name + '.log')).write_bytes(output or b'')
+        probe_exit_code = code
+        shader_evidence_error = None
         decoded = (output or b'').decode('utf-8', errors='replace')
         if backend in {'icd', 'icd-linked'} and mode.startswith('scaled-vertex') and a.scaled_vertex_compat:
             dump_local = a.out / (name + '-shaders')
@@ -376,16 +388,20 @@ try:
                            stdout=subprocess.DEVNULL, timeout=30)
             from scaled_evidence import scaled_evidence
             try:
-                shape = next((shape for shape in ('matarray', 'matrix', 'nested', 'array', 'spec-direct', 'spec') if shape in mode), None)
-                if shape:
+                fixture = next((name for name in ('group-multi', 'group-spec', 'group', 'matarray', 'matrix',
+                    'nested', 'array', 'spec-direct', 'spec', 'multi', 'literal') if name in mode), 'vert')
+                source = a.bundle / ('src/shaders/scaled.' + fixture + '.inc')
+                if fixture in {'group-spec', 'matarray', 'matrix', 'nested', 'array', 'spec-direct', 'spec'}:
                     from aggregate_evidence import aggregate_evidence
-                    evidence = aggregate_evidence(dump_local, decoded, a.bundle / ('src/shaders/scaled.' + shape + '.inc'))
+                    evidence = aggregate_evidence(dump_local, decoded, source)
                 else:
-                    evidence = scaled_evidence(dump_local, decoded, a.scaled_vertex_compat == 'force', a.bundle / ('src/shaders/scaled.multi.inc' if 'multi' in mode else 'src/shaders/scaled.literal.inc' if 'literal' in mode else 'src/shaders/scaled.vert.inc'))
+                    evidence = scaled_evidence(dump_local, decoded, a.scaled_vertex_compat == 'force', source)
                 (a.out / (name + '-shaders.json')).write_text(json.dumps(evidence, indent=2) + '\n')
-            except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 print(name, 'scaled shader evidence failed:', exc, flush=True)
-                code = 2
+                shader_evidence_error = str(exc)
+                if code == 0:
+                    code = 2
         if backend == 'icd' and mode == 'version' and code == 0:
             versions = [m.group(1) for line in decoded.splitlines()
                         if (m := re.fullmatch(r'ICD_API_VERSION (\d+\.\d+\.\d+)', line))]
@@ -459,7 +475,8 @@ try:
         (a.out / (name + '-mappings.json')).write_text(
             json.dumps(mappings, indent=2) + '\n')
         status = classify(code)
-        results.append(dict(case=name, status=status, exit_code=code, binary=binary))
+        results.append(dict(case=name, status=status, exit_code=code, probe_exit_code=probe_exit_code,
+                            shader_evidence_error=shader_evidence_error, binary=binary))
         print(name, status, 'exit=' + str(code), flush=True)
         if backend == 'icd' and mode == 'version' and code != 0:
             raise SystemExit('ICD version discovery failed; dependent cases were not run')

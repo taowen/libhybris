@@ -5,6 +5,7 @@ import re
 import struct
 import subprocess
 import tempfile
+from group_decorations import group_module
 
 here = Path(__file__).resolve().parent
 with tempfile.TemporaryDirectory(prefix='hybris-scaled-shaders-') as temporary:
@@ -43,6 +44,12 @@ with tempfile.TemporaryDirectory(prefix='hybris-scaled-shaders-') as temporary:
     direct = output / 'specialized-direct.spv'
     subprocess.run(['glslangValidator', '-V', '-DHYBRIS_SPEC_DIRECT=1', str(here / 'scaled.spec.vert'), '-o', str(direct)], check=True)
     aggregates.append((direct, 'scaled.spec-direct.inc', 'kScaledSpecDirectSpv'))
+    for original, name, symbol in ((vertex, 'group', 'kScaledGroupSpv'),
+                                    (multiple, 'group-multi', 'kScaledGroupMultiSpv'),
+                                    (specialized, 'group-spec', 'kScaledGroupSpecSpv')):
+        target = output / (name + '.spv')
+        target.write_bytes(group_module(original.read_bytes()))
+        aggregates.append((target, 'scaled.' + name + '.inc', symbol))
     for path, filename, symbol in ((vertex, 'scaled.vert.inc', 'kScaledVertSpv'),
                                    (fragment, 'scaled.frag.inc', 'kScaledFragSpv'),
                                    (multiple, 'scaled.multi.inc', 'kScaledMultiSpv'),
