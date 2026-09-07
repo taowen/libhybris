@@ -250,7 +250,8 @@ int hybris_icd_physical_has_native_buffer(VkPhysicalDevice physical)
     }
     int found = 0;
     for (uint32_t i = 0; i < count; ++i)
-        if (!strcmp(extensions[i].extensionName, "VK_ANDROID_native_buffer"))
+        if (!strcmp(extensions[i].extensionName, "VK_ANDROID_native_buffer") &&
+            extensions[i].specVersion >= 8)
             found = 1;
     free(extensions);
     return found;
@@ -285,10 +286,17 @@ struct hybris_vk_wayland_window *hybris_icd_wsi_surface_window(VkSurfaceKHR surf
     return state->window;
 }
 
+static uint32_t surface_formats(const struct hybris_icd_physical *context,
+    VkPhysicalDevice physical, VkSurfaceFormatKHR *formats);
+
 static int present_engine(VkPhysicalDevice physical, uint32_t queue_family)
 {
-    return hybris_icd_physical_has_native_buffer(physical) &&
-        hybris_icd_wsi_graphics_family(physical, queue_family);
+    struct hybris_icd_physical context;
+    VkSurfaceFormatKHR formats[2];
+    return hybris_icd_lookup_physical(physical, &context) &&
+        hybris_icd_physical_has_native_buffer(physical) &&
+        hybris_icd_wsi_graphics_family(physical, queue_family) &&
+        surface_formats(&context, physical, formats) != 0;
 }
 
 static VkBool32 VKAPI_CALL wayland_presentation_support(VkPhysicalDevice physical,
@@ -324,33 +332,83 @@ static VkResult fill_array(uint32_t available, uint32_t *count, void *out,
     return written < available ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
-static VkResult VKAPI_CALL surface_capabilities(VkPhysicalDevice physical,
+/* Query image creation constraints, not a graphics-feature OR mask. Every
+ * advertised format must support color attachment use and the common usage. */
+static VkResult image_limits(const struct hybris_icd_physical *context,
+    VkPhysicalDevice physical, VkFormat format, VkImageUsageFlags usage,
+    VkImageFormatProperties *properties)
+{
+    PFN_vkGetPhysicalDeviceImageFormatProperties query =
+        (PFN_vkGetPhysicalDeviceImageFormatProperties)context->resolver(context->instance,
+            "vkGetPhysicalDeviceImageFormatProperties");
+    if (!query) return VK_ERROR_INITIALIZATION_FAILED;
+    return query(physical, format, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+        usage, 0, properties);
+}
+
+static uint32_t surface_formats(const struct hybris_icd_physical *context,
+    VkPhysicalDevice physical, VkSurfaceFormatKHR *formats)
+{
+    const VkFormat candidates[] = {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM};
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < 2; ++i) {
+        VkImageFormatProperties properties;
+        if (image_limits(context, physical, candidates[i], VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                &properties) == VK_SUCCESS && (properties.sampleCounts & VK_SAMPLE_COUNT_1_BIT))
+            formats[count++] = (VkSurfaceFormatKHR){candidates[i], VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    }
+    return count;
+}
+
+VkResult hybris_icd_wsi_capabilities(VkPhysicalDevice physical,
     VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR *capabilities)
 {
     struct hybris_icd_physical context;
     if (!capabilities) return VK_ERROR_INITIALIZATION_FAILED;
-    if (!owned_surface(physical, surface, &context))
-        return VK_ERROR_SURFACE_LOST_KHR;
-    if (!hybris_icd_physical_has_native_buffer(physical))
-        return VK_ERROR_UNKNOWN;
+    if (!owned_surface(physical, surface, &context)) return VK_ERROR_SURFACE_LOST_KHR;
+    if (!hybris_icd_physical_has_native_buffer(physical)) return VK_ERROR_UNKNOWN;
+    VkSurfaceFormatKHR formats[2];
+    uint32_t count = surface_formats(&context, physical, formats);
+    if (!count) return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    const VkImageUsageFlags optional[] = {VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_USAGE_SAMPLED_BIT};
+    for (uint32_t bit = 0; bit < 3; ++bit) {
+        int supported = 1;
+        for (uint32_t i = 0; i < count; ++i) {
+            VkImageFormatProperties properties;
+            if (image_limits(&context, physical, formats[i].format, usage | optional[bit],
+                    &properties) != VK_SUCCESS) supported = 0;
+        }
+        if (supported) usage |= optional[bit];
+    }
+    VkExtent2D maximum = {UINT32_MAX, UINT32_MAX};
+    for (uint32_t i = 0; i < count; ++i) {
+        VkImageFormatProperties properties;
+        VkResult result = image_limits(&context, physical, formats[i].format, usage, &properties);
+        if (result != VK_SUCCESS) return result;
+        if (properties.maxExtent.width < maximum.width) maximum.width = properties.maxExtent.width;
+        if (properties.maxExtent.height < maximum.height) maximum.height = properties.maxExtent.height;
+    }
     memset(capabilities, 0, sizeof(*capabilities));
     capabilities->minImageCount = 2;
     capabilities->maxImageCount = 8;
-    capabilities->currentExtent.width = 0xffffffffu;
-    capabilities->currentExtent.height = 0xffffffffu;
-    capabilities->minImageExtent.width = 1;
-    capabilities->minImageExtent.height = 1;
-    capabilities->maxImageExtent.width = 16384;
-    capabilities->maxImageExtent.height = 16384;
+    capabilities->currentExtent = (VkExtent2D){UINT32_MAX, UINT32_MAX};
+    capabilities->minImageExtent = (VkExtent2D){1, 1};
+    capabilities->maxImageExtent = maximum;
     capabilities->maxImageArrayLayers = 1;
     capabilities->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     capabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    capabilities->supportedCompositeAlpha =
-        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR | VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
-    capabilities->supportedUsageFlags =
-        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    // Surface opacity is controlled by the native Wayland surface owner.
+    capabilities->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    capabilities->supportedUsageFlags = usage;
     return VK_SUCCESS;
+}
+
+static VkResult VKAPI_CALL surface_capabilities(VkPhysicalDevice physical,
+    VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR *capabilities)
+{
+    return hybris_icd_wsi_capabilities(physical, surface, capabilities);
 }
 
 static VkResult VKAPI_CALL get_surface_formats(VkPhysicalDevice physical,
@@ -358,30 +416,22 @@ static VkResult VKAPI_CALL get_surface_formats(VkPhysicalDevice physical,
 {
     struct hybris_icd_physical context;
     if (!count) return VK_ERROR_INITIALIZATION_FAILED;
-    if (!owned_surface(physical, surface, &context))
-        return VK_ERROR_SURFACE_LOST_KHR;
-    if (!hybris_icd_physical_has_native_buffer(physical))
-        return VK_ERROR_UNKNOWN;
-    PFN_vkGetPhysicalDeviceFormatProperties query =
-        (PFN_vkGetPhysicalDeviceFormatProperties)
-        context.resolver(context.instance, "vkGetPhysicalDeviceFormatProperties");
-    if (!query) return VK_ERROR_INITIALIZATION_FAILED;
-    const VkFormat candidates[] = {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM};
+    if (!owned_surface(physical, surface, &context)) return VK_ERROR_SURFACE_LOST_KHR;
+    if (!hybris_icd_physical_has_native_buffer(physical)) return VK_ERROR_UNKNOWN;
     VkSurfaceFormatKHR supported[2];
-    uint32_t available = 0;
-    for (uint32_t i = 0; i < 2; ++i) {
-        VkFormatProperties properties;
-        query(physical, candidates[i], &properties);
-        if (properties.optimalTilingFeatures &
-            (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
-             VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
-            supported[available].format = candidates[i];
-            supported[available].colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-            ++available;
-        }
-    }
-    if (!available) return VK_ERROR_UNKNOWN;
+    uint32_t available = surface_formats(&context, physical, supported);
+    if (!available) return VK_ERROR_FORMAT_NOT_SUPPORTED;
     return fill_array(available, count, formats, supported, sizeof(*supported));
+}
+
+static VkResult VKAPI_CALL present_rectangles(VkPhysicalDevice physical,
+    VkSurfaceKHR surface, uint32_t *count, VkRect2D *rectangles)
+{
+    VkSurfaceCapabilitiesKHR capabilities;
+    VkResult result = hybris_icd_wsi_capabilities(physical, surface, &capabilities);
+    if (result != VK_SUCCESS) return result;
+    VkRect2D rectangle = {{0, 0}, capabilities.maxImageExtent};
+    return fill_array(1, count, rectangles, &rectangle, sizeof(rectangle));
 }
 
 static VkResult VKAPI_CALL get_surface_present_modes(VkPhysicalDevice physical,
@@ -449,6 +499,8 @@ PFN_vkVoidFunction hybris_icd_wsi_proc(const char *name, int surface_enabled,
     int wayland_enabled)
 {
 #ifdef WANT_WAYLAND
+    if (!strcmp(name, "vkGetPhysicalDevicePresentRectanglesKHR"))
+        return (PFN_vkVoidFunction)present_rectangles;
     if (wayland_enabled) {
         if (!strcmp(name, "vkCreateWaylandSurfaceKHR"))
             return (PFN_vkVoidFunction)create_wayland_surface;

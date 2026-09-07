@@ -21,6 +21,8 @@
 #include <errno.h>
 #include <new>
 #include <string.h>
+#include <unistd.h>
+#include <poll.h>
 
 struct hybris_vk_wayland_window {
     wl_event_queue *queue;
@@ -111,14 +113,21 @@ int hybris_vk_wayland_window_dequeue(hybris_vk_wayland_window *owner,
     int64_t timeout_ns, ANativeWindowBuffer **buffer, int *fence_fd)
 {
     if (!owner || !owner->native || !buffer || !fence_fd) return -EINVAL;
-    return owner->native->dequeueBufferTimeout(
-        reinterpret_cast<BaseNativeWindowBuffer **>(buffer), fence_fd, timeout_ns);
+    BaseNativeWindowBuffer *result = nullptr;
+    int error = owner->native->dequeueBufferTimeout(&result, fence_fd, timeout_ns);
+    // BaseNativeWindowBuffer has a vtable before its ANativeWindowBuffer base.
+    // A pointer-to-pointer reinterpret_cast bypasses this base adjustment.
+    *buffer = result;
+    return error;
 }
 
 int hybris_vk_wayland_window_queue(hybris_vk_wayland_window *owner,
     ANativeWindowBuffer *buffer, int fence_fd)
 {
-    if (!owner || !owner->native || !buffer) return -EINVAL;
+    if (!owner || !owner->native || !buffer) {
+        if (fence_fd >= 0) close(fence_fd);
+        return -EINVAL;
+    }
     ANativeWindow *window = owner->native;
     return window->queueBuffer(window, buffer, fence_fd);
 }
@@ -126,9 +135,20 @@ int hybris_vk_wayland_window_queue(hybris_vk_wayland_window *owner,
 int hybris_vk_wayland_window_cancel(hybris_vk_wayland_window *owner,
     ANativeWindowBuffer *buffer, int fence_fd)
 {
+    // The underlying legacy cancel does not consume fences. Complete that
+    // ownership contract here before making the buffer reusable.
+    int error = 0;
+    if (fence_fd >= 0) {
+        struct pollfd wait = {fence_fd, POLLIN, 0};
+        int status;
+        do { status = poll(&wait, 1, -1); } while (status < 0 && errno == EINTR);
+        if (status < 0 || !(wait.revents & POLLIN)) error = -EIO;
+        close(fence_fd);
+    }
+    if (error) return error;
     if (!owner || !owner->native || !buffer) return -EINVAL;
     ANativeWindow *window = owner->native;
-    return window->cancelBuffer(window, buffer, fence_fd);
+    return window->cancelBuffer(window, buffer, -1);
 }
 
 void hybris_vk_wayland_window_disconnect(hybris_vk_wayland_window *owner)

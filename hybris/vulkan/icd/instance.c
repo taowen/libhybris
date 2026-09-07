@@ -334,6 +334,8 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
      * device object; GIPA may return the pointer before a device exists. */
     PFN_vkVoidFunction swapchain = hybris_icd_swapchain_proc(name, 1);
     if (swapchain) return swapchain;
+    PFN_vkVoidFunction image = backend ? hybris_icd_swapchain_image_proc(name) : NULL;
+    if (image) return image;
     /* Preserve the HAL's command scope and extension gating. */
     if (backend && !strcmp(name, "vkDestroyInstance"))
         return (PFN_vkVoidFunction)destroy_instance;

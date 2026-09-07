@@ -25,6 +25,7 @@ void hybris_vk_wayland_window_resize(struct hybris_vk_wayland_window *window,
     unsigned width, unsigned height);
 int hybris_vk_wayland_window_dequeue(struct hybris_vk_wayland_window *window,
     int64_t timeout_ns, struct ANativeWindowBuffer **buffer, int *fence_fd);
+/* Queue and cancel consume fence_fd on every return path. */
 int hybris_vk_wayland_window_queue(struct hybris_vk_wayland_window *window,
     struct ANativeWindowBuffer *buffer, int fence_fd);
 int hybris_vk_wayland_window_cancel(struct hybris_vk_wayland_window *window,

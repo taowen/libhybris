@@ -32,7 +32,9 @@ p.add_argument('--out', type=Path, default=ROOT / 'tests/wsi/build/results')
 p.add_argument('--icd-hal', help='standard-loader ICD path: Android Vulkan HAL')
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
 p.add_argument('--icd-mali-loader-quirk', action='store_true', help='Opt in to the build-id-scoped Mali MMUD loader workaround')
+p.add_argument('--swapchain-review', action='store_true', help='Exercise swapchain timeout, retirement, allocator and multi-present boundaries')
 a = p.parse_args()
+if a.swapchain_review and not a.icd_hal: p.error('--swapchain-review requires --icd-hal')
 if not 5 <= a.timeout <= 300: p.error('timeout must be between 5 and 300 seconds')
 if not re.fullmatch(r'[A-Za-z0-9_.]+', a.package): p.error('invalid package')
 if (a.icd_hal is None) != (a.vulkan_loader is None):
@@ -74,6 +76,7 @@ if a.icd_hal:
     (stage / 'standard').mkdir()
     shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
     env['HYBRIS_VULKAN_HAL'] = a.icd_hal
+    if a.swapchain_review: env['HYBRIS_WSI_SWAPCHAIN_REVIEW'] = '1'
     if a.icd_mali_loader_quirk:
         env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK'] = '1'
     env['VK_DRIVER_FILES'] = remote + '/driver.json'

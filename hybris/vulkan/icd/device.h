@@ -16,5 +16,6 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     const VkAllocationCallbacks *allocator, VkDevice *device);
 PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char *name);
 void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCallbacks *allocator);
+int hybris_icd_lookup_queue(VkQueue queue, struct hybris_icd_device *out);
 int hybris_icd_lookup_device(VkDevice device, struct hybris_icd_device *out);
 #endif

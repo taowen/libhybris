@@ -20,7 +20,9 @@ p.add_argument('--repeat', type=int, default=1, help='sequential clients sharing
 p.add_argument('--icd-hal')
 p.add_argument('--vulkan-loader', type=Path)
 p.add_argument('--icd-mali-loader-quirk', action='store_true')
+p.add_argument('--swapchain-review', action='store_true', help='Exercise swapchain timeout, retirement, allocator and multi-present boundaries')
 a = p.parse_args()
+if a.swapchain_review and not a.icd_hal: p.error('--swapchain-review requires --icd-hal')
 if (a.icd_hal is None) != (a.vulkan_loader is None):
     p.error('--icd-hal and --vulkan-loader must be supplied together')
 if a.icd_mali_loader_quirk and not a.icd_hal:
@@ -83,6 +85,7 @@ try:
         if a.icd_hal:
             command += ['--icd-hal', a.icd_hal, '--vulkan-loader', str(a.vulkan_loader)]
         if a.icd_mali_loader_quirk: command += ['--icd-mali-loader-quirk']
+        if a.swapchain_review: command += ['--swapchain-review']
         code = subprocess.run(command).returncode
         entry = {'iteration': index + 1, 'runner_exit': code}
         record['runs'].append(entry)

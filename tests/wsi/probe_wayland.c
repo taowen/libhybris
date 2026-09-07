@@ -5,6 +5,7 @@
 #include <wayland-client.h>
 #include "xdg-shell-client-protocol.h"
 #include "surface_lifecycle.h"
+#include "swapchain_review.h"
 #include <dlfcn.h>
 #include <errno.h>
 #include <stdint.h>
@@ -83,6 +84,7 @@ static int icd_version(void) {
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "--icd-version")) return icd_version();
     if (argc != 1) return 2;
+    int review = getenv("HYBRIS_WSI_SWAPCHAIN_REVIEW") != NULL;
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("WSI_CLIENT pid=%ld\n", (long)getpid());
     alarm(45);
@@ -111,7 +113,7 @@ int main(int argc, char **argv) {
     VkInstance instance = VK_NULL_HANDLE;
     V(vkCreateInstance);
     const char *extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME};
-    VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_0};
+    VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = review ? VK_API_VERSION_1_1 : VK_API_VERSION_1_0};
     VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app, .enabledExtensionCount = 2, .ppEnabledExtensionNames = extensions};
     CHECK(vkCreateInstance(&ci, NULL, &instance));
@@ -218,6 +220,7 @@ int main(int argc, char **argv) {
             .imageUsage = usage, .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
             .preTransform = caps.currentTransform, .compositeAlpha = alpha, .presentMode = VK_PRESENT_MODE_FIFO_KHR,
             .clipped = VK_FALSE, .oldSwapchain = previous};
+        if (review && epoch == 0 && swapchain_review(gip, instance, physical, device, queue, family, &sc)) return 2;
         VkSwapchainKHR swapchain;
         CHECK(vkCreateSwapchainKHR(device, &sc, NULL, &swapchain));
         if (previous) vkDestroySwapchainKHR(device, previous, NULL);

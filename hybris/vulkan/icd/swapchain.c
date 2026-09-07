@@ -30,6 +30,8 @@ struct swapchain_image {
     VkImage image;
     struct ANativeWindowBuffer *native;
     enum image_state state;
+    int acquire_fence;
+    VkSemaphore present_ready;
 };
 
 struct swapchain_state {
@@ -110,7 +112,7 @@ static int hal_format(VkFormat format)
 
 static VkResult import_image(const struct hybris_icd_device *device,
     const VkSwapchainCreateInfoKHR *info, struct ANativeWindowBuffer *native,
-    int usage, VkImage *image)
+    int usage, const VkAllocationCallbacks *allocator, VkImage *image)
 {
     PFN_vkCreateImage create = (PFN_vkCreateImage)device->resolver(device->handle, "vkCreateImage");
     if (!create) return VK_ERROR_EXTENSION_NOT_PRESENT;
@@ -141,7 +143,7 @@ static VkResult import_image(const struct hybris_icd_device *device,
         .queueFamilyIndexCount = info->queueFamilyIndexCount,
         .pQueueFamilyIndices = info->pQueueFamilyIndices,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
-    return create(device->handle, &image_info, NULL, image);
+    return create(device->handle, &image_info, allocator, image);
 }
 
 static void destroy_images(const struct hybris_icd_device *device, struct swapchain_state *state)
@@ -149,12 +151,23 @@ static void destroy_images(const struct hybris_icd_device *device, struct swapch
     PFN_vkDestroyImage destroy = device
         ? (PFN_vkDestroyImage)device->resolver(device->handle, "vkDestroyImage") : NULL;
     for (uint32_t i = 0; i < state->count; ++i) {
+        if (state->images[i].present_ready && device) {
+            PFN_vkDestroySemaphore destroy_semaphore = (PFN_vkDestroySemaphore)
+                device->resolver(device->handle, "vkDestroySemaphore");
+            destroy_semaphore(device->handle, state->images[i].present_ready,
+                state->custom_allocator ? &state->allocator : NULL);
+        }
         if (state->images[i].image && destroy)
             destroy(state->device, state->images[i].image, state->custom_allocator ? &state->allocator : NULL);
-        if (state->images[i].native && !state->retired && state->window) {
-            if (state->images[i].state != IMAGE_PRESENTED)
-                hybris_vk_wayland_window_cancel(state->window, state->images[i].native, -1);
+        if (state->images[i].native && !state->retired && state->window &&
+            state->images[i].state != IMAGE_PRESENTED) {
+            hybris_vk_wayland_window_cancel(state->window, state->images[i].native,
+                state->images[i].acquire_fence);
+        } else if (state->images[i].acquire_fence >= 0) {
+            close(state->images[i].acquire_fence);
         }
+        if (state->images[i].native)
+            state->images[i].native->common.decRef(&state->images[i].native->common);
         state->images[i].image = VK_NULL_HANDLE;
         state->images[i].native = NULL;
     }
@@ -169,6 +182,8 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
         return VK_ERROR_INITIALIZATION_FAILED;
     if (!hybris_icd_lookup_device(device, &context) || !context.swapchain_enabled)
         return VK_ERROR_EXTENSION_NOT_PRESENT;
+    // Retirement occurs on the creation attempt, even if allocation fails.
+    if (info->oldSwapchain) retire_swapchain(info->oldSwapchain);
     if (!info->imageExtent.width || !info->imageExtent.height)
         return VK_ERROR_INITIALIZATION_FAILED;
     int pixel = hal_format(info->imageFormat);
@@ -177,7 +192,32 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     uint64_t generation = 0;
     struct hybris_vk_wayland_window *window =
         hybris_icd_wsi_surface_window(info->surface, &instance, &generation);
-    if (!window) return VK_ERROR_SURFACE_LOST_KHR;
+    if (!window || generation != context.instance_generation)
+        return VK_ERROR_SURFACE_LOST_KHR;
+    int in_use = 0;
+    pthread_mutex_lock(&swapchain_guard);
+    for (struct swapchain_state *active = swapchains; active; active = active->next)
+        if (active->surface == info->surface && !active->retired) in_use = 1;
+    pthread_mutex_unlock(&swapchain_guard);
+    if (in_use) return VK_ERROR_NATIVE_WINDOW_IN_USE_KHR;
+    if (info->flags || info->imageArrayLayers != 1 ||
+        info->presentMode != VK_PRESENT_MODE_FIFO_KHR ||
+        info->preTransform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR ||
+        info->imageColorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    VkSurfaceCapabilitiesKHR capabilities;
+    VkResult checked = hybris_icd_wsi_capabilities(context.physical, info->surface, &capabilities);
+    if (checked != VK_SUCCESS) return checked;
+    if (info->imageExtent.width > capabilities.maxImageExtent.width ||
+        info->imageExtent.height > capabilities.maxImageExtent.height ||
+        (info->imageUsage & ~capabilities.supportedUsageFlags) ||
+        !(info->compositeAlpha & capabilities.supportedCompositeAlpha))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    for (const VkBaseInStructure *next = info->pNext; next; next = next->pNext) {
+        if (next->sType == VK_STRUCTURE_TYPE_DEVICE_GROUP_SWAPCHAIN_CREATE_INFO_KHR &&
+            ((const VkDeviceGroupSwapchainCreateInfoKHR *)next)->modes != VK_DEVICE_GROUP_PRESENT_MODE_LOCAL_BIT_KHR)
+            return VK_ERROR_INITIALIZATION_FAILED;
+    }
     PFN_vkGetSwapchainGrallocUsage2ANDROID usage2 =
         (PFN_vkGetSwapchainGrallocUsage2ANDROID)context.resolver(device,
             "vkGetSwapchainGrallocUsage2ANDROID");
@@ -185,18 +225,10 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     uint64_t consumer = 0, producer = 0;
     VkResult result = usage2(device, info->imageFormat, info->imageUsage, 0, &consumer, &producer);
     if (result != VK_SUCCESS) return result;
+    if ((producer | consumer) >> 32) return VK_ERROR_FORMAT_NOT_SUPPORTED;
     int usage = android_convertGralloc1To0Usage(producer, consumer);
     uint32_t count = info->minImageCount;
-    if (count < 2) count = 2;
-    if (count > 8) count = 8;
-    if (info->oldSwapchain) retire_swapchain(info->oldSwapchain);
-    hybris_vk_wayland_window_resize(window, info->imageExtent.width, info->imageExtent.height);
-    ANativeWindow *native = hybris_vk_wayland_window_native(window);
-    native->perform(native, NATIVE_WINDOW_SET_BUFFERS_DIMENSIONS,
-        (int)info->imageExtent.width, (int)info->imageExtent.height);
-    native->perform(native, NATIVE_WINDOW_SET_BUFFERS_FORMAT, pixel);
-    native->perform(native, NATIVE_WINDOW_SET_USAGE, usage);
-    native->perform(native, NATIVE_WINDOW_SET_BUFFER_COUNT, (int)count);
+    if (count < 2 || count > 8) return VK_ERROR_INITIALIZATION_FAILED;
     struct swapchain_state *state = object_alloc(allocator, sizeof(*state),
         VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!state) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -215,6 +247,22 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     }
     memset(state->images, 0, count * sizeof(*state->images));
     state->count = count;
+    for (uint32_t i = 0; i < count; ++i) state->images[i].acquire_fence = -1;
+    // Begin a fresh pool, including after destruction without oldSwapchain.
+    hybris_vk_wayland_window_disconnect(window);
+    hybris_vk_wayland_window_resize(window, info->imageExtent.width, info->imageExtent.height);
+    ANativeWindow *native = hybris_vk_wayland_window_native(window);
+    if (native->perform(native, NATIVE_WINDOW_SET_BUFFERS_DIMENSIONS,
+            (int)info->imageExtent.width, (int)info->imageExtent.height) ||
+        native->perform(native, NATIVE_WINDOW_SET_BUFFERS_FORMAT, pixel) ||
+        native->perform(native, NATIVE_WINDOW_SET_USAGE, usage) ||
+        native->perform(native, NATIVE_WINDOW_SET_BUFFER_COUNT, (int)count)) {
+        destroy_images(&context, state);
+        hybris_vk_wayland_window_disconnect(window);
+        object_free(allocator, state->custom_allocator, state->images);
+        object_free(allocator, state->custom_allocator, state);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     for (uint32_t i = 0; i < count; ++i) {
         struct ANativeWindowBuffer *buffer = NULL;
         int fence = -1;
@@ -226,17 +274,29 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
             object_free(allocator, state->custom_allocator, state);
             return error == -ENOMEM ? VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_UNKNOWN;
         }
-        /* Create-time dequeue fence is unused; the driver is not waiting yet. */
-        if (fence >= 0) close(fence);
-        result = import_image(&context, info, buffer, usage, &state->images[i].image);
+        // Keep the native backing alive beyond producer-pool retirement, and
+        // preserve its acquire fence until the first driver acquisition.
+        buffer->common.incRef(&buffer->common);
+        state->images[i].native = buffer;
+        state->images[i].acquire_fence = fence;
+        result = import_image(&context, info, buffer, buffer->usage, allocator,
+            &state->images[i].image);
         if (result != VK_SUCCESS) {
-            hybris_vk_wayland_window_cancel(window, buffer, -1);
             destroy_images(&context, state);
             object_free(allocator, state->custom_allocator, state->images);
             object_free(allocator, state->custom_allocator, state);
             return result;
         }
-        state->images[i].native = buffer;
+        PFN_vkCreateSemaphore create_semaphore = (PFN_vkCreateSemaphore)
+            context.resolver(device, "vkCreateSemaphore");
+        VkSemaphoreCreateInfo semaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        result = create_semaphore(device, &semaphore, allocator, &state->images[i].present_ready);
+        if (result != VK_SUCCESS) {
+            destroy_images(&context, state);
+            object_free(allocator, state->custom_allocator, state->images);
+            object_free(allocator, state->custom_allocator, state);
+            return result;
+        }
         state->images[i].state = IMAGE_FREE;
     }
     pthread_mutex_lock(&swapchain_guard);
@@ -256,6 +316,7 @@ static void VKAPI_CALL destroy_swapchain(VkDevice device, VkSwapchainKHR swapcha
     if (!state) return;
     struct hybris_icd_device context;
     destroy_images(hybris_icd_lookup_device(device, &context) ? &context : NULL, state);
+    if (!state->retired) hybris_vk_wayland_window_disconnect(state->window);
     object_free(&state->allocator, state->custom_allocator, state->images);
     object_free(&state->allocator, state->custom_allocator, state);
 }
@@ -293,6 +354,8 @@ static VkResult acquire_slot(struct swapchain_state *state, int64_t timeout_ns, 
     for (uint32_t i = 0; i < state->count; ++i)
         if (state->images[i].state == IMAGE_FREE) {
             *index = i;
+            *fence = state->images[i].acquire_fence;
+            state->images[i].acquire_fence = -1;
             return VK_SUCCESS;
         }
     struct ANativeWindowBuffer *buffer = NULL;
@@ -305,11 +368,11 @@ static VkResult acquire_slot(struct swapchain_state *state, int64_t timeout_ns, 
     }
     for (uint32_t i = 0; i < state->count; ++i)
         if (state->images[i].native == buffer) {
+            state->images[i].state = IMAGE_FREE;
             *index = i;
             return VK_SUCCESS;
         }
-    hybris_vk_wayland_window_cancel(state->window, buffer, -1);
-    if (*fence >= 0) close(*fence);
+    hybris_vk_wayland_window_cancel(state->window, buffer, *fence);
     *fence = -1;
     return VK_ERROR_UNKNOWN;
 }
@@ -324,7 +387,8 @@ static VkResult VKAPI_CALL acquire_next_image(VkDevice device, VkSwapchainKHR sw
     if (!state || state->device != device || state->retired)
         return VK_ERROR_OUT_OF_DATE_KHR;
     int native_fence = -1;
-    VkResult result = acquire_slot(state, dequeue_timeout(timeout), index, &native_fence);
+    uint32_t slot = 0;
+    VkResult result = acquire_slot(state, dequeue_timeout(timeout), &slot, &native_fence);
     if (result != VK_SUCCESS) return result;
     PFN_vkAcquireImageANDROID acquire = (PFN_vkAcquireImageANDROID)
         context.resolver(device, "vkAcquireImageANDROID");
@@ -333,10 +397,85 @@ static VkResult VKAPI_CALL acquire_next_image(VkDevice device, VkSwapchainKHR sw
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
     /* Driver owns native_fence after this call, including failure. */
-    result = acquire(device, state->images[*index].image, native_fence, semaphore, fence);
+    result = acquire(device, state->images[slot].image, native_fence, semaphore, fence);
     if (result != VK_SUCCESS) return result;
-    state->images[*index].state = IMAGE_ACQUIRED;
+    state->images[slot].state = IMAGE_ACQUIRED;
+    *index = slot;
     return VK_SUCCESS;
+}
+
+static VkResult VKAPI_CALL acquire_next_image2(VkDevice device,
+    const VkAcquireNextImageInfoKHR *info, uint32_t *index)
+{
+    if (!info || info->deviceMask != 1) return VK_ERROR_INITIALIZATION_FAILED;
+    return acquire_next_image(device, info->swapchain, info->timeout, info->semaphore, info->fence, index);
+}
+
+static VkResult VKAPI_CALL group_capabilities(VkDevice device,
+    VkDeviceGroupPresentCapabilitiesKHR *capabilities)
+{
+    struct hybris_icd_device context;
+    if (!hybris_icd_lookup_device(device, &context) || !context.swapchain_enabled)
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    memset(capabilities->presentMask, 0, sizeof(capabilities->presentMask));
+    capabilities->presentMask[0] = 1;
+    capabilities->modes = VK_DEVICE_GROUP_PRESENT_MODE_LOCAL_BIT_KHR;
+    return VK_SUCCESS;
+}
+
+static VkResult VKAPI_CALL group_surface_modes(VkDevice device, VkSurfaceKHR surface,
+    VkDeviceGroupPresentModeFlagsKHR *modes)
+{
+    struct hybris_icd_device context;
+    if (!hybris_icd_lookup_device(device, &context) || !context.swapchain_enabled)
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    VkSurfaceCapabilitiesKHR capabilities;
+    VkResult result = hybris_icd_wsi_capabilities(context.physical, surface, &capabilities);
+    if (result != VK_SUCCESS) return result;
+    *modes = VK_DEVICE_GROUP_PRESENT_MODE_LOCAL_BIT_KHR;
+    return VK_SUCCESS;
+}
+
+/* Core 1.1 image-alias chains carry adapter-owned swapchain handles. Until
+ * backing-memory alias binding is implemented, reject that combination here;
+ * forwarding it to an Android HAL would hand it a foreign pointer. */
+static VkResult VKAPI_CALL create_image(VkDevice device, const VkImageCreateInfo *info,
+    const VkAllocationCallbacks *allocator, VkImage *image)
+{
+    struct hybris_icd_device context;
+    if (!hybris_icd_lookup_device(device, &context)) return VK_ERROR_INITIALIZATION_FAILED;
+    for (const VkBaseInStructure *next = info->pNext; next; next = next->pNext)
+        if (next->sType == VK_STRUCTURE_TYPE_IMAGE_SWAPCHAIN_CREATE_INFO_KHR &&
+            ((const VkImageSwapchainCreateInfoKHR *)next)->swapchain != VK_NULL_HANDLE)
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    PFN_vkCreateImage create = (PFN_vkCreateImage)context.resolver(device, "vkCreateImage");
+    return create(device, info, allocator, image);
+}
+
+static VkResult bind_images(VkDevice device, uint32_t count,
+    const VkBindImageMemoryInfo *infos, const char *name)
+{
+    struct hybris_icd_device context;
+    if (!hybris_icd_lookup_device(device, &context)) return VK_ERROR_INITIALIZATION_FAILED;
+    for (uint32_t i = 0; i < count; ++i)
+        for (const VkBaseInStructure *next = infos[i].pNext; next; next = next->pNext)
+            if (next->sType == VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_SWAPCHAIN_INFO_KHR &&
+                ((const VkBindImageMemorySwapchainInfoKHR *)next)->swapchain != VK_NULL_HANDLE)
+                return VK_ERROR_UNKNOWN;
+    PFN_vkBindImageMemory2 bind = (PFN_vkBindImageMemory2)context.resolver(device, name);
+    return bind ? bind(device, count, infos) : VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
+static VkResult VKAPI_CALL bind_images_core(VkDevice device, uint32_t count,
+    const VkBindImageMemoryInfo *infos)
+{
+    return bind_images(device, count, infos, "vkBindImageMemory2");
+}
+
+static VkResult VKAPI_CALL bind_images_khr(VkDevice device, uint32_t count,
+    const VkBindImageMemoryInfo *infos)
+{
+    return bind_images(device, count, infos, "vkBindImageMemory2KHR");
 }
 
 static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
@@ -344,7 +483,7 @@ static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
 {
     struct swapchain_state *state = find_swapchain(info->pSwapchains[entry]);
     uint32_t index = info->pImageIndices[entry];
-    if (!state || state->device != context->handle || state->retired)
+    if (!state || state->device != context->handle || state->device_generation != context->generation)
         return VK_ERROR_OUT_OF_DATE_KHR;
     if (index >= state->count || state->images[index].state != IMAGE_ACQUIRED)
         return VK_ERROR_UNKNOWN;
@@ -360,30 +499,70 @@ static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
         return result;
     }
     int error = hybris_vk_wayland_window_queue(state->window, state->images[index].native, fence);
-    if (error) {
-        /* Native queueBuffer closes fenceFd after taking it. Only unused
-         * fences from the EINVAL wrapper path remain ours. */
-        if (error == -EINVAL && fence >= 0) close(fence);
-        return VK_ERROR_UNKNOWN;
-    }
+    // The native queue wrapper consumes the FD on every return path.
+    if (error) return VK_ERROR_SURFACE_LOST_KHR;
     state->images[index].state = IMAGE_PRESENTED;
     return VK_SUCCESS;
 }
 
 static VkResult VKAPI_CALL queue_present(VkQueue queue, const VkPresentInfoKHR *info)
 {
-    if (!info || !info->pSwapchains || !info->pImageIndices)
+    if (!info || (info->swapchainCount && (!info->pSwapchains || !info->pImageIndices)))
         return VK_ERROR_INITIALIZATION_FAILED;
+    struct hybris_icd_device context;
+    if (!hybris_icd_lookup_queue(queue, &context) || !context.swapchain_enabled)
+        return VK_ERROR_UNKNOWN;
+    VkSemaphore *signals = NULL;
+    // Each Android release must get an explicit dependency: with zero waits
+    // a driver may return an already-signaled FD without inspecting the image.
+    // Fan out one application wait into one semaphore per presented image.
+    if (info->swapchainCount != 1 && info->waitSemaphoreCount) {
+        VkPipelineStageFlags *stages = malloc(info->waitSemaphoreCount * sizeof(*stages));
+        signals = info->swapchainCount ? malloc(info->swapchainCount * sizeof(*signals)) : NULL;
+        if (!stages || (info->swapchainCount && !signals)) {
+            free(stages); free(signals);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        for (uint32_t i = 0; i < info->waitSemaphoreCount; ++i)
+            stages[i] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        for (uint32_t i = 0; i < info->swapchainCount; ++i) {
+            struct swapchain_state *state = find_swapchain(info->pSwapchains[i]);
+            uint32_t index = info->pImageIndices[i];
+            if (!state || state->device != context.handle || index >= state->count ||
+                state->images[index].state != IMAGE_ACQUIRED) {
+                free(stages); free(signals);
+                return VK_ERROR_UNKNOWN;
+            }
+            signals[i] = state->images[index].present_ready;
+        }
+        VkSubmitInfo wait = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .waitSemaphoreCount = info->waitSemaphoreCount,
+            .pWaitSemaphores = info->pWaitSemaphores, .pWaitDstStageMask = stages,
+            .signalSemaphoreCount = info->swapchainCount, .pSignalSemaphores = signals};
+        PFN_vkQueueSubmit submit = (PFN_vkQueueSubmit)context.resolver(context.handle, "vkQueueSubmit");
+        VkResult result = submit(queue, 1, &wait, VK_NULL_HANDLE);
+        free(stages);
+        if (result != VK_SUCCESS) {
+            free(signals);
+            if (info->pResults)
+                for (uint32_t i = 0; i < info->swapchainCount; ++i) info->pResults[i] = result;
+            return result;
+        }
+    }
+    VkPresentInfoKHR ready = *info;
     VkResult worst = VK_SUCCESS;
     for (uint32_t i = 0; i < info->swapchainCount; ++i) {
-        struct swapchain_state *state = find_swapchain(info->pSwapchains[i]);
-        struct hybris_icd_device context;
-        VkResult result = VK_ERROR_UNKNOWN;
-        if (state && hybris_icd_lookup_device(state->device, &context))
-            result = present_one(&context, queue, info, i);
+        if (signals) {
+            ready.waitSemaphoreCount = 1;
+            ready.pWaitSemaphores = &signals[i];
+        }
+        VkResult result = present_one(&context, queue, &ready, i);
         if (info->pResults) info->pResults[i] = result;
-        if (result != VK_SUCCESS) worst = result;
+        if (worst == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST ||
+            (result == VK_ERROR_SURFACE_LOST_KHR && worst != VK_ERROR_DEVICE_LOST))
+            worst = result;
     }
+    free(signals);
     return worst;
 }
 
@@ -429,7 +608,7 @@ VkResult hybris_icd_prepare_device(VkPhysicalDevice physical, PFN_vkGetInstanceP
     *swapchain_enabled = 0;
 #ifdef WANT_WAYLAND
     uint32_t count = info->enabledExtensionCount;
-    const char **kept = count || 1 ? malloc((count + 1) * sizeof(*kept)) : NULL;
+    const char **kept = malloc(((size_t)count + 1) * sizeof(*kept));
     if (!kept) return VK_ERROR_OUT_OF_HOST_MEMORY;
     uint32_t kept_count = 0;
     int anb = 0;
@@ -446,8 +625,15 @@ VkResult hybris_icd_prepare_device(VkPhysicalDevice physical, PFN_vkGetInstanceP
         free(kept);
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
-    if (*swapchain_enabled && !anb)
-        kept[kept_count++] = VK_ANDROID_NATIVE_BUFFER_EXTENSION_NAME;
+    if (*swapchain_enabled) {
+        for (const VkBaseInStructure *next = info->pNext; next; next = next->pNext)
+            if (next->sType == VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO &&
+                ((const VkDeviceGroupDeviceCreateInfo *)next)->physicalDeviceCount != 1) {
+                free(kept);
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            }
+        if (!anb) kept[kept_count++] = VK_ANDROID_NATIVE_BUFFER_EXTENSION_NAME;
+    }
     *names = kept;
     filtered->enabledExtensionCount = kept_count;
     filtered->ppEnabledExtensionNames = kept_count ? kept : NULL;
@@ -521,8 +707,22 @@ PFN_vkVoidFunction hybris_icd_swapchain_proc(const char *name, int swapchain_ena
     if (!strcmp(name, "vkGetSwapchainImagesKHR")) return (PFN_vkVoidFunction)get_swapchain_images;
     if (!strcmp(name, "vkAcquireNextImageKHR")) return (PFN_vkVoidFunction)acquire_next_image;
     if (!strcmp(name, "vkQueuePresentKHR")) return (PFN_vkVoidFunction)queue_present;
+    if (!strcmp(name, "vkAcquireNextImage2KHR")) return (PFN_vkVoidFunction)acquire_next_image2;
+    if (!strcmp(name, "vkGetDeviceGroupPresentCapabilitiesKHR")) return (PFN_vkVoidFunction)group_capabilities;
+    if (!strcmp(name, "vkGetDeviceGroupSurfacePresentModesKHR")) return (PFN_vkVoidFunction)group_surface_modes;
 #endif
     (void)name;
     (void)swapchain_enabled;
+    return NULL;
+}
+
+PFN_vkVoidFunction hybris_icd_swapchain_image_proc(const char *name)
+{
+#ifdef WANT_WAYLAND
+    if (!strcmp(name, "vkCreateImage")) return (PFN_vkVoidFunction)create_image;
+    if (!strcmp(name, "vkBindImageMemory2")) return (PFN_vkVoidFunction)bind_images_core;
+    if (!strcmp(name, "vkBindImageMemory2KHR")) return (PFN_vkVoidFunction)bind_images_khr;
+#endif
+    (void)name;
     return NULL;
 }

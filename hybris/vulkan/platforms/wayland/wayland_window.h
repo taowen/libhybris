@@ -92,7 +92,7 @@ private:
     WaylandNativeWindowBuffer *addBuffer();
     void destroyBuffer(WaylandNativeWindowBuffer *, bool counted = true);
     void destroyBuffers();
-    void presentBuffer(WaylandNativeWindowBuffer *wnb);
+    int presentBuffer(WaylandNativeWindowBuffer *wnb);
     int readQueue(bool block);
 
     std::list<WaylandNativeWindowBuffer *> m_bufList;

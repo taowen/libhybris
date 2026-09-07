@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <poll.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -79,7 +80,7 @@ int WaylandNativeWindow::apiDisconnect(int api)
     (void)api;
     HYBRIS_TRACE_BEGIN("wayland-platform", "producer_disconnect", "window=%p", this);
     lock();
-    readQueue(false);
+    wl_display_dispatch_queue_pending(m_display, wl_queue);
     // Android Vulkan reconnects before allocating a replacement swapchain.
     // A displayed buffer may not be released until a NEW buffer is committed.
     // Retire those buffers outside the new producer pool; never wait for them
@@ -186,63 +187,78 @@ int WaylandNativeWindow::dequeueBufferTimeout(BaseNativeWindowBuffer **buffer, i
     int64_t timeout_ns)
 {
     HYBRIS_TRACE_BEGIN("wayland-platform", "dequeueBufferTimeout", "");
+    *buffer = nullptr;
+    *fenceFd = -1;
     lock();
-    readQueue(false);
-    struct timespec deadline = {0, 0};
-    if (timeout_ns > 0) {
-        clock_gettime(CLOCK_MONOTONIC, &deadline);
-        deadline.tv_sec += timeout_ns / 1000000000LL;
-        deadline.tv_nsec += timeout_ns % 1000000000LL;
-        if (deadline.tv_nsec >= 1000000000L) {
-            deadline.tv_sec++;
-            deadline.tv_nsec -= 1000000000L;
+    struct timespec started;
+    clock_gettime(CLOCK_MONOTONIC, &started);
+    int error = 0;
+    bool polled = false;
+    for (;;) {
+        if (wl_display_dispatch_queue_pending(m_display, wl_queue) < 0) {
+            error = -EPIPE;
+            break;
+        }
+        if (m_freeBufs) break;
+        // Register the reader before polling; pending dispatch alone never
+        // reads release events from the socket and races with other queues.
+        if (wl_display_prepare_read_queue(m_display, wl_queue) != 0) {
+            if (errno == EAGAIN) continue;
+            error = -EPIPE;
+            break;
+        }
+        int timeout_ms = -1;
+        if (timeout_ns >= 0) {
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            int64_t elapsed = (int64_t)(now.tv_sec - started.tv_sec) * 1000000000LL +
+                now.tv_nsec - started.tv_nsec;
+            if ((timeout_ns > 0 && elapsed >= timeout_ns) || (!timeout_ns && polled)) {
+                wl_display_cancel_read(m_display);
+                error = timeout_ns == 0 ? -EAGAIN : -ETIMEDOUT;
+                break;
+            }
+            int64_t remain = elapsed >= timeout_ns ? 0 : timeout_ns - elapsed;
+            // Saturate without overflowing either the addition or int poll timeout.
+            int64_t milliseconds = remain / 1000000LL + (remain % 1000000LL != 0);
+            timeout_ms = milliseconds > INT_MAX ? INT_MAX : (int)milliseconds;
+        }
+        short events = POLLIN;
+        if (wl_display_flush(m_display) < 0) {
+            if (errno == EAGAIN) events |= POLLOUT;
+            else {
+                wl_display_cancel_read(m_display);
+                error = -EPIPE;
+                break;
+            }
+        }
+        struct pollfd wait = {wl_display_get_fd(m_display), events, 0};
+        int status = poll(&wait, 1, timeout_ms);
+        polled = true;
+        if (status <= 0 || !(wait.revents & POLLIN)) {
+            wl_display_cancel_read(m_display);
+            if (status < 0 && errno == EINTR) continue;
+            if (status < 0 || (wait.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+                error = -EPIPE;
+                break;
+            }
+            if (!status) {
+                // A saturated INT_MAX interval can expire before the deadline.
+                if (timeout_ms == INT_MAX) continue;
+                error = timeout_ns == 0 ? -EAGAIN : -ETIMEDOUT;
+                break;
+            }
+            continue; // Writable: flush again before the next read preparation.
+        }
+        if (wl_display_read_events(m_display) < 0) {
+            error = -EPIPE;
+            break;
         }
     }
-    while (m_freeBufs == 0) {
-        if (timeout_ns == 0) {
-            unlock();
-            *buffer = 0;
-            *fenceFd = -1;
-            HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
-            return -EAGAIN;
-        }
-        if (timeout_ns < 0) {
-            readQueue(true);
-            continue;
-        }
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        int64_t remain = (int64_t)(deadline.tv_sec - now.tv_sec) * 1000000000LL +
-            (deadline.tv_nsec - now.tv_nsec);
-        if (remain <= 0) {
-            unlock();
-            *buffer = 0;
-            *fenceFd = -1;
-            HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
-            return -ETIMEDOUT;
-        }
-        wl_display_flush(m_display);
-        struct pollfd wait = {.fd = wl_display_get_fd(m_display), .events = POLLIN, .revents = 0};
-        int timeout_ms = (int)((remain + 999999LL) / 1000000LL);
-        if (timeout_ms < 1) timeout_ms = 1;
-        int status = poll(&wait, 1, timeout_ms);
-        if (status < 0 && errno == EINTR) continue;
-        if (status == 0) {
-            unlock();
-            *buffer = 0;
-            *fenceFd = -1;
-            HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
-            return -ETIMEDOUT;
-        }
-        if (status < 0) {
-            int error = -errno;
-            unlock();
-            *buffer = 0;
-            *fenceFd = -1;
-            HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
-            return error;
-        }
-        readQueue(false);
+    if (error) {
+        unlock();
+        HYBRIS_TRACE_END("wayland-platform", "dequeueBufferTimeout", "");
+        return error;
     }
 
     std::list<WaylandNativeWindowBuffer *>::iterator it = m_bufList.begin();
@@ -283,22 +299,22 @@ int WaylandNativeWindow::dequeueBufferTimeout(BaseNativeWindowBuffer **buffer, i
     return 0;
 }
 
-void WaylandNativeWindow::presentBuffer(WaylandNativeWindowBuffer *wnb)
+int WaylandNativeWindow::presentBuffer(WaylandNativeWindowBuffer *wnb)
 {
     int ret = 0;
     if (!m_window) {
-        return;
+        return -EPIPE;
     }
 
-    ret = readQueue(false);
+    ret = wl_display_dispatch_queue_pending(m_display, wl_queue);
     if (this->frame_callback) {
         do {
-            ret = readQueue(true);
+            ret = wl_display_dispatch_queue(m_display, wl_queue);
         } while (this->frame_callback && ret != -1);
     }
     if (ret < 0) {
         HYBRIS_TRACE_END("wayland-platform", "queueBuffer_wait_for_frame_callback", "");
-        return;
+        return -EPIPE;
     }
 
     if (m_swap_interval > 0) {
@@ -357,6 +373,7 @@ void WaylandNativeWindow::presentBuffer(WaylandNativeWindowBuffer *wnb)
     // TODO damage areas
     m_damage_rects = NULL;
     m_damage_n_rects = 0;
+    return 0;
 }
 
 static int debugenvchecked = 0;
@@ -387,8 +404,13 @@ int WaylandNativeWindow::queueBuffer(BaseNativeWindowBuffer* buffer, int fenceFd
     HYBRIS_TRACE_BEGIN("wayland-platform", "queueBuffer_waiting_for_fence", "-%p", wnb);
     if (fenceFd >= 0)
     {
-        sync_wait(fenceFd, -1);
+        int status = sync_wait(fenceFd, -1);
+        int error = errno;
         close(fenceFd);
+        if (status < 0) {
+            unlock();
+            return -error;
+        }
     }
     HYBRIS_TRACE_END("wayland-platform", "queueBuffer_waiting_for_fence", "-%p", wnb);
 #endif
@@ -398,13 +420,16 @@ int WaylandNativeWindow::queueBuffer(BaseNativeWindowBuffer* buffer, int fenceFd
     // to wait on per-commit fences. If we committed while the GPU was still
     // writing, the compositor would composite whatever partial/empty content
     // was in the buffer at that moment.
-    presentBuffer(wnb);
+    bool retired = std::find(m_bufList.begin(), m_bufList.end(), wnb) == m_bufList.end();
+    if (retired) wnb->common.incRef(&wnb->common);
+    int result = presentBuffer(wnb);
+    if (result && retired) wnb->common.decRef(&wnb->common);
 
     HYBRIS_TRACE_COUNTER("wayland-platform", "fronted.size", "%lu", fronted.size());
     HYBRIS_TRACE_END("wayland-platform", "queueBuffer", "-%p", wnb);
     unlock();
 
-    return NO_ERROR;
+    return result;
 }
 
 // vim: noai:ts=4:sw=4:ss=4:expandtab

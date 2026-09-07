@@ -1,8 +1,8 @@
 # Wayland window probe
 
-This optional standalone probe exercises the replacement Vulkan frontend
-against a running Android compositor exposing `wl_compositor`, `xdg_wm_base`
-and `android_wlegl`. It does not use the standard-loader ICD path. The default
+This optional standalone probe exercises either the replacement Vulkan frontend
+or, with `--icd-hal`, the standard-loader ICD against a running Android compositor exposing `wl_compositor`, `xdg_wm_base`
+and `android_wlegl`. The default
 endpoint is the existing debuggable `io.taowen.ardesk` app's `files/runtime/wayland-0`.
 Start that app and its desktop before running; the runner does not install,
 restart or update it. A stale socket is not evidence that a compositor is running.
@@ -262,7 +262,9 @@ keeps only its VkSurfaceKHR-to-owner mapping and Android Vulkan translation.
 The standard ICD compiles the same factory, implements local Wayland
 surface create/destroy, and implements `VK_KHR_swapchain` by importing
 window buffers with `VK_ANDROID_native_buffer`. Presentation-support is true
-only when that HAL extension is present and a graphics queue exists.
+only when revision 8 or later of that HAL extension, a graphics queue and usable
+color-attachment formats are present. This is an experimental FIFO subset;
+see [swapchain review](swapchain-review.md) for supported boundaries and gaps.
 Acquire uses a timed native-window dequeue rather than the blocking
 ANativeWindow path. It advertises `VK_KHR_surface`/`VK_KHR_wayland_surface`
 itself and strips those names before HAL `vkCreateInstance`; `VK_KHR_swapchain`
@@ -303,17 +305,18 @@ Each client passed 24 render/readback/present/frame-callback rounds at three
 sizes, all six screenshot comparisons, and normal teardown. Both isolated
 compositor identities stayed stable and their owned processes were absent after
 cleanup. Raw logs, staged ELF provenance and screenshot evidence remain under
-`tests/wsi/build/isolated/`. These are replacement-frontend regressions; acquire
-timeout, ICD swapchain/present, asynchronous buffer retirement and presented
-frame capture remain open. The initial ICD surface implementation was only
-build-checked; the subsequent review and device evidence are recorded below.
+`tests/wsi/build/isolated/`. These historical runs were replacement-frontend regressions. They did not
+establish ICD swapchain/present or timeout behavior. Subsequent surface review
+is recorded below; current swapchain results are in
+[swapchain review](swapchain-review.md). Presented frame capture remains open.
 
 
 ## ICD surface review (2026-09-07)
 
-The original implementation is preserved in `75953aa`. Review removed its
-assumption that a graphics queue can present: no swapchain/presentation engine
-exists yet. Both support queries now report false. Hard-coded RGBA/BGRA formats,
+The surface-only implementation is preserved in `75953aa`. Its review in
+`1b8f9dc` removed the assumption that a graphics queue can present: that revision
+had no swapchain engine, so both support queries reported false. The later
+swapchain implementation and its corrections are recorded separately. Hard-coded RGBA/BGRA formats,
 16384 limits, usages and FIFO success were removed. The required query entry
 points remain, but return VK_ERROR_UNKNOWN for unsupported queries. The
 [capability query contract](https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceSurfaceCapabilitiesKHR.html)
@@ -356,3 +359,9 @@ ICD runs before the manifest-version correction also passed lifecycle checks
 (`20260907T211740-24ecd4d9`, `20260907T211741-6391e50c`); the final runs above
 supersede them. No standard-ICD rendering, windowed validation/capture, allocator
 failure sweep, missing-wlegl device case or non-Wayland build is claimed here.
+
+
+The current ICD presentation path and `--swapchain-review` boundary probe are
+documented in [swapchain-review.md](swapchain-review.md). Its results include
+an actual OnePlus 8T / Mali comparison; the earlier Redmi records above remain
+historical evidence for their own revisions.

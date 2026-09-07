@@ -35,9 +35,8 @@ an arbitrary application resource trace or proof of full driver unloading.
 Interface version 5 is required. Instance version discovery uses the HAL query
 when available and otherwise Vulkan's 1.0 fallback. The physical-device resolver
 uses an exact registry-derived scope table, including aliases. That table is
-not proof of complete frontend export/dispatch coverage. Aside from the local
-Wayland surface commands below, it does not advertise functions absent from
-the HAL.
+not proof of complete frontend export/dispatch coverage. Apart from adapter-owned WSI commands, ordinary command lookup retains the
+HAL resolver and its scope/alias availability.
 
 Android normally owns surface/swapchain behavior in its loader. This adapter
 still rejects HALs advertising driver-owned `VK_KHR_surface` or
@@ -45,13 +44,26 @@ still rejects HALs advertising driver-owned `VK_KHR_surface` or
 built with Wayland, it advertises `VK_KHR_surface` and
 `VK_KHR_wayland_surface` itself, creates local `VkSurfaceKHR` objects with
 the existing `window_owner` native-window factory. When the HAL advertises
-`VK_ANDROID_native_buffer` and a graphics queue exists, presentation-support
-is true and the adapter implements `VK_KHR_swapchain` locally: window buffers
-are imported with `VkNativeBufferANDROID`, acquired with a finite dequeue
-timeout, and presented through `vkQueueSignalReleaseImageANDROID` plus the
-native-window queue. Capability, format and FIFO queries report that engine.
-Missing `android_wlegl` still maps to `VK_ERROR_UNKNOWN`. Windowed validation
-and capture/replay remain open.
+`VK_ANDROID_native_buffer` revision 8 or later, a graphics queue and usable
+color-attachment formats, the adapter exposes an experimental FIFO swapchain.
+Native buffers are retained until their imported images are destroyed, including
+acquired images of retired swapchains. A failed replacement also retires its
+old chain. Dequeue uses Wayland read preparation and a monotonic poll timeout.
+A multi-swapchain present consumes application waits once and signals an
+internal semaphore for each image, which its Android release operation waits
+on before the native window receives the buffer. Presentation still performs a
+host wait on release FDs because android_wlegl has no per-commit fence protocol;
+there is no queue/device wait-idle in this implementation.
+
+Format, usage and extent queries use HAL image-format creation queries; image
+count 2–8, one layer, identity transform, inherited native alpha and FIFO are
+adapter constraints. Single-device group queries and AcquireNextImage2 are
+implemented. Protected/multi-device modes and swapchain-backed image alias
+creation/binding remain unsupported; alias handles are explicitly rejected
+rather than forwarded to a HAL that cannot interpret them. This is not full
+Vulkan 1.1 swapchain conformance. Missing android_wlegl maps to VK_ERROR_UNKNOWN.
+Windowed validation and capture/replay remain open. See the
+[swapchain review and device evidence](../../../tests/wsi/swapchain-review.md).
 
 ## Sources
 

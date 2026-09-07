@@ -20,6 +20,8 @@ struct device_state {
     PFN_vkDestroyDevice destroy;
     VkPhysicalDevice physical;
     int swapchain_enabled;
+    uint32_t queue_count;
+    VkQueue *queues;
     VkAllocationCallbacks allocator;
     int custom_allocator;
     struct device_state *next;
@@ -52,6 +54,10 @@ static void trace_device(const char *action, const struct device_state *state)
 
 static void free_state(struct device_state *state)
 {
+    if (state->queues) {
+        if (state->custom_allocator) state->allocator.pfnFree(state->allocator.pUserData, state->queues);
+        else free(state->queues);
+    }
     if (state->custom_allocator)
         state->allocator.pfnFree(state->allocator.pUserData, state);
     else
@@ -61,6 +67,7 @@ static void free_state(struct device_state *state)
 void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCallbacks *allocator)
 {
     if (!device) return;
+    hybris_icd_swapchain_release_device(device);
     pthread_mutex_lock(&device_guard);
     struct device_state **link = &devices;
     while (*link && (*link)->handle != device) link = &(*link)->next;
@@ -71,7 +78,6 @@ void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCal
     }
     pthread_mutex_unlock(&device_guard);
     if (!state) return;
-    hybris_icd_swapchain_release_device(device);
     hybris_scaled_device_destroy(device);
     state->destroy(device, allocator);
     free_state(state);
@@ -118,7 +124,39 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     state->instance_generation = instance_generation;
     state->resolver = resolver;
     state->destroy = (PFN_vkDestroyDevice)resolver(*device, "vkDestroyDevice");
-    result = hybris_scaled_device_create(*device, physical, resolver, query, allocator);
+    // Queue handles identify the device even for a present with zero swapchains.
+    // Allocate the whole registry at device creation, where OOM is reportable.
+    uint64_t queue_count = 0;
+    for (uint32_t i = 0; i < info->queueCreateInfoCount; ++i)
+        queue_count += info->pQueueCreateInfos[i].queueCount;
+    if (queue_count > UINT32_MAX || queue_count > SIZE_MAX / sizeof(VkQueue))
+        result = VK_ERROR_OUT_OF_HOST_MEMORY;
+    else if (queue_count) {
+        size_t size = (size_t)queue_count * sizeof(VkQueue);
+        state->queues = allocator ? allocator->pfnAllocation(allocator->pUserData, size,
+            _Alignof(VkQueue), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE) : malloc(size);
+        if (!state->queues) result = VK_ERROR_OUT_OF_HOST_MEMORY;
+        else {
+            PFN_vkGetDeviceQueue get = (PFN_vkGetDeviceQueue)resolver(*device, "vkGetDeviceQueue");
+            PFN_vkGetDeviceQueue2 get2 = (PFN_vkGetDeviceQueue2)resolver(*device, "vkGetDeviceQueue2");
+            for (uint32_t i = 0; i < info->queueCreateInfoCount && result == VK_SUCCESS; ++i) {
+                const VkDeviceQueueCreateInfo *created = &info->pQueueCreateInfos[i];
+                for (uint32_t j = 0; j < created->queueCount; ++j) {
+                    VkQueue handle = VK_NULL_HANDLE;
+                    if (!created->flags) get(*device, created->queueFamilyIndex, j, &handle);
+                    else if (get2) {
+                        VkDeviceQueueInfo2 qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+                            .flags = created->flags, .queueFamilyIndex = created->queueFamilyIndex, .queueIndex = j};
+                        get2(*device, &qi, &handle);
+                    }
+                    if (!handle) { result = VK_ERROR_INITIALIZATION_FAILED; break; }
+                    state->queues[state->queue_count++] = handle;
+                }
+            }
+        }
+    }
+    if (result == VK_SUCCESS)
+        result = hybris_scaled_device_create(*device, physical, resolver, query, allocator);
     if (result != VK_SUCCESS) {
         state->destroy(*device, allocator);
         *device = VK_NULL_HANDLE;
@@ -145,6 +183,10 @@ PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char
     PFN_vkVoidFunction backend = resolver ? resolver(device, name) : NULL;
     PFN_vkVoidFunction local = hybris_icd_swapchain_proc(name, swapchain_enabled);
     if (local) return local;
+    if (backend && swapchain_enabled) {
+        PFN_vkVoidFunction image = hybris_icd_swapchain_image_proc(name);
+        if (image) return image;
+    }
     if (backend && !strcmp(name, "vkDestroyDevice"))
         return (PFN_vkVoidFunction)hybris_icd_destroy_device;
     if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
@@ -170,4 +212,16 @@ int hybris_icd_lookup_device(VkDevice device, struct hybris_icd_device *out)
     }
     pthread_mutex_unlock(&device_guard);
     return found;
+}
+
+int hybris_icd_lookup_queue(VkQueue queue, struct hybris_icd_device *out)
+{
+    VkDevice device = VK_NULL_HANDLE;
+    pthread_mutex_lock(&device_guard);
+    for (const struct device_state *state = devices; state && !device; state = state->next)
+        for (uint32_t i = 0; i < state->queue_count; ++i)
+            if (state->queues[i] == queue) { device = state->handle; break; }
+    pthread_mutex_unlock(&device_guard);
+    // Vulkan externally synchronizes device destruction against queue use.
+    return hybris_icd_lookup_device(device, out);
 }
