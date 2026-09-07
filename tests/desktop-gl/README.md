@@ -7,7 +7,7 @@ surfaceless EGL pbuffers, with no X server, APK or compositor. GLX pbuffer conte
 below. A working Blender renderer and displayed desktop GL windows remain open.
 
 Build prerequisites are the parent Ardesk checkout's clean Mesa revision
-`8bb94e2dc1b156b3a766b3a36ad4352d0f02cb6d`, its AArch64 cross file, Podman and
+`080a97977a453a9d4b2eea59426c9ee84df19007`, its AArch64 cross file, Podman and
 its existing GL cross-builder. The default cached builder image is
 `localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` can select an
 explicit available replacement. The script records the resolved image ID,
@@ -472,3 +472,67 @@ EXT-only devices. The rebasing helper rejects an instance-buffer base outside
 its resource instead of issuing that invalid Vulkan binding. Vertex SSBO limit
 remains 0 and Blender startup/rendering still has its separate capability gap.
 No GL/Vulkan capability was raised and no full G07/G08/G10/G13 closure is claimed.
+
+
+## Sampled and unaligned automatic vertex inputs (2026-09-07)
+
+Mesa `080a979` extends the experimental vertex compute path with vertex texture
+sampling and byte-aligned VBO fetches. `zink_vertex_pull.c` owns input range
+validation, resource sharing and format unpacking, separate from shader replay
+and draw state management. Multiple attributes sharing one resource consume
+one internal SSBO binding. The decoder supports the admitted plain formats up
+to 128 bits with channels up to 32 bits, including RGB8 and RGB16; 64-bit and
+fixed-point channels remain excluded.
+
+Fetches combine aligned words only when the attribute needs the following
+bytes. For resources ending in a partial word, GPU fill/copy places just their
+last one to three bytes into a shared zero-padded tail buffer. No vertex data
+is read back to the CPU and no complete VBO staging copy is introduced. Valid
+range checks use division before multiplication to avoid address overflow.
+The extra tail binding still counts against the reserved binding limit.
+Out-of-range input handling and SSBO/VBO aliasing semantics are not validated
+by these valid-input cases.
+
+Vertex texture variables and operations remain in the compute shader; implicit
+vertex LOD is lowered before the stage change. The replay shader has no texture
+resources. Compute sampler states/views and their original counts are restored,
+with strong references keeping previous views alive during the temporary
+rebinding. Bindless textures, images and general indexed vertex-compute draws
+remain excluded. This does not advertise additional GL/Vulkan capabilities.
+
+The existing attribute workload now samples a mipmapped 2D texture at default
+LOD and explicit LOD 1, and fetches an integer texture buffer using the instance
+record index. All original eight phases remain. Phase 8 adds three attributes
+sharing a VBO with stride 21 and byte offsets 1/9/13, including RGB half-float;
+the normalized RGB8 instance buffer has stride 5, offset 2 and an exact 45-byte
+allocation. Phase 9 uses two half-float components and an exact 206-byte shared
+allocation; phase 10 restores the original separate aligned buffers. These
+exercise both a partial tail word and an exact end where another word must not
+be fetched. In phases 8/9 four attributes use two source bindings plus one tail
+binding; runner markers require this converted path, not silent native fallback.
+
+An application compute shader samples texture unit 11 before the sequence and
+after every draw, while the VS uses units 3/7. All eleven result vectors must
+be `(17,34,51,255)`, alongside the existing 256-pixel stripe check for each phase.
+This exercises stage rebinding and restoration of trailing sampler slots; it
+is not coverage of every texture target, sampler mode or deletion lifetime.
+
+Strict clean-pinned build, Mali X300, standard Khronos validation with SyncVal:
+
+| API | Native | Compute |
+| --- | --- | --- |
+| EGL core 3.3 | `20260907T133327-c69cdcc0` PASS | `20260907T133327-cde9bb80` PASS |
+| EGL compatibility 3.2 | `20260907T133327-a929f003` PASS | `20260907T133327-82ce899c` PASS |
+| GLX core 3.3 | `20260907T133327-ff0531cd` PASS | `20260907T133327-50415656` PASS |
+
+Each result records the same Mesa/runtime/probe manifest. All 18 retained images
+match across all six runs, including the packed/manual compute/procedural
+regressions. SyncVal is explicitly enabled with no errors. Native runs each
+produce 13 SPIR-V modules; compute runs each produce 95. All 324 pass
+`spirv-val --target-env vulkan1.3 --uniform-buffer-standard-layout`; per-result
+`spirv-validation.json` retains commands, tool version, hashes and disassemblies.
+GLX used private Xvfb :185 and its temporary ADB reverse.
+
+Full vertex SSBO support, indexed/indirect compute conversion without CPU
+argument decoding, all stages/topologies, caching/performance, desktop window
+presentation and Blender remain open. G07/G08/G10/G13 are not closed by this batch.

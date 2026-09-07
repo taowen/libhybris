@@ -132,6 +132,21 @@ compat 在标准 layer 里时，验证原始 app 调用和转换后 backend 调�
 
 ### 4.2 OpenGL 路线选择
 
+2026-09-07 路线决定：桌面 GL 以 Mesa/Zink 为主线，复用 Mesa 的 GL
+状态机、GLSL 和 core/compat frontend；这是维护与覆盖方向的选择，尚无
+本项目同应用对照证明 Zink 全面优于 Gladio，也不意味着 Blender 已通过。
+Adreno 在所固定 Turnip 支持且实测通过的设备上采用 Zink → Turnip；
+Mali 等设备采用 Zink → hybris Vulkan → 厂商驱动，并按实际缺口补兼容。
+统一的是 GL frontend 和 Vulkan 接口，不能把 Turnip 当成跨 GPU 后端。
+Gladio 的有效应用经验继续作为回归参考，GLES 路径保留给现有用例及
+Vulkan 不满足要求的设备，不同时重建另一套通用桌面 GL 前端。
+
+后续收敛 Adreno 时，退掉的是 Gallium Freedreno 直接 GL 后端；Turnip
+仍使用 Freedreno 共享编译器和设备代码。当前 tools/build/mesa.sh 仍构建
+直接 GL 后端，在同设备真实应用、窗口呈现和性能对照通过前保持现状。
+Zink 的厂商能力模拟也必须以真实绘制及 validation 为准，不能只提高
+GL 版本或资源数量宣告来绕过应用检查。
+
 | 路线 | 价值 | 明确限制 |
 |---|---|---|
 | Mesa/Zink → hybris Vulkan | 优先评估现代桌面 GL，复用完整 GL 状态机/编译栈 | 取决于所固定 Mesa 版本的 Vulkan feature/format/limit 要求，不能仅看 Vulkan 版本号 |
@@ -142,6 +157,15 @@ compat 在标准 layer 里时，验证原始 app 调用和转换后 backend 调�
 固定 Mesa commit 后，用 Zink requirements/profile 检查器得出按 GL 目标版本的差集；最新文档已包含多个扩展要求，不采用“Vulkan 1.3+ 必然够用”的经验判断。[Zink](https://docs.mesa3d.org/drivers/zink.html)、[GL4ES](https://github.com/ptitSeb/gl4es)、[ANGLE](https://github.com/google/angle)
 
 29854870 的 GLES 基础路径可作为 GL→GLES 实验底座；它缺少多项现代 Vulkan 扩展，Zink 能力要实际测量。尚未建立该设备的桌面 GL 兼容等级。
+
+同日 baseline 的 native-3 / hybris-3 在三台设备均 PASS，GLES 能力
+查询逐项一致且 GL error=0。X300（`20260907T131453-7e930597`）顶点
+SSBO/图像上限为 0/0，片元和计算 SSBO 均为 35；红米 29854870
+（`20260907T131453-2abee58b`）与 OnePlus KB2000
+（`20260907T131453-7a91c77a`）顶点 SSBO/图像均为 4/4，片元 SSBO
+为 4，计算 SSBO 为 24。这说明仅直通 GLES 不能满足当前 Blender
+检查的每阶段 12 个 SSBO；不证明 Gladio 的实际转换无法运行其他应用，
+也不构成三台设备的桌面 GL、完整 GLES 或性能验收。
 
 ## 5. Gap 清单与验收条件
 
@@ -685,3 +709,16 @@ BaseInstance/BaseVertex/DrawID 检查和 GPU 写入间接命令/count 的范围�
 桌面 GL README。只关闭上述已复现失败；robust 越界取数、全部阶段/拓扑、
 EXT-only/Vulkan 1.4 分支、性能、顶点 SSBO 和 Blender 仍未验收，未提高
 任何能力或放宽 G07/G08/G10/G13 整项门槛。
+
+
+2026-09-07 Zink 顶点纹理与未对齐输入：Mesa `080a979` 支持普通顶点 shader
+的纹理采样（保留顶点默认 LOD）、显式 mip 和纹理缓冲，并保存/恢复应用
+计算阶段的 sampler/view 及数量。原取数代码拆到 zink_vertex_pull，按原
+VBO 共享 SSBO 绑定，支持本批 RGB8/RGB16、奇数 stride/offset 及资源末尾
+部分字。仅通过 GPU fill/copy 补齐最后一到三字节，不读回顶点或复制整块
+VBO；范围检查避免地址乘法溢出。六轮固定构建（原生/计算 × EGL core/
+compat/GLX）通过十一阶段属性/纹理绘制及每阶段应用 compute 采样恢复，
+保留原打包、UBO、显式计算/删除回归。18 张图像跨轮一致，SyncVal 已启用
+且零错误，324 份 SPIR-V 校验通过。完整结果索引见桌面 GL README。
+尚未覆盖一般越界/别名、所有纹理类型、64 位、完整顶点 SSBO、索引计算
+转换、性能或 Blender；没有提高能力宣告，G07/G08/G10/G13 继续开放。

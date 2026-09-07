@@ -5,6 +5,13 @@ run on the same Android device.
 No APK, root, rootfs, compositor, X server, or CTS download is needed at runtime.
 This is a smoke test, not conformance certification or application compatibility coverage.
 
+GLES 3 probes also report per-stage SSBO/image limits and vertex sampler/UBO
+limits when the actual context supports GLES 3.1. Each `GLES_LIMIT` includes its
+GL error and an invalid query fails the probe. A GLES 3.0 context reports the
+stage-limit queries as unsupported while retaining its ordinary drawing check.
+Compare native and hybris values on the same device; reported limits alone do
+not establish desktop GL or application compatibility.
+
 ## Build
 
 From this repository root:

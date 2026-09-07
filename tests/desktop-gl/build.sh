@@ -2,7 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 ardesk="$(cd "$root/../.." && pwd)"
-mesa_commit=8bb94e2dc1b156b3a766b3a36ad4352d0f02cb6d
+mesa_commit=080a97977a453a9d4b2eea59426c9ee84df19007
 [[ "$(git -C "$ardesk/third_party/mesa" rev-parse HEAD)" == "$mesa_commit" ]] || { echo 'unexpected Mesa revision' >&2; exit 1; }
 [[ -z "$(git -C "$ardesk/third_party/mesa" status --porcelain)" ]] || { echo 'Mesa checkout must be clean' >&2; exit 1; }
 image="${BUILDER_IMAGE:-localhost/ardesk-glibc-arm64:20d8189233233158}"

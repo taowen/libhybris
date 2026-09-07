@@ -1,4 +1,5 @@
 #include "probe.h"
+#include <GLES3/gl31.h>
 
 int eglprobe(int version) {
   void *e = dlopen(getenv("PROBE_EGL") ?: "libEGL.so.1", RTLD_NOW | RTLD_LOCAL);
@@ -87,13 +88,43 @@ int eglprobe(int version) {
          p_glGetString(GL_VENDOR), p_glGetString(GL_RENDERER),
          p_glGetString(GL_VERSION), p_glGetString(GL_SHADING_LANGUAGE_VERSION),
          p_glGetString(GL_EXTENSIONS));
+  int capability_ok = 1;
+  if (version >= 3) {
+    G(glGetIntegerv);
+    GLint gl_major = 0, gl_minor = 0;
+    p_glGetIntegerv(GL_MAJOR_VERSION, &gl_major);
+    p_glGetIntegerv(GL_MINOR_VERSION, &gl_minor);
+    if (p_glGetError() != GL_NO_ERROR) capability_ok = 0;
+    if (gl_major > 3 || (gl_major == 3 && gl_minor >= 1)) {
+      const struct { const char *name; GLenum value; } limits[] = {
+        {"vertex_ssbo", GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS},
+        {"fragment_ssbo", GL_MAX_FRAGMENT_SHADER_STORAGE_BLOCKS},
+        {"compute_ssbo", GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS},
+        {"combined_ssbo", GL_MAX_COMBINED_SHADER_STORAGE_BLOCKS},
+        {"vertex_images", GL_MAX_VERTEX_IMAGE_UNIFORMS},
+        {"fragment_images", GL_MAX_FRAGMENT_IMAGE_UNIFORMS},
+        {"compute_images", GL_MAX_COMPUTE_IMAGE_UNIFORMS},
+        {"vertex_samplers", GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS},
+        {"vertex_ubos", GL_MAX_VERTEX_UNIFORM_BLOCKS},
+      };
+      for (unsigned i = 0; i < sizeof(limits)/sizeof(limits[0]); i++) {
+        GLint value = -1;
+        p_glGetIntegerv(limits[i].value, &value);
+        GLenum error = p_glGetError();
+        printf("GLES_LIMIT name=%s value=%d error=0x%x\n", limits[i].name, value, error);
+        capability_ok &= error == GL_NO_ERROR;
+      }
+    } else {
+      puts("GLES_STAGE_LIMITS UNSUPPORTED requires GLES 3.1");
+    }
+  }
   unsigned char pixel[4] = {0};
   p_glClearColor(1, 0, 0, 1);
   p_glClear(GL_COLOR_BUFFER_BIT);
   p_glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
   GLenum err = p_glGetError();
   int ok = pixel[0] == 255 && pixel[1] == 0 && pixel[2] == 0 &&
-           pixel[3] == 255 && err == 0;
+           pixel[3] == 255 && err == 0 && capability_ok;
   printf("CLEAR_READBACK %s rgba=%u,%u,%u,%u error=%x\n", ok ? "PASS" : "FAIL",
          pixel[0], pixel[1], pixel[2], pixel[3], err);
   G(glCreateShader);

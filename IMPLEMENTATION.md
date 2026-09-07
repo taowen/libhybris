@@ -807,3 +807,18 @@ validate. Earlier failures and diagnostic values remain in desktop-gl README.
 Indirect decoding synchronously reads GPU argument/count buffers; performance,
 out-of-bounds robust fetch behavior, other device branches, full vertex SSBO
 support and Blender remain unverified. Limits and full gap gates are unchanged.
+
+
+Mesa 080a979 extends automatic vertex execution to sampled textures and unaligned
+plain vertex formats. Input validation/unpacking now lives in zink_vertex_pull;
+shared VBOs reuse descriptor bindings, and GPU-only partial-tail padding avoids
+word fetches past exact resource boundaries. The prepass preserves compute
+samplers/views/counts and lowers implicit vertex LOD before changing stages.
+Eleven attribute phases cover default/explicit mip sampling, integer texture
+buffers, shared odd-stride RGB8/half-float input and restoration to aligned
+input. Application compute sampling after every draw also passes. Six strict
+native/compute × EGL core/compat/GLX runs have identical 18-image sets, no SyncVal
+errors and 324 valid SPIR-V modules. See the desktop-gl README for result IDs
+and explicit limits. No version/limit override or whole-gap closure was added.
+The baseline now records GLES stage limits; three native/hybris comparisons
+agree. The route decision and evidence are recorded in gaps.md section 4.2.
