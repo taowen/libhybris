@@ -3,11 +3,11 @@
 This builds an actual desktop GL frontend: source-built Mesa/Zink → standard
 glibc Vulkan loader → hybris ICD → Android vendor Vulkan HAL. EGL is Mesa's
 implementation, not the hybris GLES EGL frontend. The initial integration uses
-surfaceless EGL pbuffers, with no X server, APK or compositor. It does not yet
-provide an application launcher, GLX or displayed desktop GL windows.
+surfaceless EGL pbuffers, with no X server, APK or compositor. GLX pbuffer contexts are also available with an external X server, as described
+below. A working Blender renderer and displayed desktop GL windows remain open.
 
 Build prerequisites are the parent Ardesk checkout's clean Mesa revision
-`37f170c789f75792c209fa9221f7ab67bbd5b87f`, its AArch64 cross file, Podman and
+`8986040b4cadbeb93d478d32da8cf19590af206a`, its AArch64 cross file, Podman and
 its existing GL cross-builder. The default cached builder image is
 `localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` can select an
 explicit available replacement. The script records the resolved image ID,
@@ -325,7 +325,8 @@ Temporary resource-print/backtrace diagnostics are absent from the final build.
 
 This remains a development path. It does not raise GL limits or Vulkan
 features, and full vertex SSBO support is still absent. Currently excluded
-are vertex attributes, textures/images, bindless and subgroup operations,
+are unaligned/64-bit or dynamically indexed vertex attributes, textures/images,
+bindless and subgroup operations,
 clip/cull arrays, transform feedback, indexed/indirect/multidraw, geometry and
 tessellation stages, active queries and draws exceeding dispatch/storage limits.
 Native execution remains in use for excluded draws. Programs and output storage
@@ -333,3 +334,55 @@ are created per draw; general caching, complete lowering, performance work and
 application vertex SSBO acceptance remain open. No Blender startup/rendering
 pass, full GL conformance, other-device conversion or complete G08/G10 closure
 is claimed.
+
+
+## Automatic vertex input pulling (2026-09-07)
+
+Mesa `8986040` extends the experimental prepass to word-aligned vertex inputs.
+Zink retains the Gallium layout before Vulkan attribute decomposition and
+binds the original VBO storage to available compute SSBO slots. It uses Mesa's
+`nir_format_unpack_rgba` for decoding and default components, with offsets,
+strides, first vertex and `base_instance + instance / divisor` addressing.
+There is no CPU readback, new Vulkan feature declaration or GL limit increase.
+Application SSBOs and fetched attributes together must fit slots 0–14; output
+still occupies slot 15. Unsupported layouts, unaligned fetches, out-of-range
+fetch bounds or insufficient descriptor capacity use native execution. This
+is still per-draw program/output allocation, not a general performant solution.
+
+`--vertex-execution` now additionally runs `attribute_draw.c`: four simultaneous
+inputs (float32 position, normalized four-byte color, signed SHORT pair and
+half-float pair), distinct VBOs, guarded offsets/strides, first vertex 7, base
+instance 5, four instances and divisors 1/2. The half pair is consumed as vec4
+to check default z/w = 0/1. Both C and host check all 256 pixels in each image.
+Compute execution requires two four-input conversion markers and all twelve
+one-input packed conversions, so a silent native fallback cannot pass the
+conversion gate. The packed GL formats may be converted to float by u_vbuf;
+the new direct formats exercise integer sign extension, normalized conversion
+and half decoding in the generated compute SPIR-V itself.
+
+The strict pinned build passed. Final compute runs:
+
+| API | Result directory | Outcome |
+| --- | --- | --- |
+| EGL core 3.3 | `20260907T122645-faf5dc1e` | PASS |
+| EGL compatibility 3.2 | `20260907T122646-faddf6cf` | PASS |
+| GLX core 3.3 | `20260907T122648-4e866e58` | PASS |
+
+All three include the manual compute/deletion workload, packed matrix and
+procedural UBO changes. Khronos validation confirms SyncVal enabled with no
+reported errors. Each retains 64 SPIR-V modules, all passing `spirv-val` for
+Vulkan 1.3 with uniform-buffer-standard-layout; disassemblies and exact tool
+commands/results are retained in each result directory. They report vertex
+SSBO limit 0; Blender acceptance remains blocked by the existing capability
+gap. GLX used private Xvfb :183 with a temporary ADB reverse, removed afterward.
+
+**Native counterexample retained:** `20260907T122644-031d5f2e` passes divisor 1
+but fails every pixel of the new base-instance-5/divisor-2 case. Independent
+native repeat `20260907T122849-e644af24`, without the manual compute workload,
+reproduces it with GL error 0. No validation error is reported, but these are
+FAIL, not native parity passes. The intended address formula agrees with the
+[Khronos vertex-fetch specification](https://github.khronos.org/Vulkan-Site/spec/latest/chapters/fxvertex.html).
+The cause has not yet been isolated between Zink state and vendor fetch
+behavior; KHR nonzero-first-instance capability handling needs investigation.
+The first native run's nine SPIR-V modules also validate, which does not prove
+runtime attribute fetching correct. Full G07/G08/G10/G13 acceptance stays open.

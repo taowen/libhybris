@@ -652,3 +652,17 @@ base instance 及三阶段范围切换。原生、EGL core/compat、GLX 图像�
 创建内部管线/缓冲区，未完成通用模拟或性能工作；顶点 SSBO 宣告仍为 0。
 原始失败、最终固定构建记录和具体范围见 tests/desktop-gl/README.md。
 G08/G10 与 Blender、完整窗口呈现、跨设备验收均继续开放。
+
+
+2026-09-07 自动顶点属性取数：Mesa `8986040` 将原 VBO 绑定到计算
+SSBO，复用 Mesa 格式解码，支持本批 32 位对齐的 offset/stride、
+first vertex 与 base-instance/除数寻址。新增独立绘制覆盖 float32、
+归一化 UBYTE、整数 SHORT、半精度及缺失分量默认值；非零 first=7、
+base-instance=5、除数 1/2 在 EGL core/compat 与 GLX 计算路径均逐像素
+PASS。组合原打包、UBO、显式计算/删除用例也通过，SyncVal 已启用且零
+错误，三轮共 192 SPIR-V 校验通过。未提高任何 GL/Vulkan 能力。
+原生对照 `20260907T122644-031d5f2e` 在 base-instance=5/除数=2 时
+256 像素全部失败；无显式计算负载的 `20260907T122849-e644af24` 独立
+复现，GL error=0，保留为 FAIL。尚未隔离 Zink 状态或 vendor 取数原因，
+不得声称原生全面一致。具体记录见 tests/desktop-gl/README.md；未对齐、
+64 位、一般 SSBO 输入、性能、Blender 及整项 G07/G08/G10/G13 仍开放。

@@ -778,3 +778,16 @@ The development switch excludes unsupported inputs/stages/draw forms and does
 not raise advertised limits. Complete vertex SSBO support, caching/performance
 and Blender acceptance remain open; this supersedes the earlier feasibility-only
 status without declaring G08/G10 complete.
+
+
+Mesa dependency 8986040 extends automatic compute vertex execution to aligned
+attributes using original VBOs and Mesa format decoding. Four direct formats,
+first=7/base-instance=5, divisor 1/2 and default z/w components pass in EGL
+core/compatibility and GLX, together with packed/procedural/manual-compute
+workloads. SyncVal is explicitly enabled with no errors and all 192 compute-run
+SPIR-V modules validate. Native execution exposes a retained base-instance-5 /
+divisor-2 failure, reproduced independently without the manual compute workload;
+this batch does not claim complete native parity. See desktop-gl README for
+exact successful and failed artifacts. No limits are raised: unaligned and
+64-bit inputs, general SSBO acceptance, caching/performance and Blender remain
+open, as does investigation of this native fetch counterexample.

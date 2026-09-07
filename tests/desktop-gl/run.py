@@ -21,7 +21,7 @@ p.add_argument('--mali-loader-quirk',action='store_true')
 p.add_argument('--profile',choices=['core32','compat32','core33'],default='core32')
 p.add_argument('--display',help='X11 DISPLAY for GLX; omit for surfaceless EGL')
 p.add_argument('--vertex-prepass',action='store_true',help='exercise explicit compute vertex prepass feasibility workload')
-p.add_argument('--vertex-execution',choices=['native','compute'],help='run procedural vertex cases, optionally through experimental Zink conversion')
+p.add_argument('--vertex-execution',choices=['native','compute'],help='run procedural and attribute cases, optionally through experimental Zink conversion')
 p.add_argument('--validation-layer',type=Path,help='glibc AArch64 Khronos validation layer')
 p.add_argument('--validation-manifest',type=Path,help='matching original validation JSON')
 a=p.parse_args()
@@ -92,7 +92,7 @@ try:
     except subprocess.TimeoutExpired as error:
         code=124;(out/'probe.log').write_bytes((error.stdout or b'')+(error.stderr or b''))
     artifacts=['maps.txt','image.rgba']
-    if a.vertex_execution:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)]
+    if a.vertex_execution:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)] + [f'attributes-{divisor}.rgba' for divisor in (1,2)]
     if a.vertex_prepass:artifacts += [f'vertex-prepass-{phase}.rgba' for phase in range(3)]
     if a.vertex_execution:
         listing=shell('cd '+shlex.quote(remote)+' && ls dump*.spv',capture_output=True,text=True)
@@ -112,8 +112,9 @@ if code==0:
             raise ValueError('packed vertex draw matrix incomplete or failed')
         record['packed_vertex_cases']=12
         if (a.vertex_execution=='compute'):
-            draws=re.findall(r'ZINK_VERTEX_PREPASS draw vertices=(\d+) instances=(\d+)', (out/'probe.log').read_text())
-            if draws.count(('3','2'))<3 or ('3','1') not in draws:raise ValueError('automatic Zink vertex prepass cases incomplete')
+            draws=re.findall(r'ZINK_VERTEX_PREPASS draw vertices=(\d+) instances=(\d+) inputs=(\d+)', (out/'probe.log').read_text())
+            if draws.count(('3','2','0'))!=3 or ('3','1','0') not in draws or draws.count(('3','2','1'))!=12 or draws.count(('3','4','4'))!=2:
+                raise ValueError('automatic Zink vertex prepass cases incomplete')
             record['automatic_vertex_prepass_draws']=draws
         if a.vertex_prepass:
             for phase in range(3):
@@ -127,6 +128,12 @@ if code==0:
                 wanted=bytes((255,0,255,255))*256 if phase==1 else expected
                 if (out/f'vertex-prepass-{phase}.rgba').read_bytes()!=wanted:raise ValueError('prepass image mismatch')
         if a.vertex_execution:
+            attributes=bytes(c for y in range(16) for x in range(16) for c in (255*((x//4)&1),255*((x//8)&1),0,255))
+            for divisor in (1,2):
+                marker=f'ATTRIBUTE_VERTEX divisor={divisor} PASS bad_pixels=0 error=0x0'
+                if marker not in (out/'probe.log').read_text() or (out/f'attributes-{divisor}.rgba').read_bytes()!=attributes:
+                    raise ValueError('attribute vertex image failed or missing')
+            record['attribute_vertex_cases']=2
             for phase in range(3):
                 marker=f'PROCEDURAL_VERTEX phase={phase} PASS bad_pixels=0 error=0x0'
                 if marker not in (out/'probe.log').read_text():raise ValueError('procedural vertex case failed or missing')
