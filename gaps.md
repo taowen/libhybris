@@ -54,7 +54,13 @@ Blender 经 Zink 的启动/渲染不再作为验收条件；上述失败保留�
 局限：Vulkan workload 请求 1.0；现已补 transfer、widget graphics UBO 及双线程 device/fence 生命周期，未覆盖 compute shader、texture、AHB、WSI 或 CTS。不能称为“Vulkan 1.1 已通过测试”或“GLES 3.2 全兼容”。
 记录在 [基线说明](tests/baseline/README.md)；原始 JSON/log 留在本地被忽略的 `tests/baseline/build/results/`。本轮未重跑完整应用。
 
-### 2.2 当前代码，而非历史实验或旧产物
+### 2.2 初始源码摸底，而非旧安装产物
+
+本表是文首 `dcc3588` 的初始源码快照，不是当前 HEAD 的功能清单。
+后续实现及其验证边界见 [实施状态](IMPLEMENTATION.md)。例如当前
+`hybris/vulkan/icd/instance.c` 与 `device.c` 已分别保存 instance/device
+的 resolver、generation 和 allocator，并包装创建/销毁及物理设备枚举；
+这些对象记录不等于所有命令已有兼容状态或完整语义覆盖，G02/G03 仍开放。
 
 | 模块 | 当前证据 | 不能据此推断 |
 |---|---|---|
@@ -155,9 +161,11 @@ Mali 等设备采用 Zink → hybris Vulkan → 厂商驱动，并按实际缺�
 Gladio 的有效应用经验继续作为回归参考，GLES 路径保留给现有用例及
 Vulkan 不满足要求的设备，不同时重建另一套通用桌面 GL 前端。
 
-后续收敛 Adreno 时，退掉的是 Gallium Freedreno 直接 GL 后端；Turnip
-仍使用 Freedreno 共享编译器和设备代码。当前 tools/build/mesa.sh 仍构建
-直接 GL 后端，在同设备真实应用、窗口呈现和性能对照通过前保持现状。
+当前 Adreno 构建已退掉 Gallium Freedreno 直接 GL 后端。
+父项目 `tools/build/mesa.sh` 只选择 Gallium `zink` 和 Vulkan `freedreno`
+（Turnip）；`freedreno-kmds=kgsl` 是 Turnip 的内核接口选项。
+Turnip 仍使用 Freedreno 共享编译器和设备代码。官方版本已通过的离屏
+EGL/GLX 用例不代表真实窗口呈现、resize 或同应用性能对照已完成。
 Zink 的厂商能力模拟也必须以真实绘制及 validation 为准，不能只提高
 GL 版本或资源数量宣告来绕过应用检查。
 
@@ -170,7 +178,10 @@ GL 版本或资源数量宣告来绕过应用检查。
 
 固定 Mesa commit 后，用 Zink requirements/profile 检查器得出按 GL 目标版本的差集；最新文档已包含多个扩展要求，不采用“Vulkan 1.3+ 必然够用”的经验判断。[Zink](https://docs.mesa3d.org/drivers/zink.html)、[GL4ES](https://github.com/ptitSeb/gl4es)、[ANGLE](https://github.com/google/angle)
 
-29854870 的 GLES 基础路径可作为 GL→GLES 实验底座；它缺少多项现代 Vulkan 扩展，Zink 能力要实际测量。尚未建立该设备的桌面 GL 兼容等级。
+29854870 的 GLES 基础路径可作为 GL→GLES 实验底座；其 Android
+厂商 Vulkan 驱动缺少多项现代扩展。另选官方 Turnip 时，当前 Zink
+EGL/GLX 探针均报告 GL 4.6，并通过文首列出的 38 张图像对照；这是
+指定驱动与工作负载的覆盖，不是 GL 4.6 全面兼容或 CTS 通过的证明。
 
 同日 baseline 的 native-3 / hybris-3 在三台设备均 PASS，GLES 能力
 查询逐项一致且 GL error=0。X300（`20260907T131453-7e930597`）顶点
