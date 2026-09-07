@@ -37,6 +37,16 @@ are committed and pushed separately to taowen/ardesk.
 
 ## Remaining acceptance work
 
+The allocator workload now lives in `tests/baseline/probe_alloc.c`, separate
+from concurrent first-initialization code. Direct ICD enumeration refuses
+callback allocations before physical ownership registration, then restores
+allocation and creates/destroys a device from the recovered handle. Ordinary,
+core group and KHR group routes each return OUT_OF_HOST_MEMORY with one
+attempt and unchanged live allocation count on Adreno 650 and Mali-G1-Ultra;
+all three rounds end with zero live callback allocations. Each device passes
+nine selected initialization/allocator cases. See the baseline README for
+run IDs and limitations; G03 remains partial.
+
 The relative condition wait validates seconds/nanoseconds and checked deadline
 addition, then uses CLOCK_MONOTONIC through the existing clockwait bridge.
 It no longer normalizes invalid nanoseconds into a successful wait or relies

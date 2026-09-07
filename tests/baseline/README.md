@@ -1792,3 +1792,37 @@ Final full baseline: X300 `20260907T090014-cd3e02ef` is
 98 PASS / 47 UNSUPPORTED / 1 CRASH. Native-groups remains the sole crash on
 both. Validation, SyncVal and both headless capture/replay gates pass; X300
 ICD uses the scoped Mali option. No new compositor or APK was installed.
+
+## Physical enumeration allocation refusal (2026-09-07)
+
+Allocator workloads are separated into `probe_alloc.c`; `probe_vulkan_init.c`
+retains the concurrent first-entry workload. The existing `icd-alloc-direct`
+case now refuses allocation callbacks during the first physical-handle
+enumeration, after a count-only query. It retries on the same instance with
+allocation restored, then exercises device allocation refusal and recovery.
+Fresh instances cover ordinary enumeration, core device-group enumeration
+and the enabled KHR group alias. Each round destroys the instance and requires
+zero outstanding callback allocations. Unsupported KHR group enumeration
+retains the existing fallback to the ordinary route; these two devices ran
+all three distinct routes.
+
+| Device | Result directory | Selected cases |
+|---|---|---|
+| 29854870 / Adreno 650 | `20260907T152413-b3684874` | 9 PASS |
+| 10AFA31610002QH / Mali-G1-Ultra | `20260907T152414-8e85ae84` | 9 PASS |
+
+Both builds use the existing pinned builder and NDK 29.0.13846066. Cases are
+native/hybris/ICD `vk-alloc` and `vk-init`, hybris `command-alloc`, direct ICD
+allocation, plus the runner's ICD version check. Both runners verify staged
+provenance and required mappings. Mali uses the existing explicit loader
+quirk. All six physical rejection events report OUT_OF_HOST_MEMORY, one
+callback attempt and zero live-count delta. The subsequent device recovery
+succeeds, and each of the six instance rounds ends with zero live allocations.
+The reported failure-path output count is observational, not a portable
+success condition.
+
+This callback refusal spans adapter and HAL calls; it does not isolate every
+HAL allocation site. It does not cover partial enumeration of multiple GPUs,
+concurrent enumeration, allocator-internal locking or resource ownership
+beyond these instance/physical/device paths. Validation/SyncVal and GPU
+rendering were not rerun for this probe-only change. G03 remains open.
