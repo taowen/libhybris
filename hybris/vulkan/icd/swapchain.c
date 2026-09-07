@@ -20,7 +20,7 @@
 #include <hybris/grallocusage/GrallocUsageConversion.h>
 #include <system/graphics.h>
 #include <system/window.h>
-#include "../platforms/wayland/window_owner.h"
+#include "native_window.h"
 #endif
 
 #ifdef WANT_WAYLAND
@@ -38,7 +38,7 @@ struct swapchain_state {
     VkDevice device;
     uint64_t device_generation;
     VkSurfaceKHR surface;
-    struct hybris_vk_wayland_window *window;
+    struct hybris_icd_window *window;
     uint32_t count;
     struct swapchain_image *images;
     int retired;
@@ -90,7 +90,7 @@ static struct swapchain_state *find_swapchain(VkSwapchainKHR swapchain)
 
 static void retire_swapchain(VkSwapchainKHR swapchain)
 {
-    struct hybris_vk_wayland_window *window = NULL;
+    struct hybris_icd_window *window = NULL;
     pthread_mutex_lock(&swapchain_guard);
     struct swapchain_state *state = swapchains;
     while (state && (VkSwapchainKHR)(uintptr_t)state != swapchain)
@@ -100,7 +100,7 @@ static void retire_swapchain(VkSwapchainKHR swapchain)
         window = state->window;
     }
     pthread_mutex_unlock(&swapchain_guard);
-    if (window) hybris_vk_wayland_window_disconnect(window);
+    if (window) window->ops->disconnect(window);
 }
 
 static int hal_format(VkFormat format)
@@ -161,7 +161,7 @@ static void destroy_images(const struct hybris_icd_device *device, struct swapch
             destroy(state->device, state->images[i].image, state->custom_allocator ? &state->allocator : NULL);
         if (state->images[i].native && !state->retired && state->window &&
             state->images[i].state != IMAGE_PRESENTED) {
-            hybris_vk_wayland_window_cancel(state->window, state->images[i].native,
+            state->window->ops->cancel(state->window, state->images[i].native,
                 state->images[i].acquire_fence);
         } else if (state->images[i].acquire_fence >= 0) {
             close(state->images[i].acquire_fence);
@@ -190,7 +190,7 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     if (!pixel) return VK_ERROR_FORMAT_NOT_SUPPORTED;
     VkInstance instance = VK_NULL_HANDLE;
     uint64_t generation = 0;
-    struct hybris_vk_wayland_window *window =
+    struct hybris_icd_window *window =
         hybris_icd_wsi_surface_window(info->surface, &instance, &generation);
     if (!window || generation != context.instance_generation)
         return VK_ERROR_SURFACE_LOST_KHR;
@@ -249,16 +249,11 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     state->count = count;
     for (uint32_t i = 0; i < count; ++i) state->images[i].acquire_fence = -1;
     // Begin a fresh pool, including after destruction without oldSwapchain.
-    hybris_vk_wayland_window_disconnect(window);
-    hybris_vk_wayland_window_resize(window, info->imageExtent.width, info->imageExtent.height);
-    ANativeWindow *native = hybris_vk_wayland_window_native(window);
-    if (native->perform(native, NATIVE_WINDOW_SET_BUFFERS_DIMENSIONS,
-            (int)info->imageExtent.width, (int)info->imageExtent.height) ||
-        native->perform(native, NATIVE_WINDOW_SET_BUFFERS_FORMAT, pixel) ||
-        native->perform(native, NATIVE_WINDOW_SET_USAGE, usage) ||
-        native->perform(native, NATIVE_WINDOW_SET_BUFFER_COUNT, (int)count)) {
+    window->ops->disconnect(window);
+    if (window->ops->configure(window, info->imageExtent.width, info->imageExtent.height,
+            pixel, (unsigned)usage, count)) {
         destroy_images(&context, state);
-        hybris_vk_wayland_window_disconnect(window);
+        window->ops->disconnect(window);
         object_free(allocator, state->custom_allocator, state->images);
         object_free(allocator, state->custom_allocator, state);
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -266,7 +261,7 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     for (uint32_t i = 0; i < count; ++i) {
         struct ANativeWindowBuffer *buffer = NULL;
         int fence = -1;
-        int error = hybris_vk_wayland_window_dequeue(window, 5000000000LL, &buffer, &fence);
+        int error = window->ops->dequeue(window, 5000000000LL, &buffer, &fence);
         if (error || !buffer) {
             if (fence >= 0) close(fence);
             destroy_images(&context, state);
@@ -316,7 +311,7 @@ static void VKAPI_CALL destroy_swapchain(VkDevice device, VkSwapchainKHR swapcha
     if (!state) return;
     struct hybris_icd_device context;
     destroy_images(hybris_icd_lookup_device(device, &context) ? &context : NULL, state);
-    if (!state->retired) hybris_vk_wayland_window_disconnect(state->window);
+    if (!state->retired) state->window->ops->disconnect(state->window);
     object_free(&state->allocator, state->custom_allocator, state->images);
     object_free(&state->allocator, state->custom_allocator, state);
 }
@@ -359,7 +354,7 @@ static VkResult acquire_slot(struct swapchain_state *state, int64_t timeout_ns, 
             return VK_SUCCESS;
         }
     struct ANativeWindowBuffer *buffer = NULL;
-    int error = hybris_vk_wayland_window_dequeue(state->window, timeout_ns, &buffer, fence);
+    int error = state->window->ops->dequeue(state->window, timeout_ns, &buffer, fence);
     if (error == -EAGAIN) return VK_NOT_READY;
     if (error == -ETIMEDOUT) return VK_TIMEOUT;
     if (error || !buffer) {
@@ -372,7 +367,7 @@ static VkResult acquire_slot(struct swapchain_state *state, int64_t timeout_ns, 
             *index = i;
             return VK_SUCCESS;
         }
-    hybris_vk_wayland_window_cancel(state->window, buffer, *fence);
+    state->window->ops->cancel(state->window, buffer, *fence);
     *fence = -1;
     return VK_ERROR_UNKNOWN;
 }
@@ -498,7 +493,7 @@ static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
         if (fence >= 0) close(fence);
         return result;
     }
-    int error = hybris_vk_wayland_window_queue(state->window, state->images[index].native, fence);
+    int error = state->window->ops->queue(state->window, state->images[index].native, fence);
     // The native queue wrapper consumes the FD on every return path.
     if (error) return VK_ERROR_SURFACE_LOST_KHR;
     state->images[index].state = IMAGE_PRESENTED;

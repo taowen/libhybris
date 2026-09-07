@@ -27,7 +27,7 @@ struct instance_state {
     VkAllocationCallbacks allocator;
     int custom_allocator;
     int surface_enabled;
-    int wayland_enabled;
+    int platforms_enabled;
     struct physical_state *physical;
     struct instance_state *next;
 };
@@ -120,7 +120,7 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
     VkInstanceCreateInfo filtered = *info;
     const char **wsi_names = NULL;
     VkResult prepared = hybris_icd_wsi_prepare_instance(info, &filtered, &wsi_names,
-        &state->surface_enabled, &state->wayland_enabled);
+        &state->surface_enabled, &state->platforms_enabled);
     if (prepared != VK_SUCCESS) {
         free_state(state);
         return prepared;
@@ -244,12 +244,12 @@ static struct instance_state *find_physical(VkPhysicalDevice physical)
 }
 
 int hybris_icd_lookup_instance_wsi(VkInstance instance, int *surface_enabled,
-    int *wayland_enabled, uint64_t *generation)
+    int *platforms_enabled, uint64_t *generation)
 {
     struct instance_state *state = find_instance(instance);
     if (!state) return 0;
     if (surface_enabled) *surface_enabled = state->surface_enabled;
-    if (wayland_enabled) *wayland_enabled = state->wayland_enabled;
+    if (platforms_enabled) *platforms_enabled = state->platforms_enabled;
     if (generation) *generation = state->generation;
     return 1;
 }
@@ -325,10 +325,10 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     while (state && state->handle != instance) state = state->next;
     PFN_vkGetInstanceProcAddr resolver = state ? state->resolver : NULL;
     int surface_enabled = state ? state->surface_enabled : 0;
-    int wayland_enabled = state ? state->wayland_enabled : 0;
+    int platforms_enabled = state ? state->platforms_enabled : 0;
     pthread_mutex_unlock(&instance_guard);
     PFN_vkVoidFunction backend = resolver ? resolver(instance, name) : NULL;
-    PFN_vkVoidFunction local_wsi = hybris_icd_wsi_proc(name, surface_enabled, wayland_enabled);
+    PFN_vkVoidFunction local_wsi = hybris_icd_wsi_proc(name, surface_enabled, platforms_enabled);
     if (local_wsi) return local_wsi;
     /* Device WSI entry points are adapter-owned. Enablement is checked on the
      * device object; GIPA may return the pointer before a device exists. */

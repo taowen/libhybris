@@ -4,6 +4,11 @@
 #include "config.h"
 #ifdef WANT_WAYLAND
 #define VK_USE_PLATFORM_WAYLAND_KHR
+#ifdef WANT_X11
+#define VK_USE_PLATFORM_XCB_KHR
+#define VK_USE_PLATFORM_XLIB_KHR
+#include <X11/Xlib-xcb.h>
+#endif
 #endif
 #include "wsi.h"
 #include <pthread.h>
@@ -13,13 +18,17 @@
 #include <string.h>
 #ifdef WANT_WAYLAND
 #include <hybris/gralloc/gralloc.h>
-#include "../platforms/wayland/window_owner.h"
+#include "native_window.h"
 #endif
 
 #ifdef WANT_WAYLAND
 static const VkExtensionProperties local_wsi[] = {
     {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SURFACE_SPEC_VERSION},
     {VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_SPEC_VERSION},
+#ifdef WANT_X11
+    {VK_KHR_XCB_SURFACE_EXTENSION_NAME, VK_KHR_XCB_SURFACE_SPEC_VERSION},
+    {VK_KHR_XLIB_SURFACE_EXTENSION_NAME, VK_KHR_XLIB_SURFACE_SPEC_VERSION},
+#endif
 };
 #endif
 
@@ -27,7 +36,7 @@ static const VkExtensionProperties local_wsi[] = {
 struct surface_state {
     VkInstance instance;
     uint64_t generation;
-    struct hybris_vk_wayland_window *window;
+    struct hybris_icd_window *window;
     struct wl_display *display;
     VkAllocationCallbacks allocator;
     int custom_allocator;
@@ -129,12 +138,12 @@ VkResult hybris_icd_wsi_enumerate(hwvulkan_device_t *hal, const char *layer,
 
 VkResult hybris_icd_wsi_prepare_instance(const VkInstanceCreateInfo *info,
     VkInstanceCreateInfo *filtered, const char ***names, int *surface_enabled,
-    int *wayland_enabled)
+    int *platforms_enabled)
 {
     *filtered = *info;
     *names = NULL;
     *surface_enabled = 0;
-    *wayland_enabled = 0;
+    *platforms_enabled = 0;
     if (!info->enabledExtensionCount) return VK_SUCCESS;
 #ifdef WANT_WAYLAND
     const char **kept = malloc(info->enabledExtensionCount * sizeof(*kept));
@@ -147,9 +156,17 @@ VkResult hybris_icd_wsi_prepare_instance(const VkInstanceCreateInfo *info,
             continue;
         }
         if (!strcmp(name, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME)) {
-            *wayland_enabled = 1;
+            *platforms_enabled |= HYBRIS_ICD_WSI_WAYLAND;
             continue;
         }
+#ifdef WANT_X11
+        if (!strcmp(name, VK_KHR_XCB_SURFACE_EXTENSION_NAME)) {
+            *platforms_enabled |= HYBRIS_ICD_WSI_XCB; continue;
+        }
+        if (!strcmp(name, VK_KHR_XLIB_SURFACE_EXTENSION_NAME)) {
+            *platforms_enabled |= HYBRIS_ICD_WSI_XLIB; continue;
+        }
+#endif
         kept[count++] = name;
     }
     *names = kept;
@@ -170,7 +187,7 @@ void hybris_icd_wsi_finish_instance(const char **names)
 static VkResult destroy_owned(struct surface_state *state)
 {
     if (!state) return VK_SUCCESS;
-    hybris_vk_wayland_window_destroy(state->window);
+    state->window->ops->destroy(state->window);
     surface_free(state);
     return VK_SUCCESS;
 }
@@ -179,23 +196,23 @@ static VkResult VKAPI_CALL create_wayland_surface(VkInstance instance,
     const VkWaylandSurfaceCreateInfoKHR *info,
     const VkAllocationCallbacks *allocator, VkSurfaceKHR *surface)
 {
-    int wayland_enabled = 0;
+    int platforms_enabled = 0;
     uint64_t generation = 0;
     if (!info || !surface ||
         info->sType != VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR)
         return VK_ERROR_INITIALIZATION_FAILED;
-    if (!hybris_icd_lookup_instance_wsi(instance, NULL, &wayland_enabled, &generation) ||
-        !wayland_enabled)
+    if (!hybris_icd_lookup_instance_wsi(instance, NULL, &platforms_enabled, &generation) ||
+        !(platforms_enabled & HYBRIS_ICD_WSI_WAYLAND))
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     if (!info->display || !info->surface) return VK_ERROR_INITIALIZATION_FAILED;
     pthread_once(&gralloc_once, initialize_gralloc);
-    struct hybris_vk_wayland_window *window = NULL;
-    int error = hybris_vk_wayland_window_create(info->display, info->surface, &window);
+    struct hybris_icd_window *window = NULL;
+    int error = hybris_icd_window_wayland(info->display, info->surface, &window);
     if (error)
         return error == -ENOMEM ? VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_UNKNOWN;
     struct surface_state *state = surface_alloc(allocator, sizeof(*state));
     if (!state) {
-        hybris_vk_wayland_window_destroy(window);
+        window->ops->destroy(window);
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
     memset(state, 0, sizeof(*state));
@@ -212,6 +229,42 @@ static VkResult VKAPI_CALL create_wayland_surface(VkInstance instance,
     *surface = (VkSurfaceKHR)(uintptr_t)state;
     return VK_SUCCESS;
 }
+
+#ifdef WANT_X11
+static VkResult create_x11_surface(VkInstance instance, xcb_connection_t *connection,
+    xcb_window_t window, int platform, const VkAllocationCallbacks *allocator, VkSurfaceKHR *surface)
+{
+    int enabled = 0; uint64_t generation = 0;
+    if (!hybris_icd_lookup_instance_wsi(instance, NULL, &enabled, &generation) || !(enabled & platform))
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    if (!connection || !window || !surface) return VK_ERROR_INITIALIZATION_FAILED;
+    pthread_once(&gralloc_once, initialize_gralloc);
+    struct hybris_icd_window *owner = NULL;
+    int error = hybris_icd_window_xcb(connection, window, &owner);
+    if (error) return error == -ENOMEM ? VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_UNKNOWN;
+    struct surface_state *state = surface_alloc(allocator, sizeof(*state));
+    if (!state) { owner->ops->destroy(owner); return VK_ERROR_OUT_OF_HOST_MEMORY; }
+    memset(state, 0, sizeof(*state));
+    state->instance = instance; state->generation = generation; state->window = owner;
+    state->custom_allocator = allocator != NULL;
+    if (allocator) state->allocator = *allocator;
+    pthread_mutex_lock(&surface_guard); state->next = surfaces; surfaces = state; pthread_mutex_unlock(&surface_guard);
+    *surface = (VkSurfaceKHR)(uintptr_t)state;
+    return VK_SUCCESS;
+}
+static VkResult VKAPI_CALL create_xcb_surface(VkInstance instance,
+    const VkXcbSurfaceCreateInfoKHR *info, const VkAllocationCallbacks *allocator, VkSurfaceKHR *surface)
+{
+    if (!info || info->sType != VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR) return VK_ERROR_INITIALIZATION_FAILED;
+    return create_x11_surface(instance, info->connection, info->window, HYBRIS_ICD_WSI_XCB, allocator, surface);
+}
+static VkResult VKAPI_CALL create_xlib_surface(VkInstance instance,
+    const VkXlibSurfaceCreateInfoKHR *info, const VkAllocationCallbacks *allocator, VkSurfaceKHR *surface)
+{
+    if (!info || !info->dpy || info->sType != VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR) return VK_ERROR_INITIALIZATION_FAILED;
+    return create_x11_surface(instance, XGetXCBConnection(info->dpy), info->window, HYBRIS_ICD_WSI_XLIB, allocator, surface);
+}
+#endif
 
 static void VKAPI_CALL destroy_surface(VkInstance instance, VkSurfaceKHR surface,
     const VkAllocationCallbacks *allocator)
@@ -276,7 +329,7 @@ int hybris_icd_wsi_graphics_family(VkPhysicalDevice physical, uint32_t index)
     return ok;
 }
 
-struct hybris_vk_wayland_window *hybris_icd_wsi_surface_window(VkSurfaceKHR surface,
+struct hybris_icd_window *hybris_icd_wsi_surface_window(VkSurfaceKHR surface,
     VkInstance *instance, uint64_t *generation)
 {
     struct surface_state *state = find_surface(surface);
@@ -298,6 +351,19 @@ static int present_engine(VkPhysicalDevice physical, uint32_t queue_family)
         hybris_icd_wsi_graphics_family(physical, queue_family) &&
         surface_formats(&context, physical, formats) != 0;
 }
+
+#ifdef WANT_X11
+static VkBool32 VKAPI_CALL xcb_presentation_support(VkPhysicalDevice physical, uint32_t family,
+    xcb_connection_t *connection, xcb_visualid_t visual)
+{
+    return present_engine(physical, family) && hybris_icd_xcb_supported(connection, visual);
+}
+static VkBool32 VKAPI_CALL xlib_presentation_support(VkPhysicalDevice physical, uint32_t family,
+    Display *display, VisualID visual)
+{
+    return display && xcb_presentation_support(physical, family, XGetXCBConnection(display), visual);
+}
+#endif
 
 static VkBool32 VKAPI_CALL wayland_presentation_support(VkPhysicalDevice physical,
     uint32_t queue_family, struct wl_display *display)
@@ -393,7 +459,10 @@ VkResult hybris_icd_wsi_capabilities(VkPhysicalDevice physical,
     memset(capabilities, 0, sizeof(*capabilities));
     capabilities->minImageCount = 2;
     capabilities->maxImageCount = 8;
-    capabilities->currentExtent = (VkExtent2D){UINT32_MAX, UINT32_MAX};
+    uint32_t width = 0, height = 0;
+    struct surface_state *state = find_surface(surface);
+    if (!state || state->window->ops->extent(state->window, &width, &height)) return VK_ERROR_SURFACE_LOST_KHR;
+    capabilities->currentExtent = width && height ? (VkExtent2D){width, height} : (VkExtent2D){UINT32_MAX, UINT32_MAX};
     capabilities->minImageExtent = (VkExtent2D){1, 1};
     capabilities->maxImageExtent = maximum;
     capabilities->maxImageArrayLayers = 1;
@@ -485,7 +554,7 @@ int hybris_icd_wsi_graphics_family(VkPhysicalDevice physical, uint32_t index)
     (void)index;
     return 0;
 }
-struct hybris_vk_wayland_window *hybris_icd_wsi_surface_window(VkSurfaceKHR surface,
+struct hybris_icd_window *hybris_icd_wsi_surface_window(VkSurfaceKHR surface,
     VkInstance *instance, uint64_t *generation)
 {
     (void)surface;
@@ -496,17 +565,27 @@ struct hybris_vk_wayland_window *hybris_icd_wsi_surface_window(VkSurfaceKHR surf
 #endif
 
 PFN_vkVoidFunction hybris_icd_wsi_proc(const char *name, int surface_enabled,
-    int wayland_enabled)
+    int platforms_enabled)
 {
 #ifdef WANT_WAYLAND
     if (!strcmp(name, "vkGetPhysicalDevicePresentRectanglesKHR"))
         return (PFN_vkVoidFunction)present_rectangles;
-    if (wayland_enabled) {
+    if (platforms_enabled & HYBRIS_ICD_WSI_WAYLAND) {
         if (!strcmp(name, "vkCreateWaylandSurfaceKHR"))
             return (PFN_vkVoidFunction)create_wayland_surface;
         if (!strcmp(name, "vkGetPhysicalDeviceWaylandPresentationSupportKHR"))
             return (PFN_vkVoidFunction)wayland_presentation_support;
     }
+#ifdef WANT_X11
+    if (platforms_enabled & HYBRIS_ICD_WSI_XCB) {
+        if (!strcmp(name, "vkCreateXcbSurfaceKHR")) return (PFN_vkVoidFunction)create_xcb_surface;
+        if (!strcmp(name, "vkGetPhysicalDeviceXcbPresentationSupportKHR")) return (PFN_vkVoidFunction)xcb_presentation_support;
+    }
+    if (platforms_enabled & HYBRIS_ICD_WSI_XLIB) {
+        if (!strcmp(name, "vkCreateXlibSurfaceKHR")) return (PFN_vkVoidFunction)create_xlib_surface;
+        if (!strcmp(name, "vkGetPhysicalDeviceXlibPresentationSupportKHR")) return (PFN_vkVoidFunction)xlib_presentation_support;
+    }
+#endif
     if (surface_enabled) {
         if (!strcmp(name, "vkDestroySurfaceKHR"))
             return (PFN_vkVoidFunction)destroy_surface;
@@ -522,6 +601,6 @@ PFN_vkVoidFunction hybris_icd_wsi_proc(const char *name, int surface_enabled,
 #endif
     (void)name;
     (void)surface_enabled;
-    (void)wayland_enabled;
+    (void)platforms_enabled;
     return NULL;
 }

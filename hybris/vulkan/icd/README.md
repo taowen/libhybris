@@ -16,7 +16,7 @@ destruction entry and a process-lifetime unique generation. Records are
 allocated before HAL creation, published only on success, removed at destroy
 and freed afterward; callbacks and HAL calls run outside the list lock.
 Application allocation callbacks also cover the record when supplied.
-No dispatch header or pNext list is rewritten. Local Wayland WSI names are
+No dispatch header or pNext list is rewritten. Local platform WSI names are
 appended on instance extension enumeration and stripped from the HAL
 CreateInstance list; other enabled names and the original pNext chain are
 left unchanged. Instance proc queries retain HAL scope/enable checks, then
@@ -72,6 +72,22 @@ unsupported; this replay path did not require it. See the
 [validation/capture review](../../../tests/wsi/validation-capture-review.md).
 The pinned tools require separate validation and capture runs; capture also
 excludes the allocation-failure boundary workload.
+
+## Experimental X11 WSI
+
+With both Wayland and X11 enabled at build time, the adapter also exposes
+`VK_KHR_xcb_surface` and `VK_KHR_xlib_surface`. It uses TAWC-DRI 0.3 over
+local Unix sockets to submit gralloc handles, retaining buffers until actual
+BufferRelease events. Missing protocol and incompatible visuals are rejected.
+Xlib shares its XCB connection without changing application event ownership.
+Current extent comes from X geometry; dynamic resize/out-of-date handling is
+not complete. This is a fixed-size experimental path, not full X11 conformance.
+
+The [independent X11 developer tool](../../../tests/x11/README.md) builds a
+private protocol-enabled Xwayland and runs one selected check in the disposable
+compositor APK. Both Adreno and Mali passed XCB/Xlib present, protocol rejection
+and acquire timeout with VVL/SyncVal. No Mesa or anlabwc change was required.
+See that document for protocol provenance, exact runs and remaining G11 scope.
 
 ## Sources
 

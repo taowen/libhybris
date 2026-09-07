@@ -48,7 +48,14 @@ libhybris_vulkan_icd_la_LDFLAGS = \
     $(top_builddir)/hardware/libhardware.la \
     -version-info 0:0:0
 if WANT_WAYLAND
+if WANT_X11
+libhybris_vulkan_icd_la_SOURCES += icd/native_window_x11.cpp
+libhybris_vulkan_icd_la_CFLAGS += $(XCB_CFLAGS) $(X11_CFLAGS)
+libhybris_vulkan_icd_la_CXXFLAGS += $(XCB_CFLAGS) $(X11_CFLAGS)
+libhybris_vulkan_icd_la_LDFLAGS += -lxcb -lX11-xcb -lX11
+endif
 libhybris_vulkan_icd_la_SOURCES += \
+    icd/native_window.h icd/native_window_wayland.c \
     platforms/wayland/window_owner.cpp platforms/wayland/window_owner.h \
     platforms/wayland/wayland_window.cpp \
     $(top_srcdir)/platforms/wayland/wayland_window_common.cpp

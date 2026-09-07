@@ -4,6 +4,19 @@ The active objective is to complete the acceptance criteria in [gaps.md](gaps.md
 and improve maintainability without changing API/ABI contracts during structural
 refactors. A probe passing does not close an entire gap.
 
+## X11 Vulkan developer path (2026-09-08)
+
+The standard ICD now provides experimental XCB/Xlib WSI using TAWC-DRI 0.3.
+Separate native-window owners share the existing swapchain implementation;
+X11 buffer reuse follows protocol release events. The independent `tests/x11`
+tool builds its own Xwayland and selects control, present, missing-protocol or
+acquire-timeout checks. Adreno and Mali passed all twelve final XCB/Xlib cases
+with VVL/SyncVal; the same production build passed Wayland swapchain review and
+headless regressions on both. No Mesa or anlabwc modification was needed.
+[Reproduction, provenance and evidence](tests/x11/README.md) document the
+fixed-size rootful single-window scope. G11 remains open for resize/out-of-date,
+rootless/multiwindow, disconnect recovery and longer lifetime coverage.
+
 ## Current Mesa dependency
 
 Mesa is now unmodified upstream `c3b008c1`, using Zink and Turnip. The parent

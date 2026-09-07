@@ -108,3 +108,6 @@ tests/wsi/build/
 
 # Desktop GL frontend build outputs
 tests/desktop-gl/build/
+
+# Independent X11 WSI developer tool outputs
+tests/x11/build/
