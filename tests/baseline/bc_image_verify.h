@@ -113,6 +113,7 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                  * at most half a unit per input; output rounding adds half.
                  * The separate BC/native comparison remains bit exact. */
                 int sums[4] = {0};
+                uint32_t texels[4];
                 for (unsigned dy = 0; dy < 2; ++dy) for (unsigned dx = 0; dx < 2; ++dx) {
                     unsigned sx = x + dx < width ? x + dx : width - 1;
                     unsigned sy = y + dy < height ? y + dy : height - 1;
@@ -120,6 +121,7 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                     if (sampler_choice >= 2 && (x + dx >= width || y + dy >= height))
                         packed = sampler_choice == 2 ? 0xffffffff : sampler_choice == 4 ? 0xff000000 : 0;
                     if (shape_index) packed = (packed & 0xff00ff00) | ((packed & 255) << 16) | ((packed >> 16) & 255);
+                    texels[2 * dy + dx] = packed;
                     for (unsigned c = 0; c < 4; ++c) {
                         unsigned value = (packed >> (8 * c)) & 255;
                         sums[c] += (f & 1) && c < 3 ? bc_linear8(value) : value;
@@ -132,6 +134,10 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                     if (abs(4 * got - sums[c]) > tolerance) matches = 0;
                     expected |= (uint32_t)((sums[c] + 2) / 4) << (8 * c);
                 }
+                if (!matches && bad < 3)
+                    printf("BC_IMAGES_FILTER_INPUT format=%u word=%u xy=%u,%u layer=%u texels=%08x,%08x,%08x,%08x actual=%08x sums=%d,%d,%d,%d\n",
+                        bc_formats[f], word, x, y, z, texels[0], texels[1], texels[2], texels[3],
+                        actual[word], sums[0], sums[1], sums[2], sums[3]);
             } else {
                 /* The chosen coordinates average four adjacent texels with
                  * exact half weights. Check native RG16 filtering against

@@ -93,3 +93,45 @@ passed all four decoder routes (2,112 readbacks total), caps and caps2.
 Native/frontend/ICD image cases each returned UNSUPPORTED after querying the
 fourteen implemented formats and recording the two unimplemented BC6H formats.
 Those image controls are not pixel coverage.
+
+## Filter input diagnosis
+
+The probe now logs the four post-border/post-swizzle encoded texels, pixel
+coordinate, native packed result and integer sums for the first three failing
+BC7 filtered-reference words in each readback. This does not change either
+comparison or its threshold. It makes the CPU reference independently
+recomputable without a GPU capture or a CPU BC decoder.
+
+Redmi run `20260908T125407-2abbc61e` still reports 357 mismatching words and no
+validation errors. For example, one native filtered result is `ffa23b15` for
+inputs `ffd08547,ffce6b08,ffd3a089,ffcf7827` (packed AABBGGRR). Recomputing the
+sRGB EOTF in double precision yields ideal RGBA byte-scale averages
+`21.41267,58.70937,160.86227,255`; the native blue result is 162, an error of
+about 1.13773. Thus replacing the eight-bit CPU EOTF table with a more precise
+one alone would not explain away all observed differences. Alpha half-way
+rounding differences in diagnostic output are within the existing alpha
+bound and are not the reason these words fail.
+
+The [Vulkan texel decode specification](https://docs.vulkan.org/spec/latest/chapters/images.html#images-texel-decode)
+requires sRGB conversion of RGB before sampling operations. The
+[CTS texture filtering reference](https://github.com/KhronosGroup/VK-GL-CTS/blob/main/external/vulkancts/modules/vulkan/texture/vktTextureFilteringTests.cpp)
+uses explicit coordinate and color precision bounds (its 2D test reduces
+RGBA8 color precision by two bits for non-nearest filtering). That is useful
+context, not evidence that this probe passed CTS or that its failure is a
+Vulkan violation. This diagnostic batch does not import those broader bounds
+or change the existing acceptance criterion.
+
+The example can be recomputed independently with Python:
+
+```python
+texels = [0xffd08547, 0xffce6b08, 0xffd3a089, 0xffcf7827]
+def linear_byte(v):
+    u = v / 255.0
+    return 255.0 * (u / 12.92 if u <= 0.04045 else ((u + 0.055) / 1.055) ** 2.4)
+print([sum(linear_byte((t >> (8*c)) & 255) if c < 3 else t >> 24
+           for t in texels) / 4 for c in range(4)])
+```
+
+The diagnostic probe bundle built with NDK `27.3.13750724`. Mali control run
+`20260908T125449-9108fdc2` passed all 336 readbacks with zero validation errors.
+Production library code and the generated decoder are unchanged in this batch.
