@@ -3,7 +3,7 @@
 #define VK_NO_PROTOTYPES
 #include "shader_cleanup.h"
 #include "spirv_builtins.h"
-#include "scaled_dispatch.h"
+#include "shader_dispatch.h"
 #include "../icd/device.h"
 #include <pthread.h>
 #include <stdatomic.h>
@@ -52,7 +52,7 @@ VkResult VKAPI_CALL hybris_shader_cleanup_create(VkDevice device, const VkShader
 }
 PFN_vkVoidFunction hybris_shader_cleanup_proc(const char *name)
 {
-    /* Scaled dispatch captures the original module, then calls cleanup. */
-    return hybris_shader_cleanup_enabled() && !hybris_scaled_enabled() && !strcmp(name, "vkCreateShaderModule") ?
+    /* Shader dispatch captures the original module, then calls cleanup. */
+    return hybris_shader_cleanup_enabled() && !hybris_shader_enabled() && !strcmp(name, "vkCreateShaderModule") ?
         (PFN_vkVoidFunction)hybris_shader_cleanup_create : NULL;
 }

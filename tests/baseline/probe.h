@@ -45,6 +45,7 @@ int vkprobe(const char *route);
 int memory_ranges_probe(int validate);
 int bc_decode_probe(int validate);
 int bc_images_probe(int validate, int route);
+int point_size_probe(int validate, int route);
 int dispatch_probe(void);
 int life_probe(int unload);
 int init_probe(void);

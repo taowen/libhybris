@@ -887,3 +887,10 @@ clip/cull、PointSize 以及不明确的结构/指针形式保持原样，不提
 双机四入口及多入口 shader、multi-UBO 绘制和独立 SPIR-V 结构审计通过。
 初次证据检查器将预期成员删除判为 FAIL 的结果保留，随后加入精确结构/
 访问链验证，未放宽像素门槛。详见 [范围和证据](tests/baseline/unused-builtins.md)。
+
+2026-09-08 G08 PointSize：新增默认关闭、按管线作用的常量 1.0 输出清理；
+必须完整确认所有相关访问均为常量写入，点图元、动态拓扑、实际读取和混合
+写入保持原样。共享 shader/module registry 按职责改名为 shader_dispatch，
+具体分析仍在独立 pass 文件。双机四入口完成三角形→点→三角形模块复用、
+1/25 像素点绘制、全图检查和实际 SPIR-V 核对；不代表通用 PointSize 转换
+或 G08 全部完成。见 [条件、结果与限制](tests/baseline/point-size.md)。

@@ -31,6 +31,7 @@ p.add_argument('--manifest', type=Path, help='Provenance JSON from tools/manifes
 p.add_argument('--out', type=Path, default=Path(__file__).resolve().parent / 'build/results')
 p.add_argument('--bundle', type=Path, default=Path(__file__).resolve().parent / 'build/bundle')
 p.add_argument('--bc-textures', choices=('missing', 'force'), help='Enable experimental BC1-7 image fallback for ICD cases')
+p.add_argument('--point-size-compat', action='store_true', help='Remove constant-one PointSize outputs only in eligible non-point pipelines')
 p.add_argument('--unused-builtins', action='store_true', help='Remove provably unaccessed output clip/cull declarations in ICD shaders')
 p.add_argument('--scaled-format-trace', action='store_true', help='Audit raw/effective scaled format decisions; requires scaled compatibility')
 p.add_argument('--scaled-vertex-compat', choices=('missing', 'force'), help='Enable experimental scaled vertex fallback for ICD cases')
@@ -42,6 +43,8 @@ p.add_argument('--validation-manifest', type=Path, help='Original layer JSON mat
 p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
 p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
 a = p.parse_args()
+if a.point_size_compat and not a.icd_hal:
+    p.error('--point-size-compat requires --icd-hal')
 if a.unused_builtins and not a.icd_hal:
     p.error('--unused-builtins requires --icd-hal')
 if a.bc_textures and not a.icd_hal:
@@ -259,6 +262,7 @@ for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'memory-ranges', binary))
     cases.append((backend, 'bc-decode', binary))
     cases.append((backend, 'bc-images', binary))
+    cases.append((backend, 'point-size', binary))
     cases.append((backend, 'scaled-vertex', binary))
     cases.append((backend, 'scaled-vertex-multi', binary))
     cases.append((backend, 'scaled-vertex-literal', binary))
@@ -288,7 +292,8 @@ if a.icd_hal:
     # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
               for mode in ('version', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
-    cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
+    cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch', 'point-size-linked')]
+    cases.extend(('icd', 'point-size' + route, 'probe-glibc') for route in ('', '-gdpa', '-elf'))
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
     cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
     cases.extend(('icd', 'scaled-vertex-builtins-' + route, 'probe-glibc') for route in ('gdpa', 'elf'))
@@ -302,6 +307,8 @@ if a.icd_hal:
     cases.extend(('icd-linked', mode, 'probe-glibc-linked')
                  for mode in ('render-core13-linked', 'render-khr13-linked'))
     if a.validation_layer:
+        cases.extend(('icd', 'point-size' + route + '-validation', 'probe-glibc') for route in ('', '-gdpa', '-elf'))
+        cases.append(('icd-linked', 'point-size-linked-validation', 'probe-glibc-linked'))
         cases.extend(('icd', 'scaled-vertex-builtins-' + route + '-validation', 'probe-glibc') for route in ('gdpa', 'elf'))
         cases.append(('icd-linked', 'scaled-vertex-builtins-linked-validation', 'probe-glibc-linked'))
         cases.append(('icd-linked', 'bc-images-linked-validation', 'probe-glibc-linked'))
@@ -381,6 +388,12 @@ try:
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 ' + command
         if backend == 'icd' and mode == 'life':
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 HYBRIS_ICD_DEVICE_TRACE=1 ' + command
+        if backend in {'icd', 'icd-linked'} and a.point_size_compat:
+            command = 'HYBRIS_VULKAN_COMPAT_POINT_SIZE=1 ' + command
+            if mode.startswith('point-size'):
+                dump_remote = remote + '/' + backend + '-' + mode + '-shaders'
+                shell('mkdir -p ' + shlex.quote(dump_remote), check=True)
+                command = 'HYBRIS_VULKAN_SCALED_DUMP_DIR=' + shlex.quote(dump_remote) + ' ' + command
         if backend in {'icd', 'icd-linked'} and a.unused_builtins:
             command = 'HYBRIS_VULKAN_COMPAT_UNUSED_BUILTINS=1 ' + command
         if backend in {'icd', 'icd-linked'} and a.bc_textures:
@@ -412,6 +425,19 @@ try:
         probe_exit_code = code
         shader_evidence_error = None
         decoded = (output or b'').decode('utf-8', errors='replace')
+        if backend in {'icd', 'icd-linked'} and mode.startswith('point-size') and a.point_size_compat:
+            dump_local = a.out / (name + '-shaders')
+            dump_local.mkdir()
+            subprocess.run(adb + ['pull', dump_remote + '/.', str(dump_local)], check=True,
+                           stdout=subprocess.DEVNULL, timeout=30)
+            from point_size_evidence import point_size_evidence
+            try:
+                evidence = point_size_evidence(dump_local, decoded, a.bundle / 'src/shaders/point-size.inc', a.unused_builtins)
+                (a.out / (name + '-shader-evidence.json')).write_text(json.dumps(evidence, indent=2) + '\n')
+            except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+                shader_evidence_error = str(exc)
+                print(name, 'point-size shader evidence failed:', exc)
+                code = code or 2
         if backend in {'icd', 'icd-linked'} and mode.startswith('scaled-vertex') and a.scaled_vertex_compat:
             dump_local = a.out / (name + '-shaders')
             dump_local.mkdir()

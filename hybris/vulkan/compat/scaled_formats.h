@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #ifndef HYBRIS_SCALED_FORMATS_H
 #define HYBRIS_SCALED_FORMATS_H
-#include "scaled_dispatch.h"
+#include "shader_dispatch.h"
 #define HYBRIS_SCALED_FORMAT_COUNT 12
 struct hybris_scaled_format_pair { VkFormat scaled, integer; int is_signed; };
 extern const struct hybris_scaled_format_pair hybris_scaled_formats[HYBRIS_SCALED_FORMAT_COUNT];

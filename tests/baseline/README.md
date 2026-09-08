@@ -17,6 +17,11 @@ The opt-in [unused clip/cull cleanup](unused-builtins.md) removes only unaccesse
 output declarations and preserves active uses. The runner enables it with
 `--unused-builtins`; it composes with scaled conversion without changing feature queries.
 
+The separate [PointSize cleanup](point-size.md), enabled by `--point-size-compat`,
+removes constant-one outputs only for eligible non-point pipelines. Its probe
+reuses modules across triangle and point pipelines and checks PointSize reads
+and mixed writes.
+
 The [multi-descriptor widget fixture](widget-multi.md) adds four dynamic UBOs
 across two sets and an array, with exact full-image readback and per-descriptor
 capture evidence. Ordinary and single-dynamic captures remain in the runner.

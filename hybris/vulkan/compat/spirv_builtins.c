@@ -23,7 +23,7 @@ static uint32_t structure(const struct builtin_id *ids, uint32_t bound, uint32_t
     uint32_t object = ids[pointer].object;
     return ids[object].op == 30 ? object : 0;
 }
-VkResult hybris_spirv_unused_builtins(const uint32_t *code, size_t size,
+static VkResult prune_outputs(const uint32_t *code, size_t size, unsigned builtin_mask,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
     unsigned *removed)
 {
@@ -71,7 +71,7 @@ VkResult hybris_spirv_unused_builtins(const uint32_t *code, size_t size,
         if (op == 71 && count == 4 && p[1] < bound && p[2] == 11) ids[p[1]].builtin = p[3];
         if (op == 72 && count >= 4) {
             if (p[1] >= bound || ids[p[1]].op != 30 || p[2] >= (code[ids[p[1]].at] >> 16) - 2) goto done;
-            if (p[3] == 11 && count == 5 && clip_cull(p[4]) && p[2] < 64)
+            if (p[3] == 11 && count == 5 && p[4] < 32 && (builtin_mask & (1u << p[4])) && p[2] < 64)
                 ids[p[1]].candidates |= UINT64_C(1) << p[2];
         }
     }
@@ -111,7 +111,7 @@ VkResult hybris_spirv_unused_builtins(const uint32_t *code, size_t size,
         }
     }
     for (uint32_t id = 1; id < bound; ++id) {
-        if (ids[id].op == 59 && !ids[id].blocked && !ids[id].live && clip_cull(ids[id].builtin))
+        if (ids[id].op == 59 && !ids[id].blocked && !ids[id].live && ids[id].builtin < 32 && (builtin_mask & (1u << ids[id].builtin)))
             ids[id].drop = 1;
         if (ids[id].op == 30) {
             ids[id].candidates &= ~ids[id].used;
@@ -205,4 +205,15 @@ done:
     hybris_scaled_free(allocator, result);
     hybris_scaled_free(allocator, ids);
     return status;
+}
+
+VkResult hybris_spirv_unused_builtins(const uint32_t *code, size_t size,
+    const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size, unsigned *removed)
+{
+    return prune_outputs(code, size, (1u << 3) | (1u << 4), allocator, output, output_size, removed);
+}
+VkResult hybris_spirv_unused_point_size(const uint32_t *code, size_t size,
+    const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size, unsigned *removed)
+{
+    return prune_outputs(code, size, 1u << 1, allocator, output, output_size, removed);
 }

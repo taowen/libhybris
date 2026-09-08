@@ -3,7 +3,7 @@
 #define VK_NO_PROTOTYPES
 #include "device.h"
 #include "swapchain.h"
-#include "../compat/scaled_dispatch.h"
+#include "../compat/shader_dispatch.h"
 #include "../compat/shader_cleanup.h"
 #include "../compat/bc_policy.h"
 #include "../compat/bc_context.h"
@@ -82,7 +82,7 @@ void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCal
     pthread_mutex_unlock(&device_guard);
     if (!state) return;
     hybris_bc_device_remove(device);
-    hybris_scaled_device_destroy(device);
+    hybris_shader_device_destroy(device);
     state->destroy(device, allocator);
     free_state(state);
 }
@@ -162,11 +162,11 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
         }
     }
     if (result == VK_SUCCESS)
-        result = hybris_scaled_device_create(*device, physical, resolver, query, allocator);
+        result = hybris_shader_device_create(*device, physical, resolver, query, allocator);
     if (result == VK_SUCCESS)
         result = hybris_bc_attach_device(*device, physical, resolver, allocator);
     if (result != VK_SUCCESS) {
-        hybris_scaled_device_destroy(*device);
+        hybris_shader_device_destroy(*device);
         state->destroy(*device, allocator);
         *device = VK_NULL_HANDLE;
         free_state(state);
@@ -203,7 +203,7 @@ PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char
     if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
         return (PFN_vkVoidFunction)hybris_icd_device_proc;
     PFN_vkVoidFunction compat = backend ? hybris_shader_cleanup_proc(name) : NULL;
-    if (!compat && backend) compat = hybris_scaled_proc(name);
+    if (!compat && backend) compat = hybris_shader_proc(name);
     return compat ? compat : backend;
 }
 

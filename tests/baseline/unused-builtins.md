@@ -4,7 +4,8 @@
 It removes unaccessed direct output ClipDistance/CullDistance variables and
 unaccessed members of ordinary output structures. It does not remove active
 clipping, change physical-device features, or emulate clipping/culling on a
-GPU that lacks them. PointSize is retained.
+GPU that lacks them. This switch alone retains PointSize; the separate
+[pipeline-scoped PointSize option](point-size.md) has its own guards.
 
 The parser and rewrite live in `compat/spirv_builtins.c`; the small ICD creation
 adapter lives in `compat/shader_cleanup.c`. It preserves allocator ownership,

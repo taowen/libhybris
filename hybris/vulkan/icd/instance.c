@@ -5,7 +5,7 @@
 #include "device.h"
 #include "wsi.h"
 #include "swapchain.h"
-#include "../compat/scaled_dispatch.h"
+#include "../compat/shader_dispatch.h"
 #include "../compat/shader_cleanup.h"
 #include "../compat/bc_policy.h"
 #include <pthread.h>
@@ -397,13 +397,13 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     if (backend) {
         PFN_vkVoidFunction cleanup = hybris_shader_cleanup_proc(name);
         if (cleanup) return cleanup;
+        PFN_vkVoidFunction shader = hybris_shader_proc(name);
+        if (shader) return shader;
     }
     if (backend && (hybris_scaled_enabled() || hybris_bc_enabled())) {
         if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties")) return (PFN_vkVoidFunction)format_properties;
         if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties2")) return (PFN_vkVoidFunction)format_properties2_core;
         if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties2KHR")) return (PFN_vkVoidFunction)format_properties2_khr;
-        PFN_vkVoidFunction compat = hybris_scaled_proc(name);
-        if (compat) return compat;
     }
     return backend;
 }

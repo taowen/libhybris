@@ -6,7 +6,7 @@ it does not reuse the production parser or authorize arbitrary shader edits.
 import re
 
 
-def builtin_decorations(before, after):
+def builtin_decorations(before, after, removable=frozenset({'ClipDistance', 'CullDistance'})):
     old = dict(re.findall(r'^\s*(%\d+) = (.+)$', before, re.M))
     new = dict(re.findall(r'^\s*(%\d+) = (.+)$', after, re.M))
     decorations = re.findall(r'^\s*(Op(?:Member)?Decorate .+)$', before, re.M)
@@ -25,10 +25,10 @@ def builtin_decorations(before, after):
             if cursor < len(new_types) and (member_type, builtin) == (new_types[cursor], new_builtins.get((struct_id, cursor))):
                 mapping[index] = cursor
                 cursor += 1
-            elif builtin in {'ClipDistance', 'CullDistance'}:
+            elif builtin in removable:
                 removed.append(index)
             else:
-                raise ValueError('cleanup removed or changed a non-clip/cull member')
+                raise ValueError('cleanup removed or changed a member outside the allowed builtins')
         if cursor != len(new_types) or not removed:
             raise ValueError('cleanup introduced an unexpected output member')
         mappings[struct_id] = {'members': mapping, 'removed': removed, 'access_chains': 0}

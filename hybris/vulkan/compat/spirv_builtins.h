@@ -7,4 +7,8 @@
 VkResult hybris_spirv_unused_builtins(const uint32_t *code, size_t size,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
     unsigned *removed);
+/* Internal pipeline-only step, after removable PointSize stores are erased. */
+VkResult hybris_spirv_unused_point_size(const uint32_t *code, size_t size,
+    const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
+    unsigned *removed);
 #endif

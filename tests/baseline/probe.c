@@ -74,6 +74,9 @@ int main(int argc, char **argv) {
     rc = caps_probe(0);
   else if (!strcmp(mode, "wsi-disabled"))
     rc = caps_probe(1);
+  else if (!strncmp(mode, "point-size", 10))
+    rc = point_size_probe(strstr(mode, "validation") != NULL,
+      strstr(mode, "gdpa") ? 1 : strstr(mode, "elf") ? 2 : strstr(mode, "linked") ? 3 : 0);
   else if (!strncmp(mode, "scaled-vertex", 13))
     rc = scaled_vertex_probe(strstr(mode, "validation") != NULL,
       strstr(mode, "gdpa") ? 1 : strstr(mode, "elf") ? 2 : strstr(mode, "linked") ? 3 : 0, mode);
