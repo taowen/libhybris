@@ -50,8 +50,8 @@ ordering, or simulate resource history. The vertex index therefore still marks
 indirect GPU arguments as not decoded. Linked pipeline-library state, shader
 objects and secondary command-buffer execution also remain unresolved; unknown
 linked/shader-object state is marked incomplete. The full standard capture and
-converted calls remain available for further analysis. The runner does not
-perform desktop replay.
+converted calls remain available for further analysis. Desktop replay is an
+explicit option, with the bounded comparison and current failures described below.
 
 ## Device evidence
 
@@ -101,7 +101,7 @@ Their recorded copy calls are 2851, 2975, 3100 and 3226; captured uploads are
 count-buffer fill value 3 is initialization evidence only. These candidates do
 not prove which commands or count the GPU actually consumed.
 
-### Desktop replay attempt remains failed
+### Default descriptor-buffer replay remains failed
 
 A separate manual replay of Mali capture `20260908T164330-203aa6db` used the
 same staged runtime and pinned replay tool. `--swapchain virtual` exited 255
@@ -109,5 +109,84 @@ because automatic WSI selection had no compositor. After that process ended,
 `--swapchain offscreen` reached API call 451, `vkCreateImageView`, but returned
 `VK_ERROR_OUT_OF_DEVICE_MEMORY` instead of the recorded `VK_SUCCESS` and exited
 255. No draw was reached. Commands and both logs are retained under that run's
-`capture/replay-attempt/`. The failure's cause remains unproven; desktop replay
-and GPU argument verification are not covered by the successful capture checks.
+`capture/replay-attempt/`. The failure's cause remains unproven. The default descriptor-buffer path and
+GPU argument verification are not covered by the successful capture checks.
+
+### Fixed-probe readback replay
+
+Use `--replay-capture` with `--capture-tools`. `--replay-memory none|rebind`
+selects the upstream tool's allocator mode; it defaults to `none`. A separate
+`--zink-descriptors auto|lazy|db` option passes the upstream Zink setting to the
+probe and records it in the command. It does not change the default or patch
+Mesa. The tested Mali diagnostic configuration adds:
+
+```sh
+--zink-descriptors lazy --replay-capture --replay-memory rebind
+```
+
+The replay helper writes the standard tool's `replay-request.json`, requesting
+each captured `vkCmdCopyImageToBuffer` by its command-buffer begin, copy and
+successful submit indices. It checks the fixed fixture's tightly packed 16x16
+RGBA/BGRA layout, compares the tool report's resource IDs and submission set,
+and compares each retained GL image byte-for-byte. Repeated cumulative report
+entries must agree. Output files are saved with device-verified hashes in
+`replay-files.json`; commands, logs and per-image comparisons are retained in
+`replay-result.json`, `replay.log` and `replay-readbacks.json`.
+
+The original twelve packed draws check their pixels but do not save image
+files. Their replay readbacks are retained and explicitly marked
+`NOT_SAVED_BY_PROBE`; they are not counted as image comparisons. This is the
+fixed fixture's transfer readback evidence, not arbitrary draw/attachment
+history, indirect GPU argument inspection, present replay or screen capture.
+
+`render_status` is determined by the original probe and host image checks even
+when capture/replay fails. `capture.status`, `capture.replay.status` and aggregate
+`status` remain separate. A matching replay of a failed original image does not
+make rendering pass. Tool warnings/errors and GPU faults prevent a replay PASS;
+when the tool completes, image comparisons are retained even on that failure.
+
+The unpatched fixed GFXReconstruct skipped an original submit with no command
+buffers while dumping resources. Zink uses a trailing empty submit to signal
+its timeline semaphore. The missing signal blocked the next wait: manual lazy
+capture `20260908T171021-c9642933` completed replay without resource dumping,
+but timed out after 60 seconds with dumping, leaving only its first readback.
+The [build-time patch](../../tools/patches/README.md) preserves that original
+submit's semaphore/fence work. Replaying the **same capture** with the patched
+tool completed all 27 readbacks and matched all 15 saved images. This comparison
+used the pre-consolidation runtime saved with that capture; subsequent runs use
+libhybris `734ec73`, built with Ardesk's shared protocol package.
+
+Using `-m rebind` on the original descriptor-buffer capture is not a solution:
+the pinned tool explicitly warns that this mode is unsupported and Mali logged
+`GROUP_ERROR_FATAL` despite process exit 0. The runner rejects this combination
+when the capture contains descriptor-buffer commands. The separate lazy-mode
+capture preserves the eight original Mali attribute failures.
+
+Final device evidence is recorded below. Every listed expanded capture has
+four CPU-upload candidates and fully saved converter sidecars. None establishes
+GPU argument contents or closes G04/G06/G10/G12.
+
+| Final run | Rendering | Replay | Retained image comparison |
+| --- | --- | --- | --- |
+| `20260908T173722-a71cc7ea` | Mali basic fixture PASS, explicit lazy mode | PASS, rebind; 13 readbacks | Main image matches; 12 packed images not saved by probe |
+| `20260908T173400-11780a2d` | Mali expanded fixture FAIL, explicit lazy mode | PASS, rebind; 27 readbacks | All 15 saved images match, including eight attribute failures; 12 packed images not saved |
+| `20260908T173401-b1104260` | Turnip expanded fixture PASS, explicit lazy mode | FAIL, no memory translation; 50 readbacks | 37/38 saved images match; `multidraw-0.rgba` differs; 12 packed images not saved |
+| `20260908T173550-4d8ada8d` | Mali basic fixture PASS, default descriptor mode | FAIL, no memory translation; exit 255 at image-view creation | No replay comparison completed |
+
+Turnip also mismatched the same multidraw image with `-m rebind`
+(`20260908T172622-4e3a0435`), alongside a missing image-layout warning. The
+no-translation run still reports the tool's removal of the pipeline
+compile-required flag. These are retained failures, not evidence of an
+unchanged Turnip application image. The root cause of that pixel divergence
+remains open.
+
+The patched tool also passes the existing independent Adreno HAL widget run
+`20260908T173058-6d4246a2`: version, UBO and all ordinary/dynamic/multiple
+correct-versus-wrong binding capture/replay pairs pass (5 PASS). The tools
+were built with the fixed patch, then rebuilt through the clean-source patch
+application path; every installed file remained byte-identical. The final
+libhybris clean build used `734ec73` and
+`ARDESK_WSI_PROTOCOL_DIR=/var/home/taowen/projects/glibc-on-bionic/ardesk/protocols`.
+Shell syntax, Python compilation and actual helper hashes recorded in the
+final runs were checked. Earlier manual commands, failed logs and partial
+outputs remain under the source captures' `capture/replay-attempts/`.

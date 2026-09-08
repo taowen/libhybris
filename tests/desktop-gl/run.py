@@ -20,16 +20,21 @@ p.add_argument('--hal',help='vendor HAL path, required for the hybris backend')
 p.add_argument('--api-version',required=True,help='actual ICD version from baseline version discovery')
 p.add_argument('--mali-loader-quirk',action='store_true')
 p.add_argument('--packed-vertex',choices=['1','force'],help='enable experimental packed SNORM vertex swizzle')
+p.add_argument('--zink-descriptors',choices=['auto','lazy','db'],help='explicit upstream Zink descriptor mode for diagnostic comparisons')
 p.add_argument('--profile',choices=['core32','compat32','core33'],default='core32')
 p.add_argument('--display',help='X11 DISPLAY for GLX; omit for surfaceless EGL')
 p.add_argument('--vertex-prepass',action='store_true',help='exercise explicit compute vertex prepass feasibility workload')
 p.add_argument('--vertex-draws',action='store_true',help='run ordinary procedural, attribute, indexed and multidraw GL cases')
 p.add_argument('--capture-tools',type=Path,help='pinned GFXReconstruct install; records Vulkan calls, separately from validation')
+p.add_argument('--replay-capture',action='store_true',help='replay the fixed fixture and compare saved image readbacks')
+p.add_argument('--replay-memory',choices=['none','rebind'],default='none',help='GFXReconstruct replay memory translation')
 p.add_argument('--validation-layer',type=Path,help='glibc AArch64 Khronos validation layer')
 p.add_argument('--validation-manifest',type=Path,help='matching original validation JSON')
 a=p.parse_args()
 if a.backend=='hybris' and not a.hal:p.error('--hal is required for hybris')
 if a.backend=='turnip' and (a.hal or a.mali_loader_quirk):p.error('Turnip does not use a vendor HAL or Mali loader quirk')
+if a.replay_capture and not a.capture_tools:p.error('--replay-capture requires --capture-tools')
+if a.replay_memory!='none' and not a.replay_capture:p.error('--replay-memory requires --replay-capture')
 if a.capture_tools and a.validation_layer:p.error('capture and validation require separate runs with the pinned tools')
 if bool(a.validation_layer)!=bool(a.validation_manifest):p.error('provide both validation layer and manifest')
 if not re.fullmatch(r'\d+\.\d+\.\d+',a.api_version):p.error('invalid API version')
@@ -44,6 +49,7 @@ if a.backend=='hybris':
     hybris_manifest=json.loads((baseline/'manifest.json').read_text())
     verify_manifest(hybris_manifest,baseline/'install/usr/lib/hybris',baseline/'runtime')
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
+def status(code):return 'PASS' if code==0 else 'UNSUPPORTED' if code==3 else 'TIMEOUT' if code in (124,142) else 'CRASH' if code>=128 else 'FAIL'
 if sha(build/'probe')!=manifest['probe_sha256']:raise RuntimeError('probe hash mismatch')
 for name,digest in manifest['runtime'].items():
     if sha(build/'runtime'/name)!=digest:raise RuntimeError('runtime hash mismatch: '+name)
@@ -59,6 +65,8 @@ if a.capture_tools:
         'vertex_capture.py':sha(Path(__file__).with_name('vertex_capture.py')),
         'capture_files.py':sha(Path(__file__).with_name('capture_files.py')),
         'indirect_uploads.py':sha(Path(__file__).with_name('indirect_uploads.py')),
+        'replay.py':sha(Path(__file__).with_name('replay.py')),
+        'replay_readbacks.py':sha(Path(__file__).with_name('replay_readbacks.py')),
         'capture_stage.py':sha(root/'tools/capture_stage.py')}
 if a.backend=='hybris':
     shutil.copytree(baseline/'install/usr/lib/hybris',stage/'hybris',symlinks=True)
@@ -87,6 +95,7 @@ env={'EGL_PLATFORM':'surfaceless','MESA_LOADER_DRIVER_OVERRIDE':'zink','GALLIUM_
  'MESA_DEBUG':'1','VK_DRIVER_FILES':remote+'/driver.json','VK_LAYER_PATH':remote+'/layers',
  'XDG_RUNTIME_DIR':remote}
 if a.backend=='hybris':env.update(HYBRIS_LINKER_DIR=remote+'/hybris/libhybris/linker',HYBRIS_ANDROID_SDK_VERSION=sdk,HYBRIS_VULKAN_HAL=a.hal)
+if a.zink_descriptors:env['ZINK_DESCRIPTORS']=a.zink_descriptors
 if a.vertex_prepass:env['HYBRIS_VERTEX_PREPASS']='1'
 if a.vertex_draws:
     env['HYBRIS_PROCEDURAL_VERTEX']='1'
@@ -139,12 +148,20 @@ try:
         except (OSError,ValueError,subprocess.SubprocessError) as error:
             record['capture']={'status':'FAIL','error':str(error)}
             if code==0:code=2
+    if a.replay_capture and record['capture']['status']=='PASS':
+        from replay import replay_capture
+        try:
+            record['capture']['replay']=replay_capture(shell,remote,out,library_path,env,a.replay_memory,sha)
+        except (OSError,ValueError,subprocess.SubprocessError) as error:
+            record['capture']['replay']={'status':'FAIL','error':str(error)}
+        if record['capture']['replay']['status']!='PASS' and code==0:code=2
 finally:
-    for pidfile in ('runner.pid','capture-tool.pid'):
+    for pidfile in ('runner.pid','capture-tool.pid','replay-tool.pid'):
         script='cd '+shlex.quote(remote)+' || exit; p=$(cat '+pidfile+'); case "$p" in ""|*[!0-9]*) exit;; esac; [ "$(readlink /proc/$p/cwd)" = '+shlex.quote(remote)+' ] && kill -KILL "$p"; true'
         shell('sh -c '+shlex.quote(script),capture_output=True)
     shell('rm -rf '+shlex.quote(remote),check=True)
-if code==0:
+record['render_status']=status(record['probe_exit_code'])
+if record['probe_exit_code']==0:
     try:
         packed=re.findall(r'^PACKED_DRAW signed=(\d) normalized=(\d) bgra=(\d) divisor=(\d) bad=(\d+) error=0x([0-9a-f]+)$', (out/'probe.log').read_text(), re.MULTILINE)
         cases={(str(s),str(n),str(b),str(d)) for s in range(2) for n in range(2) for b in range(2 if n else 1) for d in (1,2)}
@@ -206,9 +223,9 @@ if code==0:
         if a.display and 'runtime/libGL.so.1' not in maps:raise ValueError('missing mapped GLX frontend')
         record['evidence']='256 exact pixels; Mesa, standard loader and selected '+a.backend+' backend mapped'
     except (OSError,ValueError) as error:
-        code=2;record['evidence_error']=str(error)
+        code=2;record['render_status']='FAIL';record['evidence_error']=str(error)
 record['exit_code']=code
-record['status']='PASS' if code==0 else 'UNSUPPORTED' if code==3 else 'TIMEOUT' if code in (124,142) else 'CRASH' if code>=128 else 'FAIL'
+record['status']=status(code)
 (out/'result.json').write_text(json.dumps(record,indent=2))
 print((out/'probe.log').read_text(errors='replace'));print(out,record['status'])
 raise SystemExit(0 if code==0 else 1)

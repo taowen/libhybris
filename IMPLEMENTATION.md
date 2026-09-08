@@ -39,7 +39,19 @@ rootless/multiwindow, disconnect recovery and longer lifetime coverage.
 
 ## Current Mesa dependency
 
-Mesa is now unmodified upstream `c3b008c1`, using Zink and Turnip. The parent
+The independent desktop-GL probes below use unmodified upstream `c3b008c1`,
+with Zink and Turnip. Ardesk's product build additionally applies its own
+`tools/patches/mesa-ardesk-wsi.patch` to a derived Mesa source tree; that product
+handoff is in Ardesk's `docs/GRAPHICS_CONSOLIDATION.md`. Both use this libhybris
+repository. Since `734ec73`, Ardesk's `protocols/` is the sole wire-contract
+source, selected for standalone builds by `ARDESK_WSI_PROTOCOL_DIR`. Window
+regressions attach to the running Ardesk (`io.taowen.ardesk`, X display `:1`).
+Surface formats are based on AHB import queries, not ordinary-image support.
+The remaining product priority is X300 MMUD compatibility: the scoped opt-in
+switch passes GLX/EGL, while GLX without it exits 139. Compositor `read_pixels`,
+screen-capture protocol and GPU reset recovery remain outside current coverage.
+
+The parent
 submodule URL, build, packaging and launch defaults no longer depend on
 Freedreno Gallium KGSL or private Zink conversion. Earlier fork results below
 are historical. Official Turnip passes both EGL/GLX runs with 38 identical
@@ -286,7 +298,7 @@ it does not provide slot reclamation, IE first-touch or signal reentrancy.
 | G03 | Partial | Observe TLS allocation/destruction and generation handling; exercise GLES multiple contexts and cross-thread teardown. |
 | G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Fixed headless widget capture/replay now matches all RGBA bytes. The ICD Wayland window probe now also passes Khronos VVL+SyncVal create/render/resize/retirement/destroy and GFXReconstruct virtual-swapchain copy dumps on OnePlus 8T and Mali; still need arbitrary application coverage. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
-| G06 | Partial | Fixed captures now reconstruct four dynamic UBOs across two sets and an array and identify the changed descriptor/first divergent draw. The [desktop GL capture](tests/desktop-gl/capture.md) also indexes recorded vertex inputs and submit references; saved converter binaries now provide CPU-upload/copy provenance for four indirect-count draws on Mali and Turnip. GPU argument contents and linked pipeline-library state remain unresolved; desktop replay stopped at image-view creation before drawing. General history and runtime resource generations remain open; see the multi-descriptor evidence. |
+| G06 | Partial | Fixed captures now reconstruct four dynamic UBOs across two sets and an array and identify the changed descriptor/first divergent draw. The [desktop GL capture](tests/desktop-gl/capture.md) also indexes recorded vertex inputs and submit references; saved converter binaries now provide CPU-upload/copy provenance for four indirect-count draws on Mali and Turnip. GPU argument contents and linked pipeline-library state remain unresolved. Default descriptor-buffer replay stops at image-view creation; explicit lazy-mode replay with the tool's empty-submit fix matches Mali's 15 saved images, including eight rendering failures. Turnip replay retains a multidraw pixel mismatch. General history and runtime resource generations remain open; see the multi-descriptor evidence. |
 | G07 | Open | Default-off BC1–BC7 image operations have independent native sampling/byte references, mip/layer/subregion and retirement probes. BC4/BC5 include UNORM16/SNORM16 sampling, filtering and border/default-channel checks. Native RGB8 fixes the tested Mali BC1 RGB border case; Redmi remains FAIL. BC7 passes on Mali but retains a native sRGB filtering reference failure on Redmi. BC6H passes on Mali but retains filtering/border failures on Redmi. Complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
 | G08 | Open | Fixed SPIR-V tooling, reflection/hash/specialization records, before/after semantic evidence for each transform. |
 | G09 | Open | Noncoherent/staging/reuse and queue ordering cases; validate emulation against completion and memory visibility. |
