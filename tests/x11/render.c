@@ -122,17 +122,26 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
     VkSurfaceFormatKHR *formats = calloc(count, sizeof(*formats)); if (!formats) return 2;
     OK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, formats));
     VkFormat format = VK_FORMAT_UNDEFINED;
-    for (uint32_t i = 0; i < count; ++i)
-        if ((formats[i].format == VK_FORMAT_R8G8B8A8_UNORM || formats[i].format == VK_FORMAT_B8G8R8A8_UNORM) &&
-            formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) { format = formats[i].format; break; }
-    free(formats); if (!format) return 3;
+    const char *requested = getenv("WSI_SURFACE_FORMAT");
+    VkFormat wanted = requested ? (VkFormat)strtol(requested, NULL, 10) : VK_FORMAT_UNDEFINED;
+    for (uint32_t i = 0; i < count; ++i) {
+        VkFormat candidate = formats[i].format;
+        printf("X11_FORMAT format=%d color_space=%d\n", candidate, formats[i].colorSpace);
+        int handled = candidate == VK_FORMAT_R8G8B8A8_UNORM || candidate == VK_FORMAT_B8G8R8A8_UNORM ||
+            (requested && (candidate == VK_FORMAT_R8G8B8A8_SRGB || candidate == VK_FORMAT_B8G8R8A8_SRGB));
+        if (!format && handled && (!requested || candidate == wanted) &&
+            formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) format = candidate;
+    }
+    free(formats);
+    if (!format) { printf("X11_FORMAT_UNSUPPORTED requested=%d\n", wanted); return 3; }
+    int bgra = format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
     VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if ((caps.supportedUsageFlags & usage) != usage || caps.minImageCount > 3 || (caps.maxImageCount && caps.maxImageCount < 3)) return 3;
     VkCompositeAlphaFlagBitsKHR alpha = caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
         ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
     if (!(caps.supportedCompositeAlpha & alpha)) return 3;
-    printf("X11_SURFACE usage=0x%x alpha=0x%x extent=%ux%u\n", caps.supportedUsageFlags,
-           alpha, caps.currentExtent.width, caps.currentExtent.height);
+    printf("X11_SURFACE usage=0x%x alpha=0x%x extent=%ux%u format=%d\n", caps.supportedUsageFlags,
+           alpha, caps.currentExtent.width, caps.currentExtent.height, format);
     VkSwapchainCreateInfoKHR sw = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, .surface = surface,
         .minImageCount = 3, .imageFormat = format, .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
         .imageExtent = {320, 240}, .imageArrayLayers = 1, .imageUsage = usage, .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -241,8 +250,8 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
         unsigned char rgba[320 * 240 * 4];
         for (unsigned i = 0; i < width * height; ++i) {
             unsigned char *p = rgba + 4 * i;
-            p[0] = pixels[4*i+(format == VK_FORMAT_B8G8R8A8_UNORM ? 2 : 0)]; p[1] = pixels[4*i+1];
-            p[2] = pixels[4*i+(format == VK_FORMAT_B8G8R8A8_UNORM ? 0 : 2)]; p[3] = pixels[4*i+3];
+            p[0] = pixels[4*i+(bgra ? 2 : 0)]; p[1] = pixels[4*i+1];
+            p[2] = pixels[4*i+(bgra ? 0 : 2)]; p[3] = pixels[4*i+3];
             if (p[0] != (frame & 1 ? 255 : 0) || p[1] != (frame & 1 ? 0 : 255) || p[2] || p[3] != 255) return 2;
         }
         vkUnmapMemory(device, memory);

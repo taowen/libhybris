@@ -9,7 +9,7 @@
 现行 compositor 入口为已安装的 `io.taowen.ardesk`；Xwayland 由 Ardesk
 构建，libhybris 只构建客户端。后文 `io.taowen.hybriswsitest` 等名称属于
 注明日期的历史记录，不能作为当前夹具或验收步骤。
-产品 Mesa 已使用 `taowen/mesa` 的 WSI fork `7a6286fc`；下面的官方
+产品 Mesa 已使用 `taowen/mesa` 的 WSI fork `bfe5f4ce`；下面的官方
 `c3b008c1` 仅为历史离屏证据；desktop-gl 已直接复用产品 Mesa 构建和库。
 frontend Wayland/X11 窗口插件、Vulkan 插件加载层及 PRESENT_SOCKET 已删除，
 ICD 所需的 native-window 实现移至 `vulkan/icd/`。
@@ -1072,3 +1072,17 @@ acquire 仍成功的问题：TAWC-DRI 没有窗口销毁事件，空事件队列
 记录见[共同窗口证据](tests/wsi/product-backends.md#native-x-window-loss--2026-09-08)。
 本批不证明断连恢复、延迟 release、并发销毁或应用恢复；新增 X11 查询
 开销未做性能测量，G11 继续开放。
+
+### G11 Turnip 按 DMA-BUF 导入能力筛选表面宣告（2026-09-08）
+
+产品 Mesa 不再无条件列出四种表面格式或固定 usage。
+`wsi_common_ardesk_formats.c` 共用外部内存能力查询：直接路径要求线性
+DRM modifier 的 DMA-BUF image 可导入；copy 路径要求 DMA-BUF buffer
+可导入，并查询带 TRANSFER_SRC 的源图像。逐格式求可用 usage 组合和
+extent 上限，创建时再检查实际选择的路径。AHB/HAL 与 DMA-BUF 两套
+后端保留各自查询，不机械统一 alpha 数值。
+
+共同 X11 客户端新增显式格式选择，逐项保留广告列表、选择值、图像读回
+和屏幕证据。构建及真机结果见[导入能力门](tests/wsi/product-backends.md#dma-buf-import-capability-gate--2026-09-08)。
+未知 allocator 布局仍在分配/导入时拒绝；各 usage 位的实际操作、复杂
+SRGB/alpha、最大尺寸、故障竞态和应用级窗口门未因此闭合，G11 继续开放。

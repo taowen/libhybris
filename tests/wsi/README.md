@@ -78,6 +78,13 @@ hybris-only because it exercises that adapter's allocation hooks.
 | XCB/Xlib | `missing-protocol` | Support false and eight surface rejections; requires an existing externally managed display without TAWC-DRI |
 | XCB/Xlib | `control` | XCB create/map/clear/GetImage environment check; no Vulkan or GPU claim |
 
+For XCB/Xlib `present` or `resize`, `--surface-format N` selects one advertised
+VkFormat: 37 = RGBA8 UNORM, 44 = BGRA8 UNORM, 43 = RGBA8 SRGB, 50 = BGRA8 SRGB.
+The client logs the full advertised list and the selected format; the host
+checks the selection. An absent or unhandled format reports UNSUPPORTED.
+These red/green endpoint frames verify allocation, transfer, readback and
+presentation, not the complete SRGB transfer function or nontrivial alpha.
+
 `--repeat N` runs sequential clients under the same compositor identity and
 records compositor FD snapshots before/after each. It does not itself assert
 that all resource leaks are absent. `--build`, `--probe` and `--out` select

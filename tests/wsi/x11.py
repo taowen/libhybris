@@ -40,6 +40,7 @@ def run(a, host, out):
                WAYLAND_DISPLAY=a.wayland,
                HYBRIS_ANDROID_SDK_VERSION=prop('ro.build.version.sdk'))
     env['ARDESK_WSI_TRACE' if a.backend == 'turnip' else 'HYBRIS_X11_TRACE'] = '1'
+    if a.surface_format is not None: env['WSI_SURFACE_FORMAT'] = str(a.surface_format)
     if a.xauthority: env['XAUTHORITY'] = a.xauthority
     server = {'source': 'external-service', 'display': a.display, 'xauthority': a.xauthority}
     if a.validation_layer:
@@ -58,6 +59,7 @@ def run(a, host, out):
     record = {'case': a.case, 'api': a.api, 'serial': a.serial, 'fingerprint': prop('ro.build.fingerprint'),
               'package': package, 'command': command, 'remote': remote, 'probe': probe, 'backend': backend,
               'server': server, 'apk_sha256': host.record['apk_sha256'], 'runner_sha256': sha256_file(Path(__file__)), 'checker_sha256': sha256_file(ROOT / 'tests/wsi/screen_evidence.py')}
+    record['requested_surface_format'] = a.surface_format
     if a.validation_layer: record['validation_layer_sha256'] = sha256_file(stage / 'layers/libVkLayer_khronos_validation.so')
     code = 2
     try:
@@ -111,6 +113,8 @@ def run(a, host, out):
             record['validation_or_mapping_error'] = str(error); code = 2
     if code == 0 and a.case in ('present', 'resize'):
         try:
+            if a.surface_format is not None and not re.search(r'^X11_SURFACE .* format=' + str(a.surface_format) + r'$', (out / 'probe.log').read_text(), re.M):
+                raise ValueError('selected surface format does not match request')
             sizes = [(320, 240), (160, 120), (256, 192)] if a.case == 'resize' else [(320, 240)]
             record['screen'] = [verify_epoch(out, epoch, size) for epoch, size in enumerate(sizes)]
             log = (out / 'probe.log').read_text()

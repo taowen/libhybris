@@ -141,3 +141,78 @@ have zero validation errors and verified loader, ICD and validation mappings.
 This case uses acquire before rejected present; it does not cover present-first
 loss discovery, compositor/connection shutdown, delayed release or concurrent
 window destruction. No application-level recovery or long-run FD claim is made.
+
+## DMA-BUF import capability gate — 2026-09-08
+
+Product Mesa now shares `wsi_common_ardesk_formats.c` between surface format
+enumeration, capabilities and swapchain creation. The four RGBA/BGRA UNORM/SRGB
+values are candidates, not unconditional advertisements. A direct candidate
+must pass an external DMA-BUF image query with the linear DRM modifier and
+IMPORTABLE. The copy route must pass an external DMA-BUF transfer-destination
+buffer query with IMPORTABLE, and an optimal source-image query with the
+requested usage plus TRANSFER_SRC. The ordinary source image alone never
+qualifies the copy route.
+
+COLOR_ATTACHMENT is required for each candidate. Optional usages are added
+only when the accumulated combination works for every advertised format.
+Maximum extents are intersected across those format queries. Creation checks
+the selected import path again, including its extent, and only selects the
+copy fallback if that path's queries permit it. Platform queue support and
+surface support also require at least one usable format.
+
+The physical capability queries do not replace actual-buffer validation:
+the existing allocator still rejects unknown Qualcomm/UBWC handles, wrong
+format or stride; import still checks FD size, memory type and allocation.
+The existing image-to-buffer GPU copy fallback remains. The hybris backend
+continues to query AHB/HAL import support; it is not switched to DMA-BUF and
+its inherit alpha is not changed to Turnip's opaque policy.
+
+`--surface-format` lets the same XCB/Xlib client select each advertised format
+explicitly. Its log and host result retain the advertised list and requested/
+selected format. The readback converts BGRA channel order for both UNORM and
+SRGB. Red/green endpoint values test imported storage and physical presentation;
+they do not establish the full SRGB transfer function or nontrivial alpha.
+
+The final product build is Mesa `bfe5f4ceb762504532ccdd7f19c1c2cdd31791b4`,
+tree `2b05420a962de62a0f97cc1db3609be8142ecb94`; Turnip SHA256 is
+`cb500da84232058b7dc410272bae5f7ebc231269ac932ecd548fcd2baa6eddd9`.
+Mesa and the updated X11 C client were actually rebuilt. The devices, standard
+loader, VVL and hybris runtime are the same verified inputs described above.
+Raw records live under `build/libhybris-import-gate-results/` in the ardesk
+checkout; `/tmp/libhybris-import-gate-results/` is a compatibility symlink.
+The directory was migrated after the host `/tmp` user quota interrupted
+`20260908T223023-18994930` before client execution; that failed record is
+retained. All 847 files present at migration were SHA256-verified.
+
+| Run | Backend / workload | Result |
+| --- | --- | --- |
+| `20260908T221714-3f760276` | Mali XCB, explicit RGBA8 UNORM (37) | PASS |
+| `20260908T221810-402eee71` | Mali XCB, explicit BGRA8 UNORM (44) | UNSUPPORTED; only format 37 advertised; no substitute format |
+| `20260908T222539-5d1ac5a7` | Turnip XCB, RGBA8 UNORM (37) | PASS |
+| `20260908T222550-38975ea0` | Turnip XCB, BGRA8 UNORM (44) | PASS |
+| `20260908T222601-136ab327` | Turnip XCB, RGBA8 SRGB (43) | PASS |
+| `20260908T222613-9b128fef` | Turnip XCB, BGRA8 SRGB (50) | PASS |
+| `20260908T222658-d35c5b27` | Turnip Xlib, BGRA8 SRGB resize | PASS |
+| `20260908T222756-78e04ccb` | Turnip Wayland present + validation | PASS |
+| `20260908T222852-8fa085e7` | Turnip Wayland capture/replay | PASS; 24 copies/presents, six matching replay checkpoints |
+| `20260908T223529-a09100f5` | Turnip XCB surface-lost retry after host storage migration | PASS; capabilities/acquire/present report surface lost, fence/index unchanged, semaphore reused, VVL zero errors |
+
+Each successful fixed-size X11 run has eight exact GPU readbacks and two
+physical screenshots; resize has 24 readbacks, six screenshots and two
+out-of-date/semaphore-reuse transitions. All use active validation with zero
+errors and the shared release-before-reuse gate. Turnip advertises four formats,
+usage 0x97 and opaque alpha; Mali advertises RGBA8 UNORM, usage 0x17 and inherit
+alpha. Different supported values are retained. The first intermediate-build
+Turnip SRGB run `20260908T222056-b1d98e75` also passed on `b92706bb`; it is not
+substituted for the final-build matrix.
+
+The Wayland validation and capture runs each retain 24 exact readbacks and
+six physical screenshots across three sizes. Capture is a separate run from
+validation and retains the existing virtual-swapchain replay scope.
+
+This batch does not independently force a device with no importable candidates
+or distinguish successful direct-image imports from the allocator-size copy
+fallback in the runtime evidence. Every advertised usage still needs its own
+real operation coverage; requesting a usage flag is not that coverage. Arbitrary
+allocator layouts, maximum-size allocations, mutable views, disconnect/release
+races and teapot/scene application gates remain outside these results.
