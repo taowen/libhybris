@@ -132,6 +132,21 @@ int packed_draw(PFNEGLGETPROCADDRESSPROC lookup) {
           unsigned char pixels[1024];
           glReadPixels(0, 0, 16, 16, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
           GLenum error = glGetError();
+          char filename[64];
+          snprintf(filename, sizeof(filename), "packed-%d-%d-%d-%d.rgba",
+                   sign, norm, bgra, divisor);
+          FILE *image = fopen(filename, "wb");
+          int saved = 0;
+          if (image) {
+            saved = fwrite(pixels, 1, sizeof(pixels), image) == sizeof(pixels);
+            if (fclose(image))
+              saved = 0;
+          }
+          if (!saved) {
+            fprintf(stderr, "Failed to save %s\n", filename);
+            failures++;
+          }
+
           int bad = 0;
           for (int y = 0; y < 16; y++)
             for (int x = 0; x < 16; x++) {
@@ -141,8 +156,8 @@ int packed_draw(PFNEGLGETPROCADDRESSPROC lookup) {
                 bad++;
             }
           printf("PACKED_DRAW signed=%d normalized=%d bgra=%d divisor=%d "
-                 "bad=%d error=0x%x\n",
-                 sign, norm, bgra, divisor, bad, error);
+                 "bad=%d error=0x%x image=%s\n",
+                 sign, norm, bgra, divisor, bad, error, filename);
           failures += bad || error;
         }
   glVertexAttribDivisor(0, 0);

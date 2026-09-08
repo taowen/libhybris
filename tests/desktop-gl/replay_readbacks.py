@@ -10,7 +10,17 @@ def readback_request(out, memory):
                 'RESOURCE_VERTEX': 'resources', 'PROCEDURAL_VERTEX': 'procedural'}
     for line in (out / 'probe.log').read_text().splitlines():
         if line.startswith('PACKED_DRAW '):
-            names.append(None)  # The original probe checks, but does not save, these pixels.
+            match = re.fullmatch(r'PACKED_DRAW signed=([01]) normalized=([01]) bgra=([01]) '
+                                 r'divisor=([12]) bad=\d+ error=0x[0-9a-f]+ image=(packed-[01]-[01]-[01]-[12]\.rgba)', line)
+            if match:
+                expected = f'packed-{match[1]}-{match[2]}-{match[3]}-{match[4]}.rgba'
+                if match[5] != expected:
+                    raise ValueError('packed image name differs from its draw parameters')
+                names.append(expected)
+            elif 'image=' in line:
+                raise ValueError('malformed packed image record')
+            else:
+                names.append(None)  # Historical probes did not retain these images.
         match = re.match(r'([A-Z_]+) phase=(\d+) (PASS|FAIL) ', line)
         if match and match[1] in prefixes:
             names.append(f'{prefixes[match[1]]}-{match[2]}.rgba')

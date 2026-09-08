@@ -933,3 +933,16 @@ Mali `20260908T185229-da38cfbb` 回放 PASS，15 张保存图像全部匹配，
 没有过滤告警或放宽门槛；默认回放仍保留原告警行为。详见
 [编译标志证据](tests/desktop-gl/capture.md#replay-with-captured-pipeline-compile-control-flags)，
 G06 与任意应用验收保持开放。
+
+
+### G06 固定探针完整原图保存（2026-09-08）
+
+packed vertex 的 12 种参数组合现在保存真实原图，包含失败图像；日志明确
+关联文件，写盘失败使探针失败。主机检查完整像素，回放拒绝缺图、大小错误
+或参数与文件名不符。新探针实际交叉构建后，Turnip
+`20260908T185957-6cf94932` 渲染/回放均 PASS，50 张原图全部匹配；Mali
+`20260908T185957-32da3cee` 回放 PASS，27 张全部匹配，但原始属性渲染
+错误仍为 FAIL。两者均无未比较图像。真实证据副本的缺图、错配文件名和
+单像素篡改负例均检出。历史未保存原图不补报覆盖；这仅补齐固定探针，
+任意应用 lineage 和 G06 仍开放，详见
+[完整原图证据](tests/desktop-gl/capture.md#complete-packed-vertex-image-retention)。

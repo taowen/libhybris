@@ -133,7 +133,7 @@ try:
         (out/'probe.log').write_bytes(r.stdout+r.stderr)
     except subprocess.TimeoutExpired as error:
         code=124;(out/'probe.log').write_bytes((error.stdout or b'')+(error.stderr or b''))
-    artifacts=['maps.txt','image.rgba']
+    artifacts=['maps.txt','image.rgba'] + [f'packed-{s}-{n}-{b}-{d}.rgba' for s in range(2) for n in range(2) for b in range(2 if n else 1) for d in (1,2)]
     if a.vertex_draws:artifacts += [f'procedural-{phase}.rgba' for phase in range(3)] + [f'attributes-{phase}.rgba' for phase in range(11)] + [f'indexed-{phase}.rgba' for phase in range(9)] + [f'resources-{phase}.rgba' for phase in range(6)] + [f'multidraw-{phase}.rgba' for phase in range(5)]
     if a.vertex_prepass:artifacts += [f'vertex-prepass-{phase}.rgba' for phase in range(3)]
     if a.vertex_draws:
@@ -165,9 +165,9 @@ finally:
 record['render_status']=status(record['probe_exit_code'])
 if record['probe_exit_code']==0:
     try:
-        packed=re.findall(r'^PACKED_DRAW signed=(\d) normalized=(\d) bgra=(\d) divisor=(\d) bad=(\d+) error=0x([0-9a-f]+)$', (out/'probe.log').read_text(), re.MULTILINE)
+        packed=re.findall(r'^PACKED_DRAW signed=(\d) normalized=(\d) bgra=(\d) divisor=(\d) bad=(\d+) error=0x([0-9a-f]+) image=(packed-[01]-[01]-[01]-[12]\.rgba)$', (out/'probe.log').read_text(), re.MULTILINE)
         cases={(str(s),str(n),str(b),str(d)) for s in range(2) for n in range(2) for b in range(2 if n else 1) for d in (1,2)}
-        if len(packed)!=12 or {row[:4] for row in packed}!=cases or any(row[4:]!=('0','0') for row in packed):
+        if len(packed)!=12 or {row[:4] for row in packed}!=cases or any(row[4:6]!=('0','0') or row[6]!=f'packed-{row[0]}-{row[1]}-{row[2]}-{row[3]}.rgba' for row in packed):
             raise ValueError('packed vertex draw matrix incomplete or failed')
         record['packed_vertex_cases']=12
         if a.vertex_prepass:
@@ -177,6 +177,8 @@ if record['probe_exit_code']==0:
             record['vertex_prepass']='PASS'
         expected=b''.join(bytes((255,0,0,255) if x<8 else (0,255,0,255)) for y in range(16) for x in range(16))
         if (out/'image.rgba').read_bytes()!=expected:raise ValueError('full image mismatch')
+        for row in packed:
+            if (out/row[6]).read_bytes()!=expected:raise ValueError('packed vertex image failed or missing: '+row[6])
         if a.vertex_prepass:
             for phase in range(3):
                 wanted=bytes((255,0,255,255))*256 if phase==1 else expected

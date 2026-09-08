@@ -133,9 +133,10 @@ entries must agree. Output files are saved with device-verified hashes in
 `replay-files.json`; commands, logs and per-image comparisons are retained in
 `replay-result.json`, `replay.log` and `replay-readbacks.json`.
 
-The original twelve packed draws check their pixels but do not save image
-files. Their replay readbacks are retained and explicitly marked
-`NOT_SAVED_BY_PROBE`; they are not counted as image comparisons. This is the
+Older probe captures checked the twelve packed draws without saving image
+files. Those historical replay readbacks remain explicitly marked
+`NOT_SAVED_BY_PROBE`; they are not counted as image comparisons. New probes
+save and compare all twelve images, as recorded below. This is the
 fixed fixture's transfer readback evidence, not arbitrary draw/attachment
 history, indirect GPU argument inspection, present replay or screen capture.
 
@@ -289,3 +290,35 @@ asynchronous creation have code/build coverage only, not separate device
 acceptance. Python compilation, shell syntax and rejection of the preserve
 option without `--replay-capture` were checked. G04/G06/G10/G12 and arbitrary
 application replay remain open.
+
+### Complete packed vertex image retention
+
+The fixed probe now saves every packed vertex case as
+`packed-<signed>-<normalized>-<bgra>-<divisor>.rgba`, including failing images.
+Each `PACKED_DRAW` log record names its image. A failed write/close makes the
+probe fail. The runner collects all twelve files and checks their full pixels
+when validating a successful render. Replay checks the filename against the
+draw parameters, requires a complete 1024-byte reference, and compares it to
+the associated captured copy/submission. Historical logs without image names
+retain their explicit uncompared status.
+
+The changed C probe was rebuilt with the existing pinned AArch64 builder,
+`-O2 -Wall -Wextra`, without compiler diagnostics. The existing Mesa runtime
+hashes were verified before rebuilding; its binaries were retained. The exact
+compile command, prior probe/manifest and new manifest are saved under
+`build/packed-image-build/`. The new probe SHA-256 is
+`b139124c03bb5e2c8e6077bad15120b52f81d65901e3e64d02487949af53ca92`.
+Each new run records that probe and its source hashes.
+
+| Run | Original rendering | Replay with lazy descriptors and preserved compile flags |
+| --- | --- | --- |
+| `20260908T185957-6cf94932` — Turnip, no memory translation | PASS | PASS; all 50 images match; no uncompared images or diagnostics |
+| `20260908T185957-32da3cee` — Mali, rebind, packed vertex enabled, automatic MMUD | FAIL; existing attribute errors remain | PASS; all 27 images match, including failed original images; no uncompared images or diagnostics |
+
+Both runs retain all twelve packed images. On a temporary copy of the real
+Turnip evidence, removing a packed reference and assigning a different case's
+filename were rejected; changing one reference pixel produced exactly one
+packed-image mismatch. Results are retained in `capture/packed-image-integrity.json`.
+The original evidence was unchanged. Python compilation and diff checks also
+passed. This closes the fixed probe's unsaved packed-image gap, not arbitrary
+application draw/attachment lineage or G04/G06/G10/G12 acceptance.
