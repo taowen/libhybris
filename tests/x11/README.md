@@ -6,7 +6,9 @@ cross-builder. `build/manifest.json` records source, compiler, builder and the
 two client executable hashes, plus the client's transitive ELF runtime closure.
 The existing `tools/stage-runtime.py` collects that closure with the same library
 search order as the hybris builder. Staging verifies every hash and rejects
-conflicting shared libraries. X11 clients no longer rely on a removed EGL
+conflicting shared libraries. Turnip keeps the loader/libc pair from its
+verified product manifest instead of the client sysroot copies. X11 clients
+no longer rely on a removed EGL
 plugin to bring in `libX11`. No X server is built or packaged here.
 
 Run through the [window integration runner](../wsi/README.md) against an

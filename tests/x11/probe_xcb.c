@@ -72,7 +72,7 @@ static int present(xcb_connection_t *connection, xcb_screen_t *screen, xcb_windo
     return code;
 }
 static int version(void) {
-    void *library = dlopen("libhybris-vulkan-icd.so.0", RTLD_NOW | RTLD_LOCAL);
+    void *library = dlopen(getenv("WSI_ICD_LIBRARY") ?: "libhybris-vulkan-icd.so.0", RTLD_NOW | RTLD_LOCAL);
     if (!library) { fprintf(stderr, "%s\n", dlerror()); return 2; }
     PFN_vkGetInstanceProcAddr resolver = dlsym(library, "vk_icdGetInstanceProcAddr");
     PFN_vkEnumerateInstanceVersion query = resolver

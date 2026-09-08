@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import time
 from manifest import sha256_file
-from host import stage_runtime
+from backend import stage_backend, verify_backend_maps
 from screen_evidence import verify_epoch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,22 +20,26 @@ def run(a, host, out):
     for name in ('probe-xcb', 'x11-session'):
         if sha256_file(a.probe / name) != probe['files'][name]: raise ValueError('probe hash mismatch: ' + name)
     stage = out / 'stage'
-    hybris = stage_runtime(a.build, stage)
+    remote = host.files + '/hybris-wsi-' + out.parent.name + '-' + out.name
+    backend = stage_backend(a, stage, remote)
     for name in ('probe-xcb', 'x11-session'): shutil.copy2(a.probe / name, stage / name)
     for name, digest in probe['runtime'].items():
         source = a.probe / 'runtime' / name
         if sha256_file(source) != digest: raise ValueError('client runtime hash mismatch: ' + name)
+        # The selected backend owns its coherent loader/libc pair, whose
+        # exact hashes are already verified by stage_backend.
+        if a.backend == 'turnip' and name in ('libc.so.6', 'ld-linux-aarch64.so.1'):
+            continue
         destination = stage / 'glibc' / name
         if destination.exists():
             if sha256_file(destination) != digest: raise ValueError('client/hybris runtime conflict: ' + name)
         else:
             shutil.copy2(source, destination)
-    files = host.files
-    remote = files + '/hybris-wsi-' + out.parent.name + '-' + out.name
-    libraries = './standard:./hybris:./glibc'
-    env = {'DISPLAY': a.display,
-           'HYBRIS_X11_TRACE': '1', 'HYBRIS_ANDROID_SDK_VERSION': prop('ro.build.version.sdk'),
-           'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker'}
+    libraries = backend['library_path']
+    env = dict(backend['env'], DISPLAY=a.display, XDG_RUNTIME_DIR=a.runtime_dir,
+               WAYLAND_DISPLAY=a.wayland,
+               HYBRIS_ANDROID_SDK_VERSION=prop('ro.build.version.sdk'))
+    env['ARDESK_WSI_TRACE' if a.backend == 'turnip' else 'HYBRIS_X11_TRACE'] = '1'
     if a.xauthority: env['XAUTHORITY'] = a.xauthority
     server = {'source': 'external-service', 'display': a.display, 'xauthority': a.xauthority}
     if a.validation_layer:
@@ -48,16 +52,11 @@ def run(a, host, out):
         shutil.copy2(a.validation_manifest, out / 'validation-original.json')
         env['VK_LAYER_PATH'] = remote + '/layers'; env['HYBRIS_X11_VALIDATION'] = '1'
     if a.api == 'xlib': env['HYBRIS_X11_XLIB'] = '1'
-    if a.icd_hal: env['HYBRIS_VULKAN_HAL'] = a.icd_hal
-    if a.icd_mali_loader_quirk: env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK'] = '1'
-    if a.vulkan_loader:
-        (stage / 'standard').mkdir(); shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
-        env['VK_DRIVER_FILES'] = remote + '/driver.json'
     prefix = ' '.join(k + '=' + shlex.quote(v) for k, v in env.items())
     client = './glibc/ld-linux-aarch64.so.1 --library-path ' + libraries + ' ./probe-xcb '
     command = prefix + ' ./x11-session ' + client + a.case
     record = {'case': a.case, 'api': a.api, 'serial': a.serial, 'fingerprint': prop('ro.build.fingerprint'),
-              'package': package, 'command': command, 'remote': remote, 'probe': probe, 'hybris': hybris,
+              'package': package, 'command': command, 'remote': remote, 'probe': probe, 'backend': backend,
               'server': server, 'apk_sha256': host.record['apk_sha256'], 'runner_sha256': sha256_file(Path(__file__)), 'checker_sha256': sha256_file(ROOT / 'tests/wsi/screen_evidence.py')}
     if a.validation_layer: record['validation_layer_sha256'] = sha256_file(stage / 'layers/libVkLayer_khronos_validation.so')
     code = 2
@@ -70,7 +69,7 @@ def run(a, host, out):
             if version.returncode: raise ValueError('ICD version query failed; see version.log')
             versions = re.findall(r'^X11_ICD_VERSION (\d+\.\d+\.\d+)$', version.stdout, re.M)
             if len(versions) != 1: raise ValueError('missing ICD version')
-            driver = json.dumps({'file_format_version': '1.0.0', 'ICD': {'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0', 'api_version': versions[0]}})
+            driver = json.dumps({'file_format_version': '1.0.0', 'ICD': {'library_path': remote + '/' + backend['driver'], 'api_version': versions[0]}})
             (stage / 'driver.json').write_text(driver)
             app('cat > ' + shlex.quote(remote + '/driver.json'), input=driver, text=True, check=True, timeout=10)
             record['standard_loader_sha256'] = sha256_file(stage / 'standard/libvulkan.so.1')
@@ -131,8 +130,7 @@ def run(a, host, out):
             record['protocol'] = {'presents': presents, 'releases': releases, 'reuse_after_release': True}
             maps = (out / 'maps.txt').read_text()
             if a.validation_layer and 'libVkLayer_khronos_validation.so' not in maps: raise ValueError('validation layer mapping missing')
-            if '/standard/libvulkan.so.1' not in maps or 'libhybris-vulkan-icd.so.0' not in maps or '/system/lib64/libvulkan.so' in maps:
-                raise ValueError('unexpected Vulkan loader mappings')
+            verify_backend_maps(backend, maps)
         except (ValueError, OSError) as error: record['screen_error'] = str(error); code = 2
     if code == 0 and a.case == 'missing-protocol':
         log = (out / 'probe.log').read_text()

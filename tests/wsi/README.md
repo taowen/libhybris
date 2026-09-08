@@ -3,7 +3,8 @@
 One entry point runs Wayland, XCB and Xlib clients against an installed,
 already running debuggable compositor APK. Xwayland and its TAWC-DRI patches
 belong to Ardesk or the external APK; android_wlegl belongs to anlabwc.
-libhybris builds and deploys only its bridge libraries and probe clients.
+The same clients select either the hybris ICD or product Mesa/Turnip through
+the standard Vulkan loader. libhybris builds and deploys only client artifacts.
 The runner does not install, start, restart or stop the compositor or X server.
 
 ## Build clients and prepare the external service
@@ -19,8 +20,9 @@ Install/start the compositor with its owning project's tooling. See the
 `io.taowen.ardesk`; `--package` selects another installed debuggable
 compositor package. The default Wayland socket is `files/runtime/wayland-0`. Use `--runtime-dir`
 and `--wayland-display` for the endpoints supplied by the APK; an absolute
-Wayland socket path is also accepted. X11-only checks do not require a Wayland
-socket at that default path.
+Wayland socket path is also accepted. Hybris X11 checks do not require a Wayland
+socket at that default path; product Turnip also uses Wayland for AHB allocation,
+including during XCB/Xlib runs.
 The compositor/desktop must supply an existing local X display for X11 tests;
 `--display :1` is the default, and `--xauthority` supplies an optional device
 path to its authentication file. Missing services are errors, with no private
@@ -45,10 +47,25 @@ python3 tests/wsi/run.py --serial SERIAL --platform xcb --case resize \
 
 Use `--platform xlib` or `--platform wayland`. For the tested Mali firmware use
 `vulkan.mali.so`; the known-build MMUD quirk is documented in the ICD README.
-All Vulkan window cases require `--icd-hal` and `--vulkan-loader`. The frontend
-window implementation and its runner branch have been deleted. XCB/Xlib
-`control` remains a non-Vulkan environment check and needs neither argument.
-These window validation/capture results cover the ICD, not Turnip WSI.
+The default `--backend hybris` requires `--icd-hal` and `--vulkan-loader` for
+Vulkan cases. `--backend turnip` instead uses the verified product runtime
+from `--mesa-build` (defaults to `tests/desktop-gl/build`). Build it using
+`tests/desktop-gl/build.sh`, which invokes the parent product Mesa build.
+Turnip rejects vendor HAL/quirk arguments. The frontend window implementation
+has been deleted. XCB/Xlib `control` remains a non-Vulkan environment check.
+
+```sh
+python3 tests/wsi/run.py --serial SERIAL --backend turnip --platform wayland \
+  --validation-layer /path/to/libVkLayer_khronos_validation.so \
+  --validation-manifest /path/to/VkLayer_khronos_validation.json
+```
+
+Backend staging, version discovery, pixel/screenshot checks and layer/capture
+handling are shared. Each record identifies its selected backend and retains
+input manifests and staged loader/ICD hashes. The Turnip path keeps the
+product loader/libc pair; X11 client dependencies cannot replace that pair.
+Other client/backend SONAME conflicts still fail. `swapchain-review` remains
+hybris-only because it exercises that adapter's allocation hooks.
 
 | Platform | Case | Evidence |
 | --- | --- | --- |
@@ -74,6 +91,8 @@ conversion and virtual-swapchain replay checks from the previous runner.
 `--trace` enables compiled Wayland tracepoints; build with
 `tools/build-aarch64.sh --debug --incremental` first. X11 protocol serials are
 always collected with a per-owner bound.
+
+Current cross-backend device results: [product window gates](product-backends.md).
 
 ## Evidence and implementation
 

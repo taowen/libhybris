@@ -9,11 +9,13 @@
 现行 compositor 入口为已安装的 `io.taowen.ardesk`；Xwayland 由 Ardesk
 构建，libhybris 只构建客户端。后文 `io.taowen.hybriswsitest` 等名称属于
 注明日期的历史记录，不能作为当前夹具或验收步骤。
-产品 Mesa 已使用 `taowen/mesa` 的 WSI fork `980c6429`；下面的官方
+产品 Mesa 已使用 `taowen/mesa` 的 WSI fork `ae5de449`；下面的官方
 `c3b008c1` 仅为历史离屏证据；desktop-gl 已直接复用产品 Mesa 构建和库。
 frontend Wayland/X11 窗口插件、Vulkan 插件加载层及 PRESENT_SOCKET 已删除，
 ICD 所需的 native-window 实现移至 `vulkan/icd/`。
 旧 desktop-gl 无验证错误声明已被独立日志复核更正，不能沿用作验证通过。
+两条产品 Vulkan 后端已共用窗口探针、标准 layer/capture 和屏幕证据门，
+见[共同窗口证据](tests/wsi/product-backends.md)；应用及故障竞态门仍需验收。
 已统一项与剩余分叉见[产品栈清单](docs/stack-consolidation.md)。
 
 ## 官方 Mesa 切换时的历史记录（2026-09-07）

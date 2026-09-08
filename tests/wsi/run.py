@@ -24,6 +24,8 @@ def main():
     p.add_argument('--platform', choices=('wayland', 'xcb', 'xlib'), default='wayland')
     p.add_argument('--case', choices=('present', 'swapchain-review', 'control', 'resize', 'missing-protocol', 'acquire-timeout'), default='present')
     p.add_argument('--repeat', type=int, default=1, help='1–100 sequential clients sharing one compositor process')
+    p.add_argument('--backend', choices=('hybris', 'turnip'), default='hybris')
+    p.add_argument('--mesa-build', type=Path, default=ROOT / 'tests/desktop-gl/build', help='verified product Mesa runtime from desktop-gl build.sh')
     p.add_argument('--build', type=Path, default=ROOT / 'tests/baseline/build')
     p.add_argument('--probe', type=Path, help='override the selected platform probe build directory')
     p.add_argument('--out', type=Path, default=ROOT / 'tests/wsi/build/results')
@@ -40,12 +42,17 @@ def main():
     if a.case not in (('present', 'swapchain-review') if wayland else ('present', 'control', 'resize', 'missing-protocol', 'acquire-timeout')):
         p.error('case is not supported by this platform')
     if not 1 <= a.repeat <= 100: p.error('--repeat must be between 1 and 100')
-    if (wayland or a.case != 'control') and not a.icd_hal:
-        p.error('frontend windows are retired; supply --icd-hal and --vulkan-loader')
-    if (a.icd_hal is None) != (a.vulkan_loader is None): p.error('supply both --icd-hal and --vulkan-loader')
+    if a.backend == 'hybris':
+        if (wayland or a.case != 'control') and not a.icd_hal:
+            p.error('supply --icd-hal and --vulkan-loader for the hybris backend')
+        if (a.icd_hal is None) != (a.vulkan_loader is None): p.error('supply both --icd-hal and --vulkan-loader')
+    elif a.icd_hal or a.vulkan_loader or a.icd_mali_loader_quirk:
+        p.error('Turnip uses the loader/ICD from --mesa-build and has no vendor HAL quirk')
+    if a.backend == 'turnip' and a.case == 'swapchain-review':
+        p.error('swapchain-review exercises hybris-specific allocation hooks')
     if (a.validation_layer is None) != (a.validation_manifest is None): p.error('supply both validation layer and manifest')
-    if (a.validation_layer or a.capture_tools or a.icd_mali_loader_quirk) and not a.icd_hal:
-        p.error('selected operation requires --icd-hal and --vulkan-loader')
+    if a.case == 'control' and (a.validation_layer or a.capture_tools):
+        p.error('control has no Vulkan workload to validate or capture')
     if a.capture_tools and (not wayland or a.validation_layer or a.case == 'swapchain-review'):
         p.error('capture requires a separate Wayland present run: pinned capture tooling cannot combine validation or allocator-failure review')
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+', a.package): p.error('invalid Android package name')
@@ -62,7 +69,7 @@ def main():
     out = a.out / (time.strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8])
     out.mkdir(parents=True)
     host = Host(a.serial, out, a.package, a.runtime_dir, a.wayland if wayland else None)
-    host.record.update(platform=a.platform, case=a.case, requested_runs=a.repeat, status='FAIL')
+    host.record.update(backend=a.backend, platform=a.platform, case=a.case, requested_runs=a.repeat, status='FAIL')
     started = time.monotonic()
     try:
         host.attach()

@@ -97,7 +97,7 @@ static void dump_maps(const char *phase) {
 
 static int icd_version(void) {
     alarm(20);
-    void *library = dlopen("libhybris-vulkan-icd.so.0", RTLD_NOW | RTLD_LOCAL);
+    void *library = dlopen(getenv("WSI_ICD_LIBRARY") ?: "libhybris-vulkan-icd.so.0", RTLD_NOW | RTLD_LOCAL);
     if (!library) { fprintf(stderr, "%s\n", dlerror()); return 2; }
     PFN_vkGetInstanceProcAddr resolver = dlsym(library, "vk_icdGetInstanceProcAddr");
     PFN_vkEnumerateInstanceVersion query = resolver

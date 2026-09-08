@@ -1,7 +1,7 @@
 # Desktop OpenGL with product Mesa
 
 The probe uses the parent Ardesk product Mesa build, currently `26.3.0-devel`
-at `980c6429e6cb83cb0c394ecad558211f63eab6db` in
+at `ae5de4494eb2a4aa8c7adcc116c0aa61bd6efbcb` in
 [taowen/mesa](https://github.com/taowen/mesa). This fork adds Ardesk WSI to
 upstream Mesa; it does not add custom Zink vertex conversion. Zink emits Vulkan
 through the standard glibc loader. Select the hybris ICD for an Android vendor

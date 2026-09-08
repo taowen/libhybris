@@ -6,15 +6,13 @@ import shlex
 import shutil
 import subprocess
 from manifest import sha256_file
-from host import stage_runtime
+from backend import stage_backend, verify_backend_maps
 from screen_evidence import verify_screen
 from diagnostics import Diagnostics
 from capture import preserve_capture, stage_tools, verify_window_capture
 
 
 def run(a, host, out):
-    if not a.icd_hal or not a.vulkan_loader:
-        raise ValueError('frontend windows are retired; standard loader and ICD are required')
     adb, shell, app, prop = host.adb, host.shell, host.app, host.prop
     probe_provenance = json.loads((a.probe / 'probe-manifest.json').read_text())
     probe_name = 'probe-wayland'
@@ -23,26 +21,16 @@ def run(a, host, out):
         raise SystemExit('probe hash mismatch; rebuild it')
     run_id = out.parent.name + '-' + out.name
     stage = out / 'stage'
-    provenance = stage_runtime(a.build, stage)
-    shutil.copy2(a.probe / probe_name, stage / probe_name)
     files = '/data/user/0/' + a.package + '/files'
     remote = files + '/hybris-wsi-' + run_id
     sdk = prop('ro.build.version.sdk')
-    env = {'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker',
-           'HYBRIS_ANDROID_SDK_VERSION': sdk, 'XDG_RUNTIME_DIR': a.runtime_dir,
-           'WAYLAND_DISPLAY': a.wayland}
+    backend = stage_backend(a, stage, remote)
+    env = dict(backend['env'], HYBRIS_ANDROID_SDK_VERSION=sdk,
+               XDG_RUNTIME_DIR=a.runtime_dir, WAYLAND_DISPLAY=a.wayland)
+    shutil.copy2(a.probe / probe_name, stage / probe_name)
     layer_meta = {}
-    adapter = stage / 'hybris/libhybris-vulkan-icd.so.0'
-    if not adapter.is_file():
-        raise SystemExit('ICD adapter missing from hybris install')
-    (stage / 'standard').mkdir()
-    shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
-    env['HYBRIS_VULKAN_HAL'] = a.icd_hal
     if a.swapchain_review: env['HYBRIS_WSI_SWAPCHAIN_REVIEW'] = '1'
-    if a.icd_mali_loader_quirk:
-        env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK'] = '1'
-    env['VK_DRIVER_FILES'] = remote + '/driver.json'
-    libraries = './standard:./hybris:./glibc'
+    libraries = backend['library_path']
     layer_dirs = []
     if a.validation_layer:
         (stage / 'layers').mkdir()
@@ -71,8 +59,8 @@ def run(a, host, out):
     command += ' ./glibc/ld-linux-aarch64.so.1 --library-path ' + libraries + ' ./' + probe_name
     metadata = {'run_id': run_id, 'serial': a.serial, 'package': a.package,
                 'fingerprint': prop('ro.build.fingerprint'), 'sdk': sdk,
-                'command': command, 'remote': remote, 'host_timeout_seconds': a.timeout, 'runner_sha256': sha256_file(Path(__file__)), 'hybris': provenance, 'probe': probe_provenance,
-                'path': 'icd'}
+                'command': command, 'remote': remote, 'host_timeout_seconds': a.timeout, 'runner_sha256': sha256_file(Path(__file__)), 'backend': backend, 'probe': probe_provenance,
+                'path': a.backend}
     metadata['helper_sha256'] = {name: sha256_file(Path(__file__).with_name(name))
                                for name in ('capture.py', 'screen_evidence.py', 'diagnostics.py')}
     metadata['icd_hal'] = a.icd_hal
@@ -95,7 +83,7 @@ def run(a, host, out):
         if version_run.returncode or len(versions) != 1:
             raise RuntimeError('staged ICD version query failed; see icd-version.log')
         driver = json.dumps({'file_format_version': '1.0.0', 'ICD': {
-            'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
+            'library_path': remote + '/' + backend['driver'],
             'api_version': versions[0]}})
         (stage / 'driver.json').write_text(driver)
         app('cat > ' + shlex.quote(remote + '/driver.json'), input=driver, text=True, check=True)
@@ -155,6 +143,7 @@ def run(a, host, out):
         diagnostics.finish()
     if code == 0:
         try:
+            verify_backend_maps(backend, (out / 'maps-frame.txt').read_text())
             evidence = verify_screen(out)
         except (ValueError, OSError) as error:
             evidence = {'status': 'FAIL', 'error': str(error)}
@@ -172,7 +161,7 @@ def run(a, host, out):
         (out / 'diagnostics.json').write_text(json.dumps(diagnostics.records, indent=2))
     status = 'PASS' if code == 0 else 'UNSUPPORTED' if code == 3 else 'TIMEOUT' if code in (124, 142) else 'CRASH' if code >= 128 else 'FAIL'
     (out / 'result.json').write_text(json.dumps({'status': status, 'exit_code': code,
-        'scope': ('icd-presentation' +
+        'scope': (a.backend + '-presentation' +
                   ('-validation' if a.validation_layer else '') +
                   ('-capture' if a.capture_tools else ''))}, indent=2))
     print(out)

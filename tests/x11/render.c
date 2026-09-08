@@ -119,10 +119,15 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
     free(formats); if (!format) return 3;
     VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if ((caps.supportedUsageFlags & usage) != usage || caps.minImageCount > 3 || (caps.maxImageCount && caps.maxImageCount < 3)) return 3;
+    VkCompositeAlphaFlagBitsKHR alpha = caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
+        ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    if (!(caps.supportedCompositeAlpha & alpha)) return 3;
+    printf("X11_SURFACE usage=0x%x alpha=0x%x extent=%ux%u\n", caps.supportedUsageFlags,
+           alpha, caps.currentExtent.width, caps.currentExtent.height);
     VkSwapchainCreateInfoKHR sw = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, .surface = surface,
         .minImageCount = 3, .imageFormat = format, .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
         .imageExtent = {320, 240}, .imageArrayLayers = 1, .imageUsage = usage, .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR, .compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+        .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR, .compositeAlpha = alpha,
         .presentMode = VK_PRESENT_MODE_FIFO_KHR};
     VkSwapchainKHR chain; OK(vkCreateSwapchainKHR(device, &sw, NULL, &chain));
     OK(vkGetSwapchainImagesKHR(device, chain, &count, NULL));
