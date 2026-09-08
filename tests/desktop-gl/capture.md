@@ -364,7 +364,7 @@ pipeline execution evidence, and G06 remains open.
 
 ### Dynamic vertex stride resource-dump repair
 
-The builder now pins [fork commit e3aa74fb](https://github.com/taowen/gfxreconstruct/commit/e3aa74fb78d651ceb70e45607b020f9ac29ab43f).
+The dynamic-stride repair was introduced in [fork commit e3aa74fb](https://github.com/taowen/gfxreconstruct/commit/e3aa74fb78d651ceb70e45607b020f9ac29ab43f).
 The resource dumper recorded `vkCmdBindVertexBuffers2` strides in bound-buffer
 metadata but omitted them from the dynamic vertex-input snapshot. With null
 `pSizes`, dump sizing therefore used the pipeline's zero strides. The fix
@@ -408,3 +408,56 @@ Turnip `20260908T191451-aba46d46` rendering/replay PASS, 50/50 images; Mali
 replay PASS, 27/27 images. Both replay logs have no diagnostics or uncompared
 images. The new fork pin passes shell syntax and diff checks. G06 and arbitrary
 application resource history remain open.
+
+
+### Instance divisor resource-dump repair
+
+The builder now pins [fork commit ab565b27](https://github.com/taowen/gfxreconstruct/commit/ab565b2792f98c6e0deebf182604f830d6deaed2).
+The dumper now retains static pipeline divisor state and dynamic
+`vkCmdSetVertexInputEXT` divisors, includes the divisor in JSON binding metadata,
+and sizes instance buffer readbacks by the number of distinct instance records.
+For a positive divisor this is `ceil(instanceCount / divisor)`; zero divisor
+uses one record for a nonempty draw. In accordance with the Vulkan
+[vertex-input addressing rules](https://docs.vulkan.org/spec/latest/chapters/fxvertex.html),
+`firstInstance` remains the starting record and is not divided.
+
+The previous tool was reproduced on the same saved Mali capture
+`20260908T190556-bb8da642`: draw 2220 has four instances, divisor two and
+firstInstance five. It omitted divisor metadata and exported 28 bytes at
+offset 44, clipping four strides at the allocation end. The corrected export
+contains two strides, including padding, for 16 bytes at the same offset.
+The before result is retained in `capture/vertex-divisor-before/`.
+
+Three actual device replays of that capture passed with resource dumping,
+rebind memory translation and preserved pipeline compile flags:
+
+| Evidence directory under `capture/` | Draw | Divisor / firstInstance | Instance buffer offset / size |
+| --- | --- | --- | --- |
+| `vertex-divisor-fixed/` | 2220 | 2 / 5 | 44 / 16 |
+| `vertex-divisor-zero-first/` | 2335 | 2 / 0 | 4 / 16 |
+| `vertex-divisor-one/` | 2103 | 1 / 5 | 44 / 28 |
+
+Each directory retains the request, command, tool manifest, replay binary hash,
+device file hashes, reproduction script and verification result. All bytes
+of all four bound vertex buffers match the independently reconstructed C
+fixture ranges. Binding one reports the expected divisor and stride eight;
+the other three ranges remain 116/44, 60/20 and 60/20. Each after-draw BGRA
+attachment, converted to RGBA, matches its original `attributes-1/2/0.rgba`.
+This verifies the diagnostic readbacks; it does not establish the GPU's actual
+attribute fetch or resolve the original attribute rendering failures.
+
+Actual resource-dump coverage here uses static divisor state, dynamic strides,
+null `pSizes`, direct draws and divisors one/two. Dynamic divisor updates, zero
+divisor, zero instance count and pipeline-library divisor inheritance have
+build coverage only. Explicit buffer-size bounds, indirect fetch ranges and
+Turnip multi-draw resource dumping remain unaccepted.
+
+The AArch64 fork build and shell/diff checks passed. Fresh full regression:
+Turnip `20260908T192330-c4b6ad88` rendering/replay PASS, 50/50 images;
+Mali `20260908T192533-f9840bf3` rendering FAIL with the existing attribute
+errors, replay PASS, 27/27 images using rebind. Both successful replays have
+zero diagnostics, mismatches or uncompared images. An earlier Mali run
+`20260908T192449-0cb42e82` accidentally used the default memory mode `none`
+and failed at image-view create 414 with `VK_ERROR_OUT_OF_DEVICE_MEMORY`;
+that failed evidence is retained and is not counted as replay coverage.
+G06 and arbitrary application resource history remain open.

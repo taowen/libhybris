@@ -972,3 +972,19 @@ Mali 捕获的首个属性 draw 2103 暴露了工具错误：动态步长 16/8/8
 Mali 27/27 匹配、回放 PASS、原始渲染 FAIL。仅验证这一 divisor=1、
 无显式绑定大小的失败绘制；硬件实际取数、其它范围计算及首错原因仍未
 闭合。详见[动态步长读回](tests/desktop-gl/capture.md#dynamic-vertex-stride-resource-dump-repair)，G06 不关闭。
+
+
+### G06 实例除数的资源读回范围（2026-09-08）
+
+GFXReconstruct fork `ab565b27` 保存静态/动态 divisor 并输出 JSON 元数据，
+按实例实际占用记录数计算读回范围，firstInstance 保持独立起点。
+同一 Mali 捕获中 divisor=2、四实例此前误导出 28 字节；修复后
+firstInstance=5/0 分别导出偏移 44/4、长度 16。另复测 divisor=1，
+偏移 44、长度 28 不变。三次真机回放的四个绑定全部字节均匹配独立重建
+的 C 数据范围，attachment 匹配原始失败图像，设备/主机文件哈希一致。
+新完整回归 Turnip 50/50 匹配且渲染/回放 PASS；Mali rebind 27/27
+匹配、回放 PASS，原始属性渲染仍 FAIL。漏传 rebind 的失败运行单独保留。
+本批实际覆盖静态 divisor=1/2、动态 stride、直接绘制和空 pSizes；动态
+除数更新、零 divisor、零实例、库继承只有构建覆盖，间接范围及显式大小
+仍未验收。未证明 GPU 实际取数或定位渲染根因，G06 保持开放，详见
+[除数读回证据](tests/desktop-gl/capture.md#instance-divisor-resource-dump-repair)。
