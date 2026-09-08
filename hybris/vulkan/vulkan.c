@@ -19,20 +19,17 @@
 #define _GNU_SOURCE
 
 #define VK_USE_PLATFORM_ANDROID_KHR 1
-#define VK_USE_PLATFORM_WAYLAND_KHR 1
 
 #include <vulkan/vulkan.h>
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 
 #include <hybris/common/binding.h>
 #include <hybris/common/floating_point_abi.h>
 #include "config.h"
 #include "logging.h"
-#include "ws.h"
 #include "vulkan_exports.h"
 #include "render_dispatch.h"
 
@@ -45,30 +42,7 @@ static void _init_androidvulkan()
         fprintf(stderr, "libhybris vulkan: Android loader open failed: %s\n", android_dlerror());
 }
 
-static inline void hybris_vulkan_initialize()
-{
-    _init_androidvulkan();
-}
-
-static void * _android_vulkan_dlsym(const char *symbol)
-{
-    if (vulkan_handle == NULL)
-        _init_androidvulkan();
-
-    return android_dlsym(vulkan_handle, symbol);
-}
-
-struct ws_vulkan_interface hybris_vulkan_interface = {
-    _android_vulkan_dlsym,
-};
-
-static PFN_vkVoidFunction (*_vkGetInstanceProcAddr)(VkInstance instance, const char* pName) = NULL;
-static pthread_once_t platform_proc_once = PTHREAD_ONCE_INIT;
-
-static void initialize_platform_procs(void)
-{
-    ws_vkSetInstanceProcAddrFunc((PFN_vkVoidFunction)_vkGetInstanceProcAddr);
-}
+static PFN_vkGetInstanceProcAddr _vkGetInstanceProcAddr;
 
 /* Use IDLOAD approach also for float functions, since vulkan uses the aapcs-vfp calling convention even on android */
 
@@ -76,61 +50,37 @@ VkResult vkCreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAlloc
 {
     if (!_vkGetInstanceProcAddr)
         return VK_ERROR_INITIALIZATION_FAILED;
-    pthread_once(&platform_proc_once, initialize_platform_procs);
-
-    return ws_vkCreateInstance(pCreateInfo, pAllocator, pInstance);
+    PFN_vkCreateInstance create = (PFN_vkCreateInstance)
+        _vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkCreateInstance");
+    return create ? create(pCreateInfo, pAllocator, pInstance)
+                  : VK_ERROR_INITIALIZATION_FAILED;
 }
 
 VkResult vkEnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties)
 {
     if (!_vkGetInstanceProcAddr)
         return VK_ERROR_INITIALIZATION_FAILED;
-    pthread_once(&platform_proc_once, initialize_platform_procs);
-
-    return ws_vkEnumerateInstanceExtensionProperties(pLayerName, pPropertyCount, pProperties);
+    PFN_vkEnumerateInstanceExtensionProperties enumerate =
+        (PFN_vkEnumerateInstanceExtensionProperties)_vkGetInstanceProcAddr(
+            VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties");
+    return enumerate ? enumerate(pLayerName, pPropertyCount, pProperties)
+                     : VK_ERROR_INITIALIZATION_FAILED;
 }
 
-#ifdef WANT_WAYLAND
-VkResult vkCreateWaylandSurfaceKHR(VkInstance instance,
-        const VkWaylandSurfaceCreateInfoKHR* pCreateInfo,
-        const VkAllocationCallbacks* pAllocator,
-        VkSurfaceKHR* pSurface)
-{
-    return ws_vkCreateWaylandSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
-}
-
-VkBool32 vkGetPhysicalDeviceWaylandPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, struct wl_display* display)
-{
-    return ws_vkGetPhysicalDeviceWaylandPresentationSupportKHR(physicalDevice, queueFamilyIndex, display);
-}
-
-void vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator)
-{
-    ws_vkDestroySurfaceKHR(instance, surface, pAllocator);
-}
-
-VkResult vkCreateXlibSurfaceKHR(VkInstance instance, const void* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface)
-{
-    return VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-VkBool32 vkGetPhysicalDeviceXlibPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, void* dpy, unsigned long visualID)
-{
-    return VK_FALSE;
-}
-
-VkResult vkCreateXcbSurfaceKHR(VkInstance instance, const void* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface)
-{
-    return VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-VkBool32 vkGetPhysicalDeviceXcbPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, void* connection, uint32_t visual_id)
-{
-    return VK_FALSE;
-}
-#endif
 
 static PFN_vkVoidFunction (*_real_vkGetDeviceProcAddr)(VkDevice device, const char* pName) = NULL;
+
+/* Android exports can bypass extension enablement. Keep the direct ELF call
+ * behind the device resolver, without any frontend window implementation. */
+VkResult vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *info,
+                             const VkAllocationCallbacks *allocator, VkSwapchainKHR *swapchain)
+{
+    PFN_vkCreateSwapchainKHR create = _real_vkGetDeviceProcAddr
+        ? (PFN_vkCreateSwapchainKHR)_real_vkGetDeviceProcAddr(device, "vkCreateSwapchainKHR")
+        : NULL;
+    return create ? create(device, info, allocator, swapchain)
+                  : VK_ERROR_EXTENSION_NOT_PRESENT;
+}
 
 /* Do not resolve proc queries from our ELF export table. Android loaders may
  * export stubs for unsupported commands, and GDPA excludes instance commands.
@@ -163,21 +113,6 @@ PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
     if (!strcmp(pName, "vkGetInstanceProcAddr"))
         return (PFN_vkVoidFunction)vkGetInstanceProcAddr;
 
-#ifdef WANT_WAYLAND
-    /* Wayland has no downstream name. The platform translates its enabled
-     * extension to Android surface at CreateInstance; query that capability. */
-    const char *platform = getenv("HYBRIS_VULKANPLATFORM");
-    if (!platform) platform = "wayland";
-    if (!strcmp(pName, "vkCreateWaylandSurfaceKHR") ||
-        !strcmp(pName, "vkGetPhysicalDeviceWaylandPresentationSupportKHR")) {
-        if (!instance || strcmp(platform, "wayland") ||
-            !_vkGetInstanceProcAddr(instance, "vkCreateAndroidSurfaceKHR"))
-            return NULL;
-        return !strcmp(pName, "vkCreateWaylandSurfaceKHR")
-            ? (PFN_vkVoidFunction)vkCreateWaylandSurfaceKHR
-            : (PFN_vkVoidFunction)vkGetPhysicalDeviceWaylandPresentationSupportKHR;
-    }
-#endif
     PFN_vkVoidFunction backend = _vkGetInstanceProcAddr(instance, pName);
     if (!backend)
         return NULL;
@@ -186,12 +121,6 @@ PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
     LOCAL(vkEnumerateInstanceExtensionProperties);
     LOCAL(vkGetDeviceProcAddr);
     LOCAL(vkEnumeratePhysicalDeviceGroupsKHR);
-#ifdef WANT_WAYLAND
-    LOCAL(vkDestroySurfaceKHR);
-    LOCAL(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
-    LOCAL(vkGetPhysicalDeviceSurfaceCapabilities2KHR);
-    LOCAL(vkCreateSwapchainKHR);
-#endif
 #undef LOCAL
     PFN_vkVoidFunction local = hybris_render_dispatch_proc(pName);
     if (!local) local = hybris_timeline_dispatch_proc(pName);
@@ -207,57 +136,11 @@ PFN_vkVoidFunction vkGetDeviceProcAddr(VkDevice device, const char* pName)
         return NULL;
     if (!strcmp(pName, "vkGetDeviceProcAddr"))
         return (PFN_vkVoidFunction)vkGetDeviceProcAddr;
-#ifdef WANT_WAYLAND
-    if (!strcmp(pName, "vkCreateSwapchainKHR"))
-        return (PFN_vkVoidFunction)vkCreateSwapchainKHR;
-#endif
     PFN_vkVoidFunction local = hybris_render_dispatch_proc(pName);
     if (!local) local = hybris_timeline_dispatch_proc(pName);
     return local ? local : backend;
 }
 
-#ifdef WANT_WAYLAND
-static VkResult (*_real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)(VkPhysicalDevice, VkSurfaceKHR, VkSurfaceCapabilitiesKHR*) = NULL;
-
-VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pSurfaceCapabilities)
-{
-    if (!_real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    VkResult result = _real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, pSurfaceCapabilities);
-    if (result == VK_SUCCESS) {
-        ws_patchSurfaceCapabilities(surface, pSurfaceCapabilities);
-    }
-    return result;
-}
-
-VkResult vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain)
-{
-    PFN_vkCreateSwapchainKHR create_swapchain = _real_vkGetDeviceProcAddr
-        ? (PFN_vkCreateSwapchainKHR)_real_vkGetDeviceProcAddr(device, "vkCreateSwapchainKHR")
-        : NULL;
-    if (!create_swapchain)
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    ws_prepareSwapchain(pCreateInfo);
-    return create_swapchain(device, pCreateInfo, pAllocator, pSwapchain);
-}
-
-#endif
-#ifdef WANT_WAYLAND
-static VkResult (*_real_vkGetPhysicalDeviceSurfaceCapabilities2KHR)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR*, VkSurfaceCapabilities2KHR*) = NULL;
-
-VkResult vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo, VkSurfaceCapabilities2KHR* pSurfaceCapabilities)
-{
-    /* A legacy query cannot populate the caller's input/output pNext chains.
-     * Report the missing backend rather than returning partial success. */
-    if (!_real_vkGetPhysicalDeviceSurfaceCapabilities2KHR)
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    VkResult result = _real_vkGetPhysicalDeviceSurfaceCapabilities2KHR(physicalDevice, pSurfaceInfo, pSurfaceCapabilities);
-    if (result == VK_SUCCESS) {
-        ws_patchSurfaceCapabilities(pSurfaceInfo->surface, &pSurfaceCapabilities->surfaceCapabilities);
-    }
-    return result;
-}
-#endif
 
 __attribute__((constructor))
 static void _resolve_vulkan_syms(void)
@@ -267,15 +150,6 @@ static void _resolve_vulkan_syms(void)
         ? (PFN_vkGetInstanceProcAddr)android_dlsym(vulkan_handle, "vkGetInstanceProcAddr") : NULL;
     _real_vkGetDeviceProcAddr = vulkan_handle
         ? (PFN_vkGetDeviceProcAddr)android_dlsym(vulkan_handle, "vkGetDeviceProcAddr") : NULL;
-#ifdef WANT_WAYLAND
-    /* Resolve Android loader trampolines once, alongside the other ELF exports.
-     * Never lazily publish these pointers from concurrent physical-device calls.
-     * GIPA(NULL, ...) is not a resolver for physical-device commands. */
-    _real_vkGetPhysicalDeviceSurfaceCapabilitiesKHR = vulkan_handle
-        ? (PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)android_dlsym(vulkan_handle, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR") : NULL;
-    _real_vkGetPhysicalDeviceSurfaceCapabilities2KHR = vulkan_handle
-        ? (PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR)android_dlsym(vulkan_handle, "vkGetPhysicalDeviceSurfaceCapabilities2KHR") : NULL;
-#endif
     hybris_render_dispatch_init(vulkan_handle
         ? (PFN_vkCreateDevice)android_dlsym(vulkan_handle, "vkCreateDevice") : NULL,
         _real_vkGetDeviceProcAddr);

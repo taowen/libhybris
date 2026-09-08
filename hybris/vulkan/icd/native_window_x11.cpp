@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "native_window.h"
 #include "../../platforms/common/nativewindowbase.h"
-#include "../../egl/platforms/x11/tawc_dri_protocol.h"
+#include <ardesk/tawc-dri.h>
 #include <hybris/gralloc/gralloc.h>
 #include <xcb/xcb.h>
 #include <xcb/xcbext.h>

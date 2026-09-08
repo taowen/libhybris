@@ -44,9 +44,11 @@ python3 tests/wsi/run.py --serial SERIAL --platform xcb --case resize \
 ```
 
 Use `--platform xlib` or `--platform wayland`. For the tested Mali firmware use
-`vulkan.mali.so` and explicit `--icd-mali-loader-quirk`; its scope is documented
-in the ICD README. Omitting HAL/loader arguments selects the replacement
-libvulkan frontend for Wayland. XCB/Xlib Vulkan checks require the standard ICD.
+`vulkan.mali.so`; the known-build MMUD quirk is documented in the ICD README.
+All Vulkan window cases require `--icd-hal` and `--vulkan-loader`. The frontend
+window implementation and its runner branch have been deleted. XCB/Xlib
+`control` remains a non-Vulkan environment check and needs neither argument.
+These window validation/capture results cover the ICD, not Turnip WSI.
 
 | Platform | Case | Evidence |
 | --- | --- | --- |
@@ -102,3 +104,7 @@ and FIFO checks now execute in the actual Wayland presentation probe.
 for the current boundary and its remaining coverage. Rootless/multiwindow X11, minimize,
 disconnect recovery, long-running FD accounting, X11 capture and CTS remain
 open. Headless baseline and desktop-GL application tests are separate suites.
+
+The [frontend deletion record](frontend-removal.md) lists the removed code,
+final build checks, vendor-ICD window regressions and the retained XCB resize
+validation failure with pre-deletion controls.

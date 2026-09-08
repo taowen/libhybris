@@ -13,6 +13,8 @@ from capture import preserve_capture, stage_tools, verify_window_capture
 
 
 def run(a, host, out):
+    if not a.icd_hal or not a.vulkan_loader:
+        raise ValueError('frontend windows are retired; standard loader and ICD are required')
     adb, shell, app, prop = host.adb, host.shell, host.app, host.prop
     probe_provenance = json.loads((a.probe / 'probe-manifest.json').read_text())
     probe_name = 'probe-wayland'
@@ -27,63 +29,55 @@ def run(a, host, out):
     remote = files + '/hybris-wsi-' + run_id
     sdk = prop('ro.build.version.sdk')
     env = {'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker',
-           'HYBRIS_EGLPLATFORM_DIR': remote + '/hybris/libhybris',
-           'HYBRIS_VULKANPLATFORM_DIR': remote + '/hybris/libhybris',
            'HYBRIS_ANDROID_SDK_VERSION': sdk, 'XDG_RUNTIME_DIR': a.runtime_dir,
            'WAYLAND_DISPLAY': a.wayland}
-    libraries = './hybris:./glibc'
     layer_meta = {}
-    if a.icd_hal:
-        adapter = stage / 'hybris/libhybris-vulkan-icd.so.0'
-        if not adapter.is_file():
-            raise SystemExit('ICD adapter missing from hybris install')
-        (stage / 'standard').mkdir()
-        shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
-        env['HYBRIS_VULKAN_HAL'] = a.icd_hal
-        if a.swapchain_review: env['HYBRIS_WSI_SWAPCHAIN_REVIEW'] = '1'
-        if a.icd_mali_loader_quirk:
-            env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK'] = '1'
-        env['VK_DRIVER_FILES'] = remote + '/driver.json'
-        libraries = './standard:./hybris:./glibc'
-        layer_dirs = []
-        if a.validation_layer:
-            (stage / 'layers').mkdir()
-            shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
-            layer_meta['validation_layer_sha256'] = sha256_file(a.validation_layer)
-            layer_meta['validation_manifest_sha256'] = sha256_file(a.validation_manifest)
-            shutil.copy2(a.validation_manifest, out / 'validation-original.json')
-            layer_json = json.loads(a.validation_manifest.read_text())
-            if layer_json['layer']['name'] != 'VK_LAYER_KHRONOS_validation':
-                raise SystemExit('expected Khronos validation layer manifest')
-            layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
-            (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-            env['HYBRIS_WSI_VALIDATION'] = '1'
-            layer_dirs.append(remote + '/layers')
-        if a.capture_tools:
-            stage_tools(a.capture_tools, stage, layer_meta, sha256_file)
-            env['VK_INSTANCE_LAYERS'] = 'VK_LAYER_LUNARG_gfxreconstruct'
-            env['GFXRECON_CAPTURE_FILE'] = remote + '/window.gfxr'
-            env['GFXRECON_CAPTURE_FILE_TIMESTAMP'] = 'false'
-            layer_dirs.append(remote + '/capture-tools')
-            libraries += ':./capture-tools:./capture-tools/runtime'
-        if layer_dirs:
-            env['VK_LAYER_PATH'] = ':'.join(layer_dirs)
-    else:
-        env['HYBRIS_EGLPLATFORM'] = 'wayland'
-        env['HYBRIS_VULKANPLATFORM'] = 'wayland'
+    adapter = stage / 'hybris/libhybris-vulkan-icd.so.0'
+    if not adapter.is_file():
+        raise SystemExit('ICD adapter missing from hybris install')
+    (stage / 'standard').mkdir()
+    shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
+    env['HYBRIS_VULKAN_HAL'] = a.icd_hal
+    if a.swapchain_review: env['HYBRIS_WSI_SWAPCHAIN_REVIEW'] = '1'
+    if a.icd_mali_loader_quirk:
+        env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK'] = '1'
+    env['VK_DRIVER_FILES'] = remote + '/driver.json'
+    libraries = './standard:./hybris:./glibc'
+    layer_dirs = []
+    if a.validation_layer:
+        (stage / 'layers').mkdir()
+        shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
+        layer_meta['validation_layer_sha256'] = sha256_file(a.validation_layer)
+        layer_meta['validation_manifest_sha256'] = sha256_file(a.validation_manifest)
+        shutil.copy2(a.validation_manifest, out / 'validation-original.json')
+        layer_json = json.loads(a.validation_manifest.read_text())
+        if layer_json['layer']['name'] != 'VK_LAYER_KHRONOS_validation':
+            raise SystemExit('expected Khronos validation layer manifest')
+        layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
+        (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
+        env['HYBRIS_WSI_VALIDATION'] = '1'
+        layer_dirs.append(remote + '/layers')
+    if a.capture_tools:
+        stage_tools(a.capture_tools, stage, layer_meta, sha256_file)
+        env['VK_INSTANCE_LAYERS'] = 'VK_LAYER_LUNARG_gfxreconstruct'
+        env['GFXRECON_CAPTURE_FILE'] = remote + '/window.gfxr'
+        env['GFXRECON_CAPTURE_FILE_TIMESTAMP'] = 'false'
+        layer_dirs.append(remote + '/capture-tools')
+        libraries += ':./capture-tools:./capture-tools/runtime'
+    if layer_dirs:
+        env['VK_LAYER_PATH'] = ':'.join(layer_dirs)
     if a.trace: env.update(HYBRIS_TRACE='1', HYBRIS_LOGGING_LEVEL='warn')
     command = ' '.join(k + '=' + shlex.quote(v) for k, v in env.items())
     command += ' ./glibc/ld-linux-aarch64.so.1 --library-path ' + libraries + ' ./' + probe_name
     metadata = {'run_id': run_id, 'serial': a.serial, 'package': a.package,
                 'fingerprint': prop('ro.build.fingerprint'), 'sdk': sdk,
                 'command': command, 'remote': remote, 'host_timeout_seconds': a.timeout, 'runner_sha256': sha256_file(Path(__file__)), 'hybris': provenance, 'probe': probe_provenance,
-                'path': 'icd' if a.icd_hal else 'frontend'}
+                'path': 'icd'}
     metadata['helper_sha256'] = {name: sha256_file(Path(__file__).with_name(name))
                                for name in ('capture.py', 'screen_evidence.py', 'diagnostics.py')}
-    if a.icd_hal:
-        metadata['icd_hal'] = a.icd_hal
-        metadata['standard_loader_sha256'] = sha256_file(stage / 'standard/libvulkan.so.1')
-        metadata.update(layer_meta)
+    metadata['icd_hal'] = a.icd_hal
+    metadata['standard_loader_sha256'] = sha256_file(stage / 'standard/libvulkan.so.1')
+    metadata.update(layer_meta)
     metadata['apk_sha256'] = host.record['apk_sha256']
     (out / 'device.json').write_text(json.dumps(metadata, indent=2))
     code = 2
@@ -92,23 +86,22 @@ def run(a, host, out):
 
     try:
         host.upload(stage, remote)
-        if a.icd_hal:
-            # Query the staged adapter directly before creating a loader manifest.
-            # A fixed 1.3 declaration would misrepresent a HAL reporting 1.1.
-            version_command = 'cd ' + shlex.quote(remote) + ' && env ' + command + ' --icd-version'
-            version_run = app(version_command, capture_output=True, text=True, timeout=30)
-            (out / 'icd-version.log').write_text(version_run.stdout + version_run.stderr)
-            versions = re.findall(r'^WSI_ICD_VERSION (\d+\.\d+\.\d+)$', version_run.stdout, re.MULTILINE)
-            if version_run.returncode or len(versions) != 1:
-                raise RuntimeError('staged ICD version query failed; see icd-version.log')
-            driver = json.dumps({'file_format_version': '1.0.0', 'ICD': {
-                'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
-                'api_version': versions[0]}})
-            (stage / 'driver.json').write_text(driver)
-            app('cat > ' + shlex.quote(remote + '/driver.json'), input=driver, text=True, check=True)
-            metadata['icd_api_version'] = versions[0]
-            metadata['icd_version_command'] = version_command
-            (out / 'device.json').write_text(json.dumps(metadata, indent=2))
+        # Query the staged adapter directly before creating a loader manifest.
+        # A fixed 1.3 declaration would misrepresent a HAL reporting 1.1.
+        version_command = 'cd ' + shlex.quote(remote) + ' && env ' + command + ' --icd-version'
+        version_run = app(version_command, capture_output=True, text=True, timeout=30)
+        (out / 'icd-version.log').write_text(version_run.stdout + version_run.stderr)
+        versions = re.findall(r'^WSI_ICD_VERSION (\d+\.\d+\.\d+)$', version_run.stdout, re.MULTILINE)
+        if version_run.returncode or len(versions) != 1:
+            raise RuntimeError('staged ICD version query failed; see icd-version.log')
+        driver = json.dumps({'file_format_version': '1.0.0', 'ICD': {
+            'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
+            'api_version': versions[0]}})
+        (stage / 'driver.json').write_text(driver)
+        app('cat > ' + shlex.quote(remote + '/driver.json'), input=driver, text=True, check=True)
+        metadata['icd_api_version'] = versions[0]
+        metadata['icd_version_command'] = version_command
+        (out / 'device.json').write_text(json.dumps(metadata, indent=2))
         code = host.execute(command, remote, out, a.timeout, diagnostics)
         if code not in (0, 3):
             diagnostics.snapshot(remote, 'client exited unsuccessfully; client may already be gone')
@@ -181,7 +174,7 @@ def run(a, host, out):
     (out / 'result.json').write_text(json.dumps({'status': status, 'exit_code': code,
         'scope': ('icd-presentation' +
                   ('-validation' if a.validation_layer else '') +
-                  ('-capture' if a.capture_tools else '') if a.icd_hal else 'frontend-presentation')}, indent=2))
+                  ('-capture' if a.capture_tools else ''))}, indent=2))
     print(out)
     print(status, code)
     return 0 if code in (0, 3) else 1

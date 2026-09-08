@@ -180,8 +180,7 @@ DIRS="include properties libsync platforms hardware ui gralloc egl glesv1 glesv2
 JOBS="$(nproc)"
 echo "==> make + install"
 if [[ "$HYBRIS_STANDALONE_CACHE" != incremental ]]; then
-    for relink in platforms/common egl/platforms/common egl/platforms/x11 \
-                  egl/platforms/wayland vulkan/platforms; do
+    for relink in platforms/common egl/platforms/common; do
         if [[ -f "$BUILD_DIR/$relink/Makefile" ]]; then
             run_logged make -C "$BUILD_DIR/$relink" clean
         fi
@@ -205,21 +204,14 @@ for lib in \
     libEGL.so.1.0.0 \
     libGLESv2.so.2.0.0 \
     libvulkan.so.1.2.183 \
-    libhybris/eglplatform_wayland.so \
-    libhybris/eglplatform_x11.so \
+    libhybris-vulkan-icd.so.0 \
     libhybris/eglplatform_null.so \
-    libhybris/vulkanplatform_null.so \
-    libhybris/vulkanplatform_wayland.so \
     libhybris/linker/q.so
 do
     [[ -f "$LIB_DIR/$lib" ]] || MISSING="$MISSING $lib"
 done
 if [[ -n "$MISSING" ]]; then
     echo "ERROR: missing built libraries:$MISSING" >&2
-    exit 1
-fi
-if [[ -e "$LIB_DIR/libhybris/vulkanplatform_x11.so" ]]; then
-    echo "ERROR: install contains vulkanplatform_x11.so but source has no such target" >&2
     exit 1
 fi
 if ! readelf -d "$LIB_DIR/libhybris-platformcommon.so.1.0.0" | grep -q 'libwayland-client.so.0'; then

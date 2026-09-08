@@ -378,8 +378,7 @@ try:
             command = (
                 'HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker '
                 'HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris '
-                'HYBRIS_VULKANPLATFORM_DIR=$PWD/hybris/libhybris '
-                'HYBRIS_EGLPLATFORM=null HYBRIS_VULKANPLATFORM=null '
+                'HYBRIS_EGLPLATFORM=null '
                 'HYBRIS_ANDROID_SDK_VERSION=' + shlex.quote(metadata['ro.build.version.sdk']) + ' '
                 './glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./' + binary + ' '
             )

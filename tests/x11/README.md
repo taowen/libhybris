@@ -3,8 +3,11 @@
 Build the client and Android watchdog with `python3 tests/x11/build.py`.
 The only optional input is `--ndk`; the glibc client uses the pinned baseline
 cross-builder. `build/manifest.json` records source, compiler, builder and the
-two client executable hashes. No X server source, patch, dependency prefix or
-server executable is built or packaged here.
+two client executable hashes, plus the client's transitive ELF runtime closure.
+The existing `tools/stage-runtime.py` collects that closure with the same library
+search order as the hybris builder. Staging verifies every hash and rejects
+conflicting shared libraries. X11 clients no longer rely on a removed EGL
+plugin to bring in `libX11`. No X server is built or packaged here.
 
 Run through the [window integration runner](../wsi/README.md) against an
 already running compositor APK and its existing local `DISPLAY`. Both XCB and

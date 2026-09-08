@@ -80,7 +80,7 @@ AC_ARG_ENABLE(ubuntu-camera-headers,
 AM_CONDITIONAL( [WANT_UBUNTU_CAMERA_HEADERS], [test x"$ubuntu_camera_headers" = x"yes"])
 
 AC_ARG_ENABLE(wayland,
-  [  --enable-wayland            Enable wayland support (default=disabled)],
+  [  --enable-wayland            Enable ICD Wayland WSI support (default=disabled)],
   [wayland=$enableval
 	PKG_CHECK_MODULES(WAYLAND_CLIENT, wayland-client,, exit)
 	PKG_CHECK_MODULES(WAYLAND_SERVER, wayland-server,, exit)
@@ -94,7 +94,7 @@ AC_ARG_ENABLE(wayland,
 AM_CONDITIONAL( [WANT_WAYLAND], [test x"$wayland" = x"yes"])
 
 AC_ARG_ENABLE(x11,
-  [  --enable-x11                Enable X11 EGL platform via TAWC-DRI (default=disabled)],
+  [  --enable-x11                Enable ICD X11 WSI via TAWC-DRI (default=disabled)],
   [x11=$enableval
 	PKG_CHECK_MODULES(X11, x11,, exit)
 	PKG_CHECK_MODULES(XCB, xcb,, exit)
@@ -333,8 +333,6 @@ AC_CONFIG_FILES([
 	egl/platforms/common/hybris-egl-platform.pc
 	egl/platforms/null/Makefile
 	egl/platforms/fbdev/Makefile
-	egl/platforms/wayland/Makefile
-	egl/platforms/x11/Makefile
 	egl/platforms/hwcomposer/Makefile
 	egl/platforms/hwcomposer/hwcomposer-egl.pc
 	glesv1/glesv1_cm.pc
@@ -375,11 +373,7 @@ AC_CHECK_HEADERS(vulkan/vulkan.h, HAS_VULKAN_HEADERS=yes)
 AM_CONDITIONAL([HAS_VULKAN_HEADERS], [test x"$HAS_VULKAN_HEADERS" = x"yes"])
 
 AM_COND_IF([HAS_VULKAN_HEADERS], [AC_CONFIG_FILES([
-	vulkan/Makefile
-	vulkan/platforms/Makefile
-	vulkan/platforms/common/Makefile
-	vulkan/platforms/null/Makefile
-	vulkan/platforms/wayland/Makefile])])
+	vulkan/Makefile])])
 
 AC_OUTPUT
 

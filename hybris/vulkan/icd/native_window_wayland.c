@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "native_window.h"
-#include "../platforms/wayland/window_owner.h"
+#include "window_owner.h"
 #include <system/window.h>
 #include <errno.h>
 #include <stdlib.h>

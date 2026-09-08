@@ -10,12 +10,12 @@ Desktop clients use the standard glibc Vulkan loader with either Turnip WSI
 (Adreno) or the hybris ICD WSI (vendor HALs/Mali). Desktop GL uses Mesa Zink.
 The shared protocols live in Ardesk `protocols/`; Xwayland and the compositor
 are built by Ardesk, and client runners attach to installed `io.taowen.ardesk`.
-The frontend Wayland and EGL X11 paths described below are historical/legacy
-implementations, not additional product paths. Their code, including the old
-PRESENT_SOCKET fallback, has not yet been retired. See the
-[current consolidation audit](docs/stack-consolidation.md) for the remaining
-runtime and build cleanup; the old force-release behavior below is not the
-product release contract.
+The frontend Wayland/EGL X11 plugins and PRESENT_SOCKET implementation have
+been deleted. The Vulkan frontend no longer has a window-plugin loader;
+it remains available for headless Android-loader diagnostics. Wayland
+native-window code used by the ICD now lives in `hybris/vulkan/icd/`.
+The patch descriptions below are historical, including references to deleted
+files. See the [current consolidation audit](docs/stack-consolidation.md).
 
 ## Historical purpose
 

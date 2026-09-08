@@ -1,7 +1,5 @@
 if HAS_VULKAN_HEADERS
 
-SUBDIRS = platforms
-
 lib_LTLIBRARIES = \
 	libvulkan.la \
 	libhybris-vulkan-icd.la
@@ -12,8 +10,7 @@ libvulkan_la_SOURCES = \
 	timeline_dispatch.c \
 	render_dispatch.h \
 	vulkan_exports.c \
-	vulkan_exports.h \
-	ws.c
+	vulkan_exports.h
 
 libvulkan_la_CFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/common $(ANDROID_HEADERS_CFLAGS) -DPKGLIBDIR="\"$(pkglibdir)/\""
 if WANT_TRACE
@@ -62,14 +59,14 @@ libhybris_vulkan_icd_la_LDFLAGS += -lxcb -lX11-xcb -lX11
 endif
 libhybris_vulkan_icd_la_SOURCES += \
     icd/native_window.h icd/native_window_wayland.c \
-    platforms/wayland/window_owner.cpp platforms/wayland/window_owner.h \
-    platforms/wayland/wayland_window.cpp \
+    icd/window_owner.cpp icd/window_owner.h \
+    icd/wayland_window.cpp icd/wayland_window.h \
     $(top_srcdir)/platforms/wayland/wayland_window_common.cpp
 libhybris_vulkan_icd_la_CFLAGS += \
     -I$(top_srcdir)/platforms/common \
     -I$(top_srcdir)/platforms/wayland \
     -I$(top_srcdir)/vulkan \
-    -I$(top_srcdir)/vulkan/platforms/wayland \
+    -I$(top_srcdir)/vulkan/icd \
     -I$(top_builddir)/platforms/common \
     $(ANDROID_HEADERS_CFLAGS) \
     $(WAYLAND_CLIENT_CFLAGS) $(WAYLAND_EGL_CFLAGS)
@@ -77,8 +74,7 @@ libhybris_vulkan_icd_la_CXXFLAGS += \
     -I$(top_srcdir)/platforms/common \
     -I$(top_srcdir)/platforms/wayland \
     -I$(top_srcdir)/vulkan \
-    -I$(top_srcdir)/vulkan/platforms/common \
-    -I$(top_srcdir)/vulkan/platforms/wayland \
+    -I$(top_srcdir)/vulkan/icd \
     -I$(top_builddir)/platforms/common \
     $(ANDROID_HEADERS_CFLAGS) \
     $(WAYLAND_CLIENT_CFLAGS) $(WAYLAND_EGL_CFLAGS)

@@ -7,7 +7,9 @@ HAL objects already reserve the loader dispatch word; the glibc loader owns it.
 
 The Ardesk desktop path uses the standard glibc Vulkan loader with this ICD
 for Mali/vendor HALs, or Turnip WSI for supported Adreno devices. The replacement
-libvulkan frontend is a legacy regression path, not the desktop delivery path.
+libvulkan frontend is retained for headless diagnostics; its desktop window
+plugins and plugin-loading layer have been deleted. EGL Wayland/X11 and
+PRESENT_SOCKET have also been deleted.
 No system ICD manifest is installed by this standalone library build. Baseline
 run.py stages a private manifest with --icd-hal and --vulkan-loader. The HAL override is ignored for secure execution; without an
 override the hardware module lookup selects the Vulkan HAL. The adapter and

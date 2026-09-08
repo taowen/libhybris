@@ -22,14 +22,20 @@ def run(a, host, out):
     stage = out / 'stage'
     hybris = stage_runtime(a.build, stage)
     for name in ('probe-xcb', 'x11-session'): shutil.copy2(a.probe / name, stage / name)
+    for name, digest in probe['runtime'].items():
+        source = a.probe / 'runtime' / name
+        if sha256_file(source) != digest: raise ValueError('client runtime hash mismatch: ' + name)
+        destination = stage / 'glibc' / name
+        if destination.exists():
+            if sha256_file(destination) != digest: raise ValueError('client/hybris runtime conflict: ' + name)
+        else:
+            shutil.copy2(source, destination)
     files = host.files
     remote = files + '/hybris-wsi-' + out.parent.name + '-' + out.name
     libraries = './standard:./hybris:./glibc'
     env = {'DISPLAY': a.display,
            'HYBRIS_X11_TRACE': '1', 'HYBRIS_ANDROID_SDK_VERSION': prop('ro.build.version.sdk'),
-           'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker',
-           'HYBRIS_EGLPLATFORM_DIR': remote + '/hybris/libhybris',
-           'HYBRIS_VULKANPLATFORM_DIR': remote + '/hybris/libhybris'}
+           'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker'}
     if a.xauthority: env['XAUTHORITY'] = a.xauthority
     server = {'source': 'external-service', 'display': a.display, 'xauthority': a.xauthority}
     if a.validation_layer:
@@ -59,8 +65,9 @@ def run(a, host, out):
         host.upload(stage, remote)
         if a.case != 'control':
             version = app('cd ' + shlex.quote(remote) + ' && ' + prefix + ' ' + client + 'version',
-                          capture_output=True, text=True, check=True, timeout=20)
+                          capture_output=True, text=True, timeout=20)
             (out / 'version.log').write_text(version.stdout + version.stderr)
+            if version.returncode: raise ValueError('ICD version query failed; see version.log')
             versions = re.findall(r'^X11_ICD_VERSION (\d+\.\d+\.\d+)$', version.stdout, re.M)
             if len(versions) != 1: raise ValueError('missing ICD version')
             driver = json.dumps({'file_format_version': '1.0.0', 'ICD': {'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0', 'api_version': versions[0]}})

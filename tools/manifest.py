@@ -10,13 +10,10 @@ import subprocess
 import sys
 
 # Platform plugins that current source can emit. Anything else is stale staging.
-ALLOWED_VULKAN_PLATFORMS = {'vulkanplatform_null.so', 'vulkanplatform_wayland.so'}
 ALLOWED_EGL_PLATFORMS = {
     'eglplatform_fbdev.so',
     'eglplatform_hwcomposer.so',
     'eglplatform_null.so',
-    'eglplatform_wayland.so',
-    'eglplatform_x11.so',
 }
 
 
@@ -63,7 +60,7 @@ def unexpected_platforms(hybris_lib: Path) -> list[str]:
     unexpected = []
     for path in sorted(plugin_dir.glob('*.so')):
         name = path.name
-        if name.startswith('vulkanplatform_') and name not in ALLOWED_VULKAN_PLATFORMS:
+        if name.startswith('vulkanplatform_'):
             unexpected.append(str(path))
         if name.startswith('eglplatform_') and name not in ALLOWED_EGL_PLATFORMS:
             unexpected.append(str(path))

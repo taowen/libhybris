@@ -50,6 +50,12 @@ static EGLBoolean ensureCorrectWs(const char * egl_platform)
  */
 EGLBoolean ws_init(const char * egl_platform)
 {
+	/* Reject even stale installed plugins or an overridden plugin directory. */
+	if (!strcmp(egl_platform, "wayland") || !strcmp(egl_platform, "x11")) {
+		fprintf(stderr, "hybris EGL frontend desktop windows are retired; use Mesa with the standard Vulkan loader and ICD/Turnip WSI\n");
+		return EGL_FALSE;
+	}
+
 	pthread_mutex_lock(&mutex);
 
 	// We can't unload the ws in eglTerminate since it is allowed to call
@@ -200,14 +206,6 @@ void ws_setSwapInterval(EGLDisplay dpy, EGLNativeWindowType win, EGLint interval
 	assert(ws != NULL);
 	if (ws->setSwapInterval)
 		ws->setSwapInterval(dpy, win, interval);
-}
-
-EGLBoolean ws_eglGetConfigAttrib(struct _EGLDisplay *dpy, EGLConfig config,
-                                 EGLint attribute, EGLint *out_value)
-{
-	if (ws == NULL || ws->eglGetConfigAttrib == NULL)
-		return EGL_FALSE;
-	return ws->eglGetConfigAttrib(dpy, config, attribute, out_value);
 }
 
 // vim:ts=4:sw=4:noexpandtab

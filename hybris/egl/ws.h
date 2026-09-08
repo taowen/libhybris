@@ -57,17 +57,7 @@ struct ws_module {
 	void (*setSwapInterval)(EGLDisplay dpy, EGLNativeWindowType win, EGLint interval);
 	void (*releaseDisplay)(struct _EGLDisplay *dpy);
 	void (*eglInitialized)(struct _EGLDisplay *dpy);
-	/* Optional. Lets a platform plugin override the value returned for
-	 * a given EGLConfig attribute. The X11 plugin uses this to substitute
-	 * a real X11 visual ID for EGL_NATIVE_VISUAL_ID — Android EGL returns
-	 * the HAL pixel format there, which is meaningless to X11 clients
-	 * (XGetVisualInfo with that ID returns NULL → es2gears_x11/glmark2/etc
-	 * fail "Could not get a valid XVisualInfo").
-	 *
-	 * Returns EGL_TRUE if handled (the value in *out_value is final),
-	 * EGL_FALSE to fall through to Android EGL. */
-	EGLBoolean (*eglGetConfigAttrib)(struct _EGLDisplay *dpy, EGLConfig config,
-	                                 EGLint attribute, EGLint *out_value);
+
 };
 
 EGLBoolean ws_init(const char * egl_platform);
@@ -84,7 +74,5 @@ void ws_prepareSwap(EGLDisplay dpy, EGLNativeWindowType win, EGLint *damage_rect
 void ws_finishSwap(EGLDisplay dpy, EGLNativeWindowType win);
 void ws_setSwapInterval(EGLDisplay dpy, EGLNativeWindowType win, EGLint interval);
 void ws_releaseDisplay(struct _EGLDisplay *dpy);
-EGLBoolean ws_eglGetConfigAttrib(struct _EGLDisplay *dpy, EGLConfig config,
-                                 EGLint attribute, EGLint *out_value);
 
 #endif

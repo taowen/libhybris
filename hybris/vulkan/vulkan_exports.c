@@ -87,9 +87,7 @@ VULKAN_IDLOAD(vkGetPhysicalDeviceImageFormatProperties);
 VULKAN_IDLOAD(vkGetPhysicalDeviceProperties);
 VULKAN_IDLOAD(vkGetPhysicalDeviceQueueFamilyProperties);
 VULKAN_IDLOAD(vkGetPhysicalDeviceMemoryProperties);
-#if !(defined(WANT_WAYLAND))
 VULKAN_IDLOAD(vkDestroySurfaceKHR);
-#endif
 VULKAN_IDLOAD(vkEnumerateDeviceExtensionProperties);
 VULKAN_IDLOAD(vkEnumerateInstanceLayerProperties);
 VULKAN_IDLOAD(vkEnumerateDeviceLayerProperties);
@@ -283,10 +281,7 @@ VULKAN_IDLOAD(vkGetDeviceImageSparseMemoryRequirements);
 VULKAN_IDLOAD(vkGetPhysicalDeviceSurfaceSupportKHR);
 VULKAN_IDLOAD(vkGetPhysicalDeviceSurfaceFormatsKHR);
 VULKAN_IDLOAD(vkGetPhysicalDeviceSurfacePresentModesKHR);
-#if !(defined(WANT_WAYLAND))
 VULKAN_IDLOAD(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
-VULKAN_IDLOAD(vkCreateSwapchainKHR);
-#endif
 VULKAN_IDLOAD(vkDestroySwapchainKHR);
 VULKAN_IDLOAD(vkGetSwapchainImagesKHR);
 VULKAN_IDLOAD(vkAcquireNextImageKHR);
@@ -355,9 +350,7 @@ VULKAN_IDLOAD(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR);
 VULKAN_IDLOAD(vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR);
 VULKAN_IDLOAD(vkAcquireProfilingLockKHR);
 VULKAN_IDLOAD(vkReleaseProfilingLockKHR);
-#if !(defined(WANT_WAYLAND))
 VULKAN_IDLOAD(vkGetPhysicalDeviceSurfaceCapabilities2KHR);
-#endif
 VULKAN_IDLOAD(vkGetPhysicalDeviceSurfaceFormats2KHR);
 VULKAN_IDLOAD(vkGetPhysicalDeviceDisplayProperties2KHR);
 VULKAN_IDLOAD(vkGetPhysicalDeviceDisplayPlaneProperties2KHR);

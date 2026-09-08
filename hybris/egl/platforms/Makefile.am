@@ -7,12 +7,5 @@ if HAS_ANDROID_5_0_0
 SUBDIRS += hwcomposer
 endif
 
-if WANT_WAYLAND
-SUBDIRS += wayland
-endif
-
-if WANT_X11
-SUBDIRS += x11
-endif
-
-
+# Desktop windows use Mesa with the standard loader and ICD/Turnip WSI.
+# Frontend Wayland/X11 plugins have been removed.

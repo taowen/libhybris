@@ -29,7 +29,7 @@ def main():
     p.add_argument('--out', type=Path, default=ROOT / 'tests/wsi/build/results')
     p.add_argument('--timeout', type=float, help='host watchdog seconds (5–300)')
     p.add_argument('--trace', action='store_true')
-    p.add_argument('--icd-hal', help='Android Vulkan HAL; omit for Wayland replacement-frontend regression')
+    p.add_argument('--icd-hal', help='Android Vulkan HAL; required for Vulkan window cases (frontend windows are retired)')
     p.add_argument('--vulkan-loader', type=Path)
     p.add_argument('--icd-mali-loader-quirk', action='store_true')
     p.add_argument('--validation-layer', type=Path)
@@ -40,9 +40,11 @@ def main():
     if a.case not in (('present', 'swapchain-review') if wayland else ('present', 'control', 'resize', 'missing-protocol', 'acquire-timeout')):
         p.error('case is not supported by this platform')
     if not 1 <= a.repeat <= 100: p.error('--repeat must be between 1 and 100')
+    if (wayland or a.case != 'control') and not a.icd_hal:
+        p.error('frontend windows are retired; supply --icd-hal and --vulkan-loader')
     if (a.icd_hal is None) != (a.vulkan_loader is None): p.error('supply both --icd-hal and --vulkan-loader')
     if (a.validation_layer is None) != (a.validation_manifest is None): p.error('supply both validation layer and manifest')
-    if (a.validation_layer or a.capture_tools or a.icd_mali_loader_quirk or a.case == 'swapchain-review' or (not wayland and a.case != 'control')) and not a.icd_hal:
+    if (a.validation_layer or a.capture_tools or a.icd_mali_loader_quirk) and not a.icd_hal:
         p.error('selected operation requires --icd-hal and --vulkan-loader')
     if a.capture_tools and (not wayland or a.validation_layer or a.case == 'swapchain-review'):
         p.error('capture requires a separate Wayland present run: pinned capture tooling cannot combine validation or allocator-failure review')

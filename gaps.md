@@ -10,13 +10,15 @@
 构建，libhybris 只构建客户端。后文 `io.taowen.hybriswsitest` 等名称属于
 注明日期的历史记录，不能作为当前夹具或验收步骤。
 产品 Mesa 已使用 `taowen/mesa` 的 WSI fork `980c6429`；下面的官方
-`c3b008c1` 是仍独立存在的 desktop-gl 离屏构建/证据，不是产品打包 pin。
+`c3b008c1` 仅为历史离屏证据；desktop-gl 已直接复用产品 Mesa 构建和库。
+frontend Wayland/X11 窗口插件、Vulkan 插件加载层及 PRESENT_SOCKET 已删除，
+ICD 所需的 native-window 实现移至 `vulkan/icd/`。
 旧 desktop-gl 无验证错误声明已被独立日志复核更正，不能沿用作验证通过。
 已统一项与剩余分叉见[产品栈清单](docs/stack-consolidation.md)。
 
-## 当前 Mesa 依赖（2026-09-07）
+## 官方 Mesa 切换时的历史记录（2026-09-07）
 
-按当前方案，Mesa 改为官方 `c3b008c1`，不再依赖 Mesa fork、Gallium Freedreno
+当时 Mesa 改为官方 `c3b008c1`，不再依赖 Mesa fork、Gallium Freedreno
 KGSL 或定制 Zink 顶点模拟。此前 fork 的通过记录保留为历史，不能视为当前
 官方实现的覆盖。原版 Turnip + Zink 在 Redmi 的 EGL/GLX 两轮通过 38 张一致
 图像及 44 份 SPIR-V 验证，SSBO 为 16/16/16，SyncVal 零错误。Mali 官方 Zink
@@ -1035,3 +1037,13 @@ buffer 对照；未吞错误或放宽门槛。产品 Turnip 窗口、teapot/scen
 通过，捕获回放 50/50 图像一致；Mali 仍有八个属性阶段失败及四条 09461，
 其捕获回放 27/27 原图一致。详见 [产品构建证据](tests/desktop-gl/README.md#product-mesa-build-reuse-2026-09-08)。
 本批仅关闭构建来源分叉，不关闭 G06/G12，也不替代产品窗口/teapot 验收。
+
+### 删除 frontend 窗口路径（2026-09-08）
+
+已删除 EGL Wayland/X11 插件、PRESENT_SOCKET/强制超时释放、仅供 X11 使用的
+EGL 属性覆盖钩子，以及整个 Vulkan frontend 窗口插件加载层。ICD 的窗口
+实现归入 `vulkan/icd/`，runner 仅保留标准 loader + ICD 窗口路径；X11 客户端
+自行打包依赖。实际构建后，两台设备各 12 项基础回归通过，Wayland 呈现/VVL
+和捕获回放通过，Mali XCB/Adreno Xlib 普通呈现通过。XCB resize 各两条 00067
+错误在删除前构建上同样复现，仍为 FAIL。详见[删除及对照证据](tests/wsi/frontend-removal.md)。
+本批不关闭 G06/G12，也不将 vendor ICD 结果扩大为 Turnip 窗口验收。
