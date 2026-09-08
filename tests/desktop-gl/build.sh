@@ -2,38 +2,26 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 ardesk="$(cd "$root/../.." && pwd)"
-mesa_commit=c3b008c1ba01d455351b762253ef44c3ca19653f
-[[ "$(git -C "$ardesk/third_party/mesa" rev-parse HEAD)" == "$mesa_commit" ]] || { echo 'unexpected Mesa revision' >&2; exit 1; }
-[[ -z "$(git -C "$ardesk/third_party/mesa" status --porcelain)" ]] || { echo 'Mesa checkout must be clean' >&2; exit 1; }
-image="${BUILDER_IMAGE:-localhost/ardesk-glibc-arm64:20d8189233233158}"
+"$ardesk/tools/build/mesa.sh"
+mesa_commit="$(cat "$ardesk/build/mesa-upstream/mesa-commit.txt")"
+image="$("$ardesk/tools/ensure-glibc-builder.sh")"
 image_id="$(podman image inspect --format '{{.Id}}' "$image")"
 out="$root/tests/desktop-gl/build"
 mkdir -p "$out"
 podman run --rm --userns=keep-id -v "$ardesk:/work:z" --workdir /work "$image_id" bash -eu -c '
 build=/work/third_party/libhybris/tests/desktop-gl/build
-if [ ! -f "$build/mesa-upstream/build.ninja" ]; then
-meson setup "$build/mesa-upstream" /work/third_party/mesa --cross-file /work/tools/build/mesa-aarch64.ini \
- --prefix=/usr --libdir=lib --buildtype=release -Dauto_features=disabled \
- -Dgallium-drivers=zink -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dplatforms=x11 -Degl-native-platform=surfaceless \
- -Degl=enabled -Dgles1=disabled -Dgles2=enabled -Dopengl=true -Dglx=dri -Dgbm=disabled \
- -Dllvm=disabled -Dzstd=disabled -Dshader-cache=false -Dxmlconfig=disabled -Dexpat=disabled \
- -Dzlib=enabled -Dbuild-tests=false -Dtools= -Dvideo-codecs=
-else
-meson configure "$build/mesa-upstream" -Dplatforms=x11 -Dglx=dri -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl
-fi
-ninja -C "$build/mesa-upstream" -j12
-rm -rf "$build/install" "$build/runtime"
-DESTDIR="$build/install" ninja -C "$build/mesa-upstream" install
+rm -rf "$build/runtime"
 python3 /work/third_party/libhybris/tests/desktop-gl/stage.py
 aarch64-linux-gnu-gcc -O2 -Wall -Wextra /work/third_party/libhybris/tests/desktop-gl/probe.c /work/third_party/libhybris/tests/desktop-gl/packed_draw.c /work/third_party/libhybris/tests/desktop-gl/glx_context.c /work/third_party/libhybris/tests/desktop-gl/vertex_prepass.c /work/third_party/libhybris/tests/desktop-gl/procedural_draw.c /work/third_party/libhybris/tests/desktop-gl/attribute_draw.c /work/third_party/libhybris/tests/desktop-gl/multidraw_draw.c /work/third_party/libhybris/tests/desktop-gl/indexed_draw.c /work/third_party/libhybris/tests/desktop-gl/resource_draw.c -lX11 -ldl -o "$build/probe"
 aarch64-linux-gnu-gcc --version > "$build/compiler.txt"
 '
-python3 - "$out" "$image_id" "$mesa_commit" <<'PY'
+python3 - "$out" "$image_id" "$mesa_commit" "$ardesk/build/mesa-upstream" <<'PY'
 from pathlib import Path
 import hashlib,json,sys
 out=Path(sys.argv[1])
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 (out/'manifest.json').write_text(json.dumps({'builder_id':sys.argv[2],'mesa_commit':sys.argv[3],
+ 'product_mesa':{p.name:p.read_text() for p in Path(sys.argv[4]).glob('mesa-*.txt')},
  'compiler':(out/'compiler.txt').read_text(),'probe_sha256':sha(out/'probe'),
  'runtime':{str(p.relative_to(out/'runtime')):sha(p) for p in (out/'runtime').rglob('*') if p.is_file()},
  'sources':{p.name:sha(p) for p in out.parent.iterdir() if p.is_file()}},indent=2))

@@ -1,10 +1,11 @@
-# Desktop OpenGL with official Mesa
+# Desktop OpenGL with product Mesa
 
-The current dependency is unmodified official Mesa `26.3.0-devel`, pinned to
-`c3b008c1ba01d455351b762253ef44c3ca19653f` from
-[mesa/mesa](https://gitlab.freedesktop.org/mesa/mesa). Zink emits Vulkan through
-the standard glibc loader. Select the hybris ICD for an Android vendor HAL, or
-the bundled upstream Turnip ICD on an Adreno KGSL device. Mesa implements EGL
+The probe uses the parent Ardesk product Mesa build, currently `26.3.0-devel`
+at `980c6429e6cb83cb0c394ecad558211f63eab6db` in
+[taowen/mesa](https://github.com/taowen/mesa). This fork adds Ardesk WSI to
+upstream Mesa; it does not add custom Zink vertex conversion. Zink emits Vulkan
+through the standard glibc loader. Select the hybris ICD for an Android vendor
+HAL, or the bundled Turnip ICD on an Adreno KGSL device. Mesa implements EGL
 and GLX. No custom Zink vertex prepass or Gallium Freedreno KGSL code is built.
 
 The optional `--packed-vertex 1` selects the ICD's experimental static packed
@@ -12,12 +13,16 @@ SNORM fallback and its static capability/property policy. On Mali the requested
 GL 3.3 context, main draw and twelve packed draws now pass with validation. See the
 [actual packed results and limitations](../baseline/packed-vertex.md).
 
-Build prerequisites are the parent Ardesk Mesa checkout, its AArch64 cross
-file, Podman and the existing GL cross-builder. The default image is
-`localhost/ardesk-glibc-arm64:20d8189233233158`; `BUILDER_IMAGE` selects an
-explicit replacement. The script records the image ID, compiler, clean Mesa
-commit, probe/source hashes and packaged ELF hashes. It rejects a different or
-dirty Mesa checkout. An independent libhybris clone does not bundle Mesa.
+Build prerequisites are the parent Ardesk checkout, Podman and its GL
+cross-builder. `build.sh` calls the parent's `tools/build/mesa.sh`, then packages
+ELFs directly from `build/mesa-upstream/lib` and compiles the probe using
+`tools/ensure-glibc-builder.sh`. There is no separate probe Mesa revision,
+Meson configuration or builder override. Product source preparation enforces
+its own pin and clean checkout. The manifest records the builder ID, compiler,
+product Mesa commit/tree/repository and WSI protocol checksums, probe/source
+hashes and packaged ELF hashes. An independent libhybris clone does not bundle
+Mesa. Existing result directories retain their original manifests; historical
+upstream-only results below do not describe the new product build.
 
 ```sh
 # Build hybris first when testing an Android vendor HAL.
@@ -156,6 +161,40 @@ a warning merely naming Synchronization does not pass (`activation-integrity.jso
 Python compilation and shell/diff checks passed. This closes the reproduced
 outdated-validation-data gap for these fixed desktop cases, not the separate
 product-window/teapot gate or G06/G12 in full.
+
+## Product Mesa build reuse (2026-09-08)
+
+The product build was actually reconfigured, compiled and installed through
+Ardesk `tools/build/mesa.sh`; the desktop C probe was recompiled. Mesa is
+`980c6429e6cb83cb0c394ecad558211f63eab6db`, tree
+`1e2f6193016c512f6ff9d15eb019aa798f4c22ac`. Packaged libGL, libEGL, libgallium,
+libvulkan, Turnip and zink_dri were byte-compared with the product installation;
+all match. The manifest retains their SHA-256s and the three WSI protocol hashes.
+The Gallium ELF SHA-256 is
+`74a8ec63a3bfdb8f264f96e0f35c07f6d22cb14332bf6e790c56827dfbc65b5b`.
+
+All runs request core33, vertex-prepass and the expanded vertex workload.
+VVL is the independently logging 1.4.362 build above. Capture uses the source
+build recorded in each result and runs separately from VVL.
+
+| Run | Result |
+| --- | --- |
+| `20260908T205259-4ea2f51f` — Turnip validation | Rendering PASS; active SyncVal, zero errors/VUIDs |
+| `20260908T205258-a1a3645f` — Mali validation, packed option | Rendering FAIL in the same eight attribute phases; four direct-draw `09461` errors |
+| `20260908T205343-d4222954` — Mali validation, explicit lazy descriptors | Same rendering and validation failures |
+| `20260908T205416-8186e05a` — Turnip capture/replay, preserve compile flags | Capture and replay PASS; 50/50 images match, no diagnostics |
+| `20260908T205417-037e5ef1` — Mali capture/replay, lazy descriptors, rebind memory, preserve compile flags | Original rendering FAIL; capture and replay PASS, 27/27 original images match, no diagnostics |
+
+The initial Turnip replay `20260908T205344-2b883153` matched 50/50 images but
+correctly remains FAIL because the replay tool warned that it removed pipeline
+compile-control flags. The subsequent run explicitly preserves those flags.
+No failed records were overwritten. Build-script shell syntax, Python
+compilation and diff checks passed; no unit tests were added.
+
+This removes the probe/product Mesa build divergence. These are surfaceless
+results: shared Android-buffer WSI presentation, product-window acceptance and
+the teapot application gate are not established by these runs. G06/G12 remain
+open, including Mali's original attribute failures and validation errors.
 
 ## Official upstream results (2026-09-07)
 

@@ -6,12 +6,13 @@ import subprocess
 root = Path('/work/third_party/libhybris/tests/desktop-gl/build')
 lib = root / 'runtime'
 lib.mkdir(exist_ok=True)
-installed = root / 'install/usr/lib'
+installed = Path('/work/build/mesa-upstream/lib')
 def needed(path):
     data = subprocess.check_output(['aarch64-linux-gnu-readelf', '-d', str(path)], text=True)
     return re.findall(r'\(NEEDED\).*\[(.*?)\]', data)
 search = [installed, Path('/usr/lib/aarch64-linux-gnu'), Path('/lib/aarch64-linux-gnu')]
-pending = ['libGL.so.1', 'libEGL.so.1', 'libgallium-26.3.0-devel.so', 'libvulkan.so.1', 'libvulkan_freedreno.so', 'ld-linux-aarch64.so.1']
+pending = ['libGL.so.1', 'libEGL.so.1', 'libvulkan.so.1', 'libvulkan_freedreno.so', 'ld-linux-aarch64.so.1']
+pending.extend(path.name for path in installed.glob('libgallium-*.so'))
 seen = set()
 while pending:
     name = pending.pop()

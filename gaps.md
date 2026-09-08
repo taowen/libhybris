@@ -1026,3 +1026,12 @@ VVL 升至 `538f91f1` / 1.4.362，配套源码全部钉死；SPIRV-Tools fork
 Redmi/Mali 独立探针各六项 PASS，含三组装饰 shader、UBO 和故意非法
 buffer 对照；未吞错误或放宽门槛。产品 Turnip 窗口、teapot/scene 的同一
 工具门仍未接入，G12 保持开放，详见[版本与回归](docs/tool-forks.md#vvl-14362-regression-2026-09-08)。
+
+### desktop-gl 复用产品 Mesa 构建（2026-09-08）
+
+探针已移除独立 Mesa 提交与 Meson 配置，调用父仓库 `tools/build/mesa.sh`，
+直接打包产品库并记录提交、源码树、仓库和 WSI 协议校验值。实际构建后，
+六项关键 ELF 与产品安装逐字节一致。Adreno 完整离屏绘制及独立 VVL/SyncVal
+通过，捕获回放 50/50 图像一致；Mali 仍有八个属性阶段失败及四条 09461，
+其捕获回放 27/27 原图一致。详见 [产品构建证据](tests/desktop-gl/README.md#product-mesa-build-reuse-2026-09-08)。
+本批仅关闭构建来源分叉，不关闭 G06/G12，也不替代产品窗口/teapot 验收。
