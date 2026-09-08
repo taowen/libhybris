@@ -23,7 +23,7 @@
 | 项 | 现状与剩余验收 |
 | --- | --- |
 | 产品 GPU 后端 | 标准 loader → Turnip WSI（Adreno）；标准 loader → hybris ICD WSI（Mali/vendor HAL）。不需要合成一个 DSO |
-| 导入 | Turnip 使用 DMA-BUF 导入/复制路径，ICD 使用 AHB/HAL 查询；都应先验证目标导入路径再广告，不能以普通图像能力代替导入能力 |
+| 导入 | ICD `wsi.c:image_limits` 按 AHB external-image 查询并要求 IMPORTABLE，再筛格式和 usage；Turnip `wsi_common_ardesk.c:get_formats/get_formats2` 仍固定列出四种格式，DMA-BUF 内存/布局检查在创建 swapchain 时才执行。“能导入再广告”在 Turnip 侧尚未闭合；普通 image 查询不能补作导入证明 |
 | FIFO/release | 两条产品路径都有 FIFO 和实际 release 驱动的复用；共同门已有 acquire-timeout 和原生 X 窗口销毁后的 surface-lost；断连、延迟 release 和并发销毁竞态仍待验收 |
 | usage/alpha/extent | Turnip `wsi_common_ardesk.c` 广告 opaque alpha 和固定 usage 集；ICD `wsi.c` 广告 inherit alpha，并按 HAL 导入查询计算 usage/extent。不能把这些不同值机械改成相同；需以 compositor 实际消费语义和每条导入路径逐项验收 |
 
@@ -32,7 +32,7 @@
 | 项 | 已确认的剩余分叉 |
 | --- | --- |
 | 窗口验证/捕获 | 两条 Vulkan 后端已接入共同窗口门；Ardesk teapot/scene 的应用工作负载尚未接入该门。desktop-gl 仍是独立的离屏 Zink 工作负载，不代替应用验收 |
-| 历史文档 | 本批给 ICD README、TAWC_FORK、两份 WSI review 和 gaps 加入现行入口/历史范围说明。保留旧运行的真实 APK 名称，不把历史证据改写成使用当前 APK |
+| 历史文档 | `TAWC_FORK.md` 已把已删 Vulkan/EGL 窗口插件及旧打包入口改为退役说明；`integration-review.md` 的现行入口与旧夹具记录分段。旧 APK/hash/run ID 保持原样，不作为当前产品门的证据 |
 
 ## 构建边界与 Mali quirk
 
@@ -47,3 +47,19 @@ MMUD 是 HAL 初始化兼容处理，既不是协议字段，也不是 WSI 能�
 `1` 显式启用。其他 build-id 和 secure execution 不走此 hook。
 因此应区分“构建选择启用 Mali quirks”和“运行时默认自动匹配”，不能再
 把当前行为写成运行时纯 opt-in。详见[初始化证据](mali-mmud.md)。
+
+## 逐项验收边界
+
+当前共同窗口用例已验证两条后端的 FIFO 呈现、实际 release 后复用、
+零/有限 acquire 超时、resize 和原生 X 窗口销毁后的 surface lost。它们
+未验证延迟 release、连接断开或并发销毁，也没有据此关闭全部契约。
+
+现有颜色帧 alpha 为 1，不能证明 opaque/inherit 下非平凡 alpha 的
+合成行为。usage 也需按每个广告位的真实图像操作验证，而不是仅在
+createInfo 中请求该位。extent 的 resize 证据不涵盖所有边界和创建竞态。
+
+Ardesk teapot 的 Zink/Vulkan 窗口与 `tests/test-scene-ahb-device.py` 的
+原生 AHB scene 客户端仍是不同工作负载；后者并非 Vulkan 客户端，不能
+仅给它设置 VVL/GFXReconstruct 环境就算接入。需复用服务身份、运行和
+证据收集，并分别保留适用的 Vulkan 工具门与 scene 合成像素门。
+`desktop-gl` 的离屏结果仍不能代替任一应用级窗口门。

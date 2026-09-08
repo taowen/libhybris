@@ -2,7 +2,9 @@
 
 This fork is claudeslop: AI-written and AI-maintained as part of the [tawc](https://codeberg.org/sphi/tawc) project.
 
-**Fork URL:** https://github.com/wmww/libhybris
+**Current Ardesk fork:** https://github.com/taowen/libhybris (`ardesk`)
+
+**Historical tawc fork:** https://github.com/wmww/libhybris
 
 ## Current Ardesk desktop contract
 
@@ -21,9 +23,9 @@ files. See the [current consolidation audit](docs/stack-consolidation.md).
 
 Provide EGL/GLES access to Android GPU drivers from glibc programs running in a chroot, specifically for tawc's Wayland compositor. The key goal is running on **stock Android firmware** (no patched bionic/vendor images).
 
-## Patches on top of upstream
+## Historical patches on top of upstream
 
-Fifteen committed patches on top of [upstream libhybris](https://github.com/libhybris/libhybris), grouped into eleven problem areas, all aimed at making stock (unpatched) Android firmware usable from a glibc chroot.
+The original tawc snapshot described fifteen committed patches on top of [upstream libhybris](https://github.com/libhybris/libhybris), grouped into eleven problem areas, all aimed at making stock (unpatched) Android firmware usable from a glibc chroot.
 
 ### TLS thunk patcher
 
@@ -85,37 +87,51 @@ The bionic Q linker plugin (`hybris/common/q/linker/q.so`, loaded by `libhybris-
 
 - **`gralloc: add AHardwareBuffer backend preferred over GRALLOC_COMPAT/1/0`**. Upstream libhybris has no gralloc of its own — `hybris/gralloc/gralloc.c` dispatches every call to one of three backends (GRALLOC_COMPAT via `libui_compat_layer.so`, GRALLOC1 via `hw_get_module`, GRALLOC0). On stock Android ≥ 12 where Halium's `libui_compat_layer.so` isn't present, libhybris falls back to vendor gralloc1, which on modern devices (gralloc4 mapper) produces handles with the legacy `private_handle_t` layout (`fds=1 ints=8`) — the Android-side mapper rejects them with `ver(12/12) ints(8/23) fds(1/2)` and any consumer in any other process (our Wayland compositor, or even the same vendor EGL in a different linker namespace) fails to import them. Fix: add a fourth backend (`version=3`) that routes allocate / retain / release / lock / unlock through the public NDK `AHardwareBuffer_*` API from `libnativewindow.so`. Handles are gralloc4-format by construction, cross-process import "just works" via `AHardwareBuffer_createFromHandle`, and we don't need a Halium compat blob. Preferred over all other backends when `libnativewindow.so` resolves. A handle↔AHB map with a shadow refcount bridges the gap between gralloc's handle-keyed API and AHB's pointer-keyed API. `hybris_gralloc_import_buffer` returns `-ENOSYS` in AHB mode because the signature doesn't carry the `AHardwareBuffer_Desc` fields `createFromHandle` needs; the only caller is server-side-buffer-allocation, which we disable via `--disable-wayland_serverside_buffers`. Framebuffer callers still route through GRALLOC0 (AHB has no framebuffer-device ops).
 
-### Vulkan WSI
+### Retired Vulkan window plugin
 
-Three patches for Vulkan clients via `HYBRIS_VULKANPLATFORM=wayland` to display on-screen through a tawc compositor. Verified end-to-end on OnePlus 9 (2026-04-20).
+The April 2026 tawc snapshot used `HYBRIS_VULKANPLATFORM=wayland` and a
+frontend plugin for Wayland presentation. That plugin and its loader have
+been deleted. Its old XCB/Xlib stubs, capability overrides and build options
+are not the current window interface. The original OnePlus 9 observations
+remain historical evidence in source history.
 
-- **`vulkan: replace IFUNC dispatch with arm64 assembly trampolines, fix NV Cuda build guard`**. Replaces the `gnu_indirect_function` (IFUNC) dispatch for every Vulkan entry point with an arm64 assembly trampoline (`adrp+ldr+br x16`) resolved by a `__attribute__((constructor))`. The IFUNC resolver ran during the dynamic linker's relocation phase and called `android_dlopen()` to load the Android Vulkan driver — this crashes when triggered alongside complex library trees (e.g. GTK4 links `libvulkan.so.1` at build time, pulling the IFUNC resolvers before `android_dlopen` is safe). The constructor defers resolution until after relocation completes. Also stubs `vkCreateXlibSurfaceKHR`, `vkGetPhysicalDeviceXlibPresentationSupportKHR`, `vkCreateXcbSurfaceKHR`, `vkGetPhysicalDeviceXcbPresentationSupportKHR` (return `VK_ERROR_EXTENSION_NOT_PRESENT` / `VK_FALSE`) for clients/libraries (SDL, GLFW) that reference X11/Xcb symbols at link time. Includes a build fix: `#if VK_HEADER_VERSION >= 269` → `#ifdef VK_NV_cuda_kernel_launch` for `vulkan-headers` 1.4.341+ where NV Cuda symbols moved behind their extension macro.
+Current Vulkan windows use the standard loader and the selected ICD. The
+hybris ICD owns its Wayland native-window code in `hybris/vulkan/icd/`;
+Turnip uses product Mesa WSI. Current commands and device evidence are in
+[tests/wsi/README.md](tests/wsi/README.md) and
+[product-backends.md](tests/wsi/product-backends.md).
 
-- **`vulkan: wait for GPU fence before presenting buffer to Wayland compositor`**. Moves the `presentBuffer(wnb)` call from *before* the `sync_wait(fenceFd)` to *after* it inside `WaylandNativeWindow::queueBuffer`. Upstream did `wl_surface.attach` + `wl_surface.commit` *before* waiting on the Vulkan fence, which is a correctness bug: Wayland has no per-commit fence mechanism, so once the commit is sent the compositor is free to sample the buffer, and on a fast client or a slow GPU that sample happens before the GPU finishes writing. Swapping the order makes the commit always follow GPU completion.
+### Retired EGL window plugins
 
-- **`vulkan: implement Wayland-conformant surface capabilities and swapchain resize`**. The Android driver reports `currentExtent` based on the ANativeWindow's size, which starts at 1×1 (the initial `wl_egl_window_create` size). Vulkan clients that use `currentExtent` for their swapchain image extent create a 1×1 swapchain — invisible on screen. Fix follows the Vulkan spec for Wayland WSI: `patchSurfaceCapabilities` overrides `currentExtent` to `{0xFFFFFFFF, 0xFFFFFFFF}` (undefined — lets the app choose its own size) and raises `maxImageExtent` to 16384. `prepareSwapchain` resizes the `WaylandNativeWindow` to match the app's chosen extent at `vkCreateSwapchainKHR` time, so the Android driver creates correctly-sized buffers. Both `vkGetPhysicalDeviceSurfaceCapabilitiesKHR` and `vkGetPhysicalDeviceSurfaceCapabilities2KHR` are intercepted. `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr` return the wrapped versions so dynamic dispatch also works.
-
-### EGL-on-X11 client platform
-
-- **`egl: X11 platform plugin via TAWC-DRI for tawc Xwayland`**. New EGL platform plugin under `hybris/egl/platforms/x11/` (sibling of the existing wayland plugin) that lets glibc chroot clients call `eglGetPlatformDisplay(EGL_PLATFORM_X11_KHR, …)` and get hardware acceleration through the Android vendor GLES. `dequeueBuffer` allocates AHBs through the AHB gralloc backend (same path `ClientWaylandBuffer` uses); `queueBuffer` ships each AHB's `native_handle` (numFds + numInts inline + fds out-of-band) over the X11 connection via `xcb_send_request_with_fds(TAWCDRIPresentBuffer, …)`. The tawc-patched Xwayland reconstructs the AHB via `AHardwareBuffer_createFromHandle`, forwards through `android_wlegl`, and the compositor imports as a GL texture — zero CPU readback for client GL on X11. Verified end-to-end with es2gears_x11 on OnePlus 9 (Adreno 660). Wired through `--enable-x11` in `configure.ac`, `EGL_PLATFORM_X11_KHR` dispatch in `hybris/egl/egl.c` under `#ifdef WANT_X11`, and a new `x11` subdir gated by `WANT_X11` in `hybris/egl/platforms/Makefile.am`. Plus an optional `eglGetConfigAttrib` ws_module hook (added to `hybris/egl/ws.{h,c}` + the libhybris egl.c wrapper) so the X11 plugin can substitute the X screen's default visual ID for `EGL_NATIVE_VISUAL_ID` — Android EGL otherwise hands back HAL pixel-format constants that match no X visual, breaking standard EGL-X11 toolchains (es2gears_x11, glmark2, EGLUT-style init code that calls `XGetVisualInfo(VisualIDMask)` on the returned ID). Other platforms leave the hook NULL and behaviour is unchanged. TAWC-DRI v0.3 adds a server→client event channel: `x11ws_eglInitialized` sends `TAWCDRIQueryVersion` and, on minor ≥ 3, each `X11NativeWindow` registers a libxcb special event queue (`xcb_generate_id` + `xcb_register_for_special_xge` + `TAWCDRISelectInput`) for XGE `TAWCDRIConfigureNotify`/`TAWCDRIBufferRelease` events — the same library-private event mechanism Present uses for Mesa's DRI3 loader, so the app-owned Xlib connection's event queue is never touched. `dequeueBuffer` drains the queue: ConfigureNotify updates the window dimensions so the buffer pool follows compositor-driven resizes (fixes X11 GL windows compositing solid black after the WM resize), and BufferRelease clears the presented buffer's busy flag — buffers stay busy from a successful `queueBuffer` (which stamps a `serial` echoed back by the release event; a failed present frees the slot immediately) until released, giving real backpressure via a sliced poll(2) loop (50ms slices, re-draining libxcb's special queue each slice so a toolkit thread reading the socket can't make us sleep through an already-delivered release) with a 500ms sanity timeout that force-frees only presented buffers (serial != 0 — never driver-held ones) and invalidates their serials so a late release can't free a re-acquired buffer. Against pre-0.3 servers the plugin sends the old 36-byte PresentBuffer (no serial) and keeps the old lifecycle; the tawc Xwayland accepts both request shapes, so the degradation is graceful in both directions.
-
-Together these give us working EGL 1.5 and Vulkan WSI on Pixel 4a (Adreno 618) and OnePlus 9 (Adreno 660) running stock LineageOS Android 16, and interoperable gralloc buffers across the libhybris-in-chroot ↔ Android-side-compositor boundary.
+The former EGL Wayland/X11 plugins, including their TAWC-DRI transport and
+PRESENT_SOCKET path, have been deleted. Their legacy pre-0.3 protocol fallback
+and forced buffer release after a timeout are not supported product behavior.
+Desktop GL now uses Mesa Zink over the selected Vulkan ICD. The two Vulkan
+backends retain their own import mechanisms and must obey actual buffer
+release before reuse; their outstanding contract checks are tracked in the
+[current consolidation audit](docs/stack-consolidation.md).
 
 ### Generated linker config path
 
 - **`linker/q: read the generated linker config from /usr/lib/hybris-config`**. `kLdGeneratedConfigFilePath` (`hybris/common/q/linker.cpp`) pointed at `/linkerconfig/ld.config.txt`, Android's boot-generated bionic namespace config, which tawc used to bind-mount into every rootfs. That bind was the one thing in the rootfs an app-domain process couldn't `stat`: `/linkerconfig` is `linkerconfig_file` on tmpfs and AOSP's `domain.te` grants app domains `file r_file_perms` + `dir search` but no `dir getattr`, so every interactive `ls -l /` in the guest printed `cannot access '/linkerconfig': Permission denied` and exited 1. Reading the file was always permitted, and the file is all this linker ever wanted, so tawc now copies it into the rootfs per spawn (`me.phie.tawc.install.LinkerConfig`) and the bind is gone. Constant-only change: the probe order in `get_ld_config_file_path()` still works out, since the apex path applies only to `/apex/*/bin` executables and `/system/etc/ld.config.<arch>.txt` doesn't exist on Android 11+. Not `/usr/lib/hybris/` with the rest of the runtime because tawc binds that dir read-only from app storage under its default install method, and a bind shadows anything the rootfs has underneath. This path is a contract with the tawc app — change both together.
 
-## History
+## Historical tawc release convention
 
-Git history is kept clean (commits are rebased/amended, not appended). Each update is tagged `tawc-DD-Mon-YYYY-N` (e.g. `tawc-15-Apr-2026-1`) so previous states can be recovered even after force-pushes.
+The original tawc fork rebased/amended its patch series and tagged each update `tawc-DD-Mon-YYYY-N` (e.g. `tawc-15-Apr-2026-1`) so previous states can be recovered even after force-pushes.
 
-## Build
+## Current Ardesk build
 
-Built via the tawc project (not scripts in this repo):
+Build libhybris from this checkout:
 
+```sh
+tools/build-aarch64.sh
 ```
-# from the tawc repo root:
-bash client/build-libhybris-aarch64 [--clean]
-```
 
-Cross-compiles for aarch64 glibc on the host using the distro's `aarch64-linux-gnu-gcc` toolchain. Output is staged in `build/libhybris-aarch64/install/` and packed into the tawc APK as an asset by Gradle's `packLibhybris` task; the Kotlin chroot installer extracts the asset and symlinks it into each rootfs at install time. See `client/build-libhybris-aarch64` and `notes/building.md` in the tawc repo for details.
+Ardesk consumes the resulting installation through `HYBRIS_LIB_DIR`. Product
+Mesa and server builds belong to Ardesk; window probes attach to its running
+compositor. See the [build evidence](tests/baseline/build.md),
+[window instructions](tests/wsi/README.md) and
+[shared protocol contract](docs/stack-consolidation.md).
+
+The former tawc `client/build-libhybris-aarch64` / Gradle `packLibhybris`
+asset workflow belongs to the historical tawc snapshot, not this build entry.

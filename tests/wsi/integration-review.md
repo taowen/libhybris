@@ -1,4 +1,4 @@
-# WSI test consolidation and X11 resize review, 2026-09-08
+# Historical WSI fixture and X11 resize review, 2026-09-08
 
 > Historical fixture evidence. The APK/server builder and private Xwayland
 > lifecycle described below have been removed. Current tests attach to an
@@ -7,37 +7,36 @@
 > the new external-service connection workflow.
 
 
-## One supported test environment
+## Current entry point
 
-The active window entry points were `tests/wsi/run.py` (arbitrary existing app),
-`tests/wsi/compositor/run.py` (a dedicated-APK wrapper around it), and
-`tests/x11/run.py` (another complete APK lifecycle implementation). They are now
-one `tests/wsi/run.py --platform wayland|xcb|xlib` entry. `host.py` shares locking,
-APK startup/cleanup, PID/starttime checks, repeated-client FD snapshots, staging,
-process supervision and screenshot collection. Platform modules retain only
-their distinct Vulkan setup and evidence checks. No arbitrary package/socket
-arguments or compatibility wrapper entry points remain.
+`tests/wsi/run.py --backend hybris|turnip --platform wayland|xcb|xlib`
+attaches to an installed, already running compositor; the default package is
+`io.taowen.ardesk`. Ardesk owns anlabwc, Xwayland and their build/installation.
+The runner stages clients and their selected Vulkan runtime, records service
+identity and collects evidence. It does not build a private APK/server or
+start and stop those services. Package, socket and display arguments select
+the externally supplied endpoints. See [README.md](README.md) and the
+[current product-backend evidence](product-backends.md).
 
-The APK contains anlabwc **and** the protocol-enabled Xwayland/dependency set.
-It extracts those server assets before making the compositor ready. Normal
-X11 runs execute that APK's Xwayland, with actual extracted hashes checked;
-only clients/libhybris are staged per invocation. An explicit alternate server
-is still available for protocol development and the missing-protocol control,
-with its own hash and the APK's dependency libraries.
+## Retired fixture used for the records below
 
-The obsolete 245-line `probe_icd_surface.c` executable is removed. Its extension
-enumeration, disabled-instance command gating, native presentation support,
-application-selected extent and FIFO queries have been folded into the live
-Wayland presentation probe. Surface lifetimes, missing-android_wlegl rejection,
-formats and real swapchain queries remain there. A missing-android_wlegl server
-is not part of this APK; the historical negative runs are not claimed as current
-coverage. Source history and old device observations are preserved separately
-from the current [instructions](README.md), in [history.md](history.md).
+At the time of these runs, three window entry points had been collapsed into
+one runner that still owned APK startup/cleanup and server extraction. That
+fixture's APK contained anlabwc and a bundled protocol-enabled Xwayland; an
+alternate server override was available for its missing-protocol control.
+The fixture builder, service lifecycle and alternate-server override have
+since been deleted. Its hashes and run IDs below describe that old APK only.
 
-## X11 resize correction
+The obsolete `probe_icd_surface.c` executable was also removed in that batch;
+its applicable surface checks were folded into the Wayland client. Historical
+missing-protocol and frontend-window runs below are not current coverage.
+Current missing-protocol checks require an externally supplied display without
+TAWC-DRI. Further historical observations remain in [history.md](history.md).
+
+## Historical X11 resize correction
 
 The previous ICD queried X geometry for capabilities but continued acquiring
-old-size images after a real X ConfigureWindow. Each chain now records its
+old-size images after a real X ConfigureWindow. The corrected ICD in that batch recorded its
 extent and a sticky out-of-date/surface-lost state. Acquire checks before
 changing the output index or signaling synchronization objects. Native dequeue
 also notices TAWC-DRI ConfigureNotify while waiting. Creation rejects a stale
@@ -57,18 +56,19 @@ stable until destruction, and renders the new dimensions.
 TAWC-DRI already supplies ConfigureNotify and BufferRelease, so this did not
 require changing the protocol patch or anlabwc. Its lack of a submitted GPU
 fence still requires a host fence wait; that is a separate asynchronous-submit
-limitation. No Mesa changes were made.
+limitation. That batch made no Mesa changes; later product Turnip corrections are recorded
+in [product-backends.md](product-backends.md).
 
-## Device evidence
+## Historical device evidence
 
 Devices are Redmi `29854870` / Adreno vendor HAL and X300
 `10AFA31610002QH` / Mali vendor HAL with explicit MMUD loader quirk.
 OnePlus results from before the user's device switch are historical only.
-The shared installed APK SHA256 is
+The fixture APK used by these runs had SHA256
 `a1ca044447f70e392cc9fc7178dea85471d656de1b709f0cbe82d61f096f0f73`;
-its Xwayland SHA256 is
+its bundled Xwayland had SHA256
 `601cd4c1d7a32dbd2bd5378bcdea5b7be347d29fd25fff974d3e2ec93d2ecc08`.
-The APK manifest also records the exact backend, source input and dependencies.
+The retained APK manifest also records the exact backend, source input and dependencies.
 
 The first unified matrix below completed 26 invocations / 28 client processes:
 XCB/Xlib each run present, resize, missing protocol, acquire timeout and control;
