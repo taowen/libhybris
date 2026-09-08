@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the pinned VVL with the grouped-decoration debug-iterator fix.
+# Build VVL 1.4.362 with matching dependencies and the grouped-decoration iterator fix.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${1:-$root/tests/baseline/build/validation-build}"
@@ -25,12 +25,11 @@ while read -r name repository revision; do
     git -C "$source_dir" archive "$revision" | tar -x -C "$out/src/$name"
     printf '%s %s %s\n' "$name" "$repository" "$revision" >> "$out/source-revisions.txt"
 done <<'SOURCES'
-Vulkan-ValidationLayers https://github.com/KhronosGroup/Vulkan-ValidationLayers.git 3ba0e590a2e76475b3eef4043355b498fb64e752
-Vulkan-Headers https://github.com/KhronosGroup/Vulkan-Headers.git 691fa560c8a27d1255fa97e350a04cdca676e772
-Vulkan-Utility-Libraries https://github.com/KhronosGroup/Vulkan-Utility-Libraries.git 50563f48368d75281bc2fb1c3407dc531ce28910
-SPIRV-Headers https://github.com/KhronosGroup/SPIRV-Headers.git 09913f088a1197aba4aefd300a876b2ebbaa3391
-SPIRV-Tools https://github.com/taowen/SPIRV-Tools.git 94043c878ff46fc2d7d48084696ef5fb02f5e3ea
-robin-hood-hashing https://github.com/martinus/robin-hood-hashing.git 9145f963d80d6a02f0f96a47758050a89184a3ed
+Vulkan-ValidationLayers https://github.com/KhronosGroup/Vulkan-ValidationLayers.git 538f91f14cd39274263eb15e6b4228f355370353
+Vulkan-Headers https://github.com/KhronosGroup/Vulkan-Headers.git ee2ec5fd83dafce291024683b50dc89219333076
+Vulkan-Utility-Libraries https://github.com/KhronosGroup/Vulkan-Utility-Libraries.git 2176ec8c5f5d2272161277ab96fe5b8f7633113e
+SPIRV-Headers https://github.com/KhronosGroup/SPIRV-Headers.git 496543121ce6419f23d6fa5d7194ba66c36212d2
+SPIRV-Tools https://github.com/taowen/SPIRV-Tools.git adc7d8b01ae855292822192ae870ab1df19e40a3
 SOURCES
 python3 - "$out" "$root" <<'INPUTS'
 import json
@@ -65,11 +64,10 @@ build_dependency() {
 build_dependency Vulkan-Headers
 build_dependency SPIRV-Headers
 build_dependency Vulkan-Utility-Libraries -DBUILD_TESTS=OFF
-build_dependency robin-hood-hashing -DRH_STANDALONE_PROJECT=OFF
 build_dependency SPIRV-Tools -DSPIRV-Headers_SOURCE_DIR=/work/src/SPIRV-Headers \
     -DSPIRV_SKIP_TESTS=ON -DSPIRV_SKIP_EXECUTABLES=ON -DSPIRV_WERROR=OFF
 cmake -S /work/src/Vulkan-ValidationLayers -B /work/build/Vulkan-ValidationLayers "${common[@]}" \
-    -DCMAKE_INSTALL_PREFIX=/work/install -DBUILD_TESTS=OFF -DBUILD_WERROR=OFF -DUSE_ROBIN_HOOD_HASHING=ON
+    -DCMAKE_INSTALL_PREFIX=/work/install -DBUILD_TESTS=OFF -DBUILD_WERROR=OFF -DUSE_CUSTOM_HASH_MAP=ON -DUPDATE_DEPS=OFF
 cmake --build /work/build/Vulkan-ValidationLayers --parallel 4
 rm -rf /work/install
 cmake --install /work/build/Vulkan-ValidationLayers

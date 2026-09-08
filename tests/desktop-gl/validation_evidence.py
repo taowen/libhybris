@@ -12,6 +12,17 @@ khronos_validation.enable_message_limit = false
 '''
 
 
+def syncval_enabled(log):
+    # VVL 1.4.362 reports named features; older pinned layers print enum tokens.
+    # Require every observed activation block to include SyncVal, never infer it
+    # from requested settings or a warning that merely mentions the feature.
+    states = ['VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT' in line
+              for line in re.findall(r'^    Current Enables: (.*)$', log, re.M)]
+    blocks = re.findall(r'^vkCreateInstance\(\): Current Validation Enabled:\n((?:  - [^\n]+\n)+)', log, re.M)
+    states.extend('  - Synchronization\n' in block for block in blocks)
+    return bool(states) and all(states)
+
+
 def validation_evidence(out, layer, manifest, device_hash):
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     result = {'status': 'FAIL', 'scope': 'VVL messages; rendering is evaluated separately',
@@ -24,7 +35,7 @@ def validation_evidence(out, layer, manifest, device_hash):
         result['device_log_sha256'] = device_hash
         result['vuids'] = sorted(set(re.findall(r'VUID-[A-Za-z0-9_-]+', log)))
         result['error_messages'] = log.count('Validation Error:')
-        result['syncval_active'] = 'Current Enables: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT' in log
+        result['syncval_active'] = syncval_enabled(log)
         if device_hash != result['log_sha256']:
             raise ValueError('validation log device hash missing or mismatched')
         if 'layers/libVkLayer_khronos_validation.so' not in (out/'maps.txt').read_text():

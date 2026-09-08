@@ -1014,3 +1014,15 @@ Mali 主绘制及十二项 packed 的独立日志、SyncVal 与像素均通过�
 历史桌面“无验证错误”声明须以此次更正为准，不能沿用为验收证据；独立
 Vulkan 探针自身日志不受此 Zink 回调问题影响。G06/G12 不关闭，详见
 [日志与三组真机证据](tests/desktop-gl/README.md#independent-validation-logging-2026-09-08)。
+
+
+### G12 验证依赖升级与旧结构误报消除（2026-09-08）
+
+VVL 升至 `538f91f1` / 1.4.362，配套源码全部钉死；SPIRV-Tools fork
+`adc7d8b0` 保留装饰组 debug 遍历修复，关闭上游自动下载以免绕过自有依赖。
+实际 AArch64 构建后，Turnip 完整离屏渲染及独立 VVL/SyncVal 均 PASS，
+原 54 条未知结构错误消失；Mali 原始八阶段渲染仍 FAIL，四条 09461
+真实违规继续报告。新旧激活日志格式均识别，缺激活仍拒绝。
+Redmi/Mali 独立探针各六项 PASS，含三组装饰 shader、UBO 和故意非法
+buffer 对照；未吞错误或放宽门槛。产品 Turnip 窗口、teapot/scene 的同一
+工具门仍未接入，G12 保持开放，详见[版本与回归](docs/tool-forks.md#vvl-14362-regression-2026-09-08)。

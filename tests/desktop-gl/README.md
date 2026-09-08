@@ -123,6 +123,40 @@ log, changed bytes, missing activation and missing mapped layer;
 `validation-integrity.json` retains those results. Python compilation and diff
 checks pass. G06/G12 and application acceptance remain open.
 
+## Validation dependency upgrade to 1.4.362 (2026-09-08)
+
+The source builder now pins VVL `538f91f14cd39274263eb15e6b4228f355370353`
+and its matching 1.4.362 dependencies. The SPIRV-Tools iterator fix is retained
+in fork `adc7d8b01ae855292822192ae870ab1df19e40a3`; see the
+[tool source/provenance record](../../docs/tool-forks.md).
+The compiled AArch64 layer SHA-256 is
+`6b085cc9058769fde84f88870d64fa106f863f70e32e2d2baf16f87c785fbc7e`.
+
+VVL now reports active features in a `CURRENT-VALIDATION-ENABLED` list rather
+than the earlier enum-token startup line. The collector recognizes both exact
+activation formats and requires SyncVal in every observed activation block.
+It never infers activation from settings or a warning mentioning SyncVal.
+The runner uses the existing `validate_sync` setting without the redundant,
+now-deprecated `VK_LAYER_ENABLES` environment variable.
+
+| Final run | Rendering | Independent VVL/SyncVal |
+| --- | --- | --- |
+| `20260908T200122-18e1e819` — Turnip expanded workload | PASS; all fixed images pass | PASS; active SyncVal, zero errors/VUIDs |
+| `20260908T200123-67fef8bd` — Mali expanded workload, packed option | FAIL; existing eight attribute phases | FAIL; active SyncVal, the same four direct-draw `09461` errors |
+
+Mesa, hybris and the C probe were unchanged for this tool comparison. The 54
+old-layer unknown-structure errors on Turnip are gone without any filtering.
+Mali's unsupported nonzero-firstInstance/divisor combination is still reported.
+Both logs match their device hashes and retain the new build manifest.
+The first new-layer attempts `20260908T195943-b57d18bf` and
+`20260908T195944-d50eba7f` remain FAIL because the old activation parser did
+not yet understand the new message; their records were not rewritten.
+Real old/new log copies also verify that removing activation is rejected, and
+a warning merely naming Synchronization does not pass (`activation-integrity.json`).
+Python compilation and shell/diff checks passed. This closes the reproduced
+outdated-validation-data gap for these fixed desktop cases, not the separate
+product-window/teapot gate or G06/G12 in full.
+
 ## Official upstream results (2026-09-07)
 
 All rows use the pinned upstream commit, standard Khronos validation and

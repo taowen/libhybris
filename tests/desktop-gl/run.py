@@ -106,7 +106,6 @@ if a.vertex_draws:
     env['ZINK_DEBUG']='spirv'
 if a.validation_layer:
     env['VK_INSTANCE_LAYERS']='VK_LAYER_KHRONOS_validation'
-    env['VK_LAYER_ENABLES']='VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT'
     env['VK_LAYER_SETTINGS_PATH']=remote
     env['ZINK_DEBUG']=env.get('ZINK_DEBUG','')+',validation'
 if a.display:
