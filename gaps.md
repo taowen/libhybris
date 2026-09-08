@@ -75,13 +75,13 @@ Blender 经 Zink 的启动/渲染不再作为验收条件；上述失败保留�
 
 ### 2.3 Vortek / Gladio 能借鉴什么
 
-本地 Vortek client `f2c50d8`、Gladio client `58d21ab`；宿主实现位于父项目。这些是设计参考，不是已经通过 CTS 的正确性 oracle。
+本地 Vortek client `f2c50d8`、Gladio client `58d21ab`；宿主参考源码现位于工作区 `x11-glibc-apk`，与固定 Winlator archive 的对应文件一致；详见 [源码范围核对](docs/vortek-scope.md)。这些是设计参考，不是已经通过 CTS 的正确性 oracle。
 
 | 参考 | 观察到的能力 | 移植时的缺口 |
 |---|---|---|
-| [Vortek ShaderInspector](../../android/app/src/main/cpp/vortekrenderer/src/shader_inspector.c) | scaled vertex format 转换、SPIR-V 处理、按 Mali/DXVK 条件启用处理 | 要去除 RPC object 依赖；转换前后验证、语义等价、设备/驱动条件与关闭开关 |
-| [Vortek TextureDecoder](../../android/app/src/main/cpp/vortekrenderer/src/texture_decoder.c) | BC 解码与替代 image/upload；当前 `getBCInfo` 明列 BC1–BC5 | 不是完整 BC1–BC7 支持证明；还需 mip/layer/subregion/sRGB/SNORM 等语义 |
-| [timeline 模拟](../../android/app/src/main/cpp/vortekrenderer/src/timeline_semaphore.c) | 软件状态和 submit 过滤逻辑 | 多 queue、wait-before-signal、GPU 完成可见性与生命周期必须独立验证，不能原样当规范实现 |
+| [Vortek ShaderInspector](../../../x11-glibc-apk/app/src/main/cpp/vortekrenderer/src/shader_inspector.c) | scaled vertex format 转换、SPIR-V 处理、按 Mali/DXVK 条件启用处理 | 要去除 RPC object 依赖；转换前后验证、语义等价、设备/驱动条件与关闭开关 |
+| [Vortek TextureDecoder](../../../x11-glibc-apk/app/src/main/cpp/vortekrenderer/src/texture_decoder.c) | BC 解码与替代 image/upload；当前 `getBCInfo` 明列 BC1–BC5 | 不是完整 BC1–BC7 支持证明；还需 mip/layer/subregion/sRGB/SNORM 等语义 |
+| [timeline 等待传输](../../../x11-glibc-apk/app/src/main/cpp/vortekrenderer/src/timeline_semaphore.c) | 工作线程调用原生 vkWaitSemaphores，经 eventfd 返回 RPC 等待结果 | 不是 timeline 软件模拟；libhybris 已有原生 core/KHR 透传。缺失硬件特性的模拟另属 G09，不能将这个文件当作已有实现 |
 | [Gladio 自述](../gladio/README.md) | GL 1.x 模拟、shader 转换、纹理解压，重点为旧游戏 | 是 client 项目自述，不代表父项目移植的宿主具备全部功能 |
 | [当前 Gladio 宿主](../../android/app/src/main/cpp/gladio_host.c) | GLES context、部分命令处理；switch 默认分支直接跳过 | 必须逐 API 清点，不能靠现有宿主推定完整桌面 GL 兼容 |
 

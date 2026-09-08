@@ -95,7 +95,7 @@ including general interfaces, dynamic vertex input, shader objects and graphics
 pipeline libraries. A default-off [BC1–BC7 image subset](tests/baseline/bc-images.md)
 is now connected to the ICD. [BC7 evidence](tests/baseline/bc7.md) retains a
 Redmi native sRGB filtering reference failure. [BC6H image support](tests/baseline/bc6h.md) is implemented with remaining Redmi filtering/border failures. The remaining image semantics,
-clip/cull/point-size and software timeline patches remain open. Full boundaries and evidence are in the ICD and baseline
+clip/cull/point-size handling remains open. Software timeline emulation is a separate G09 design problem; Vortek's timeline file only transports native waits (see [source audit](docs/vortek-scope.md)). Full boundaries and evidence are in the ICD and baseline
 READMEs. Mesa remains unmodified upstream; this code connects vendor drivers.
 
 Condition-variable ABI hooks and Android futex wake helpers now live in
