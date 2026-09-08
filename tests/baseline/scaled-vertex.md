@@ -30,7 +30,8 @@ has a location/signedness record. This is fixed-workload evidence; it does not
 reconstruct arbitrary application pipeline or specialization history.
 
 Reproduce, adding the device's existing `--icd-hal`, `--vulkan-loader` and VVL
-arguments (Mali also requires its documented MMUD option):
+arguments (the inspected Mali build receives its documented MMUD handling
+automatically; older library builds require the explicit option):
 
 ```sh
 python3 tests/baseline/run.py --serial DEVICE ... \

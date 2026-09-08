@@ -24,6 +24,15 @@ int main(int argc, char **argv) {
     rc = groups_probe(0);
   else if (!strcmp(mode, "groups-dlsym"))
     rc = groups_probe(1);
+  else if (!strcmp(mode, "egl-vulkan")) {
+    puts("MIXED_API phase=egl-first");
+    rc = eglprobe(3);
+    if (!rc) { puts("MIXED_API phase=vulkan-second"); rc = ubo_probe(); }
+  } else if (!strcmp(mode, "vulkan-egl")) {
+    puts("MIXED_API phase=vulkan-first");
+    rc = ubo_probe();
+    if (!rc) { puts("MIXED_API phase=egl-second"); rc = eglprobe(3); }
+  }
   else if (!strcmp(mode, "egl-life"))
     rc = egl_lifecycle_probe();
   else if (!strcmp(mode, "dispatch"))

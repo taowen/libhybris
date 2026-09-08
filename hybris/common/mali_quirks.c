@@ -14,8 +14,9 @@
 #include <string.h>
 #include <sys/auxv.h>
 
-/* Deliberately opt-in and limited to one inspected driver build. This knob
- * skips MMUD's Android-loader InstanceData inspection, not Vulkan validation.
+/* Limited to one inspected driver build. This knob skips MMUD's Android-loader
+ * InstanceData inspection, not Vulkan validation. EGL and Vulkan share its
+ * once-only decoder, so install it before either API initializes the driver.
  * Do not apply it to other driver versions without inspecting their encoding. */
 static const unsigned char driver_build_id[] = {
     0x5a,0xc4,0xef,0xe8,0xd6,0x17,0x52,0x98,0xb2,0x73,
@@ -104,7 +105,7 @@ void *hybris_mali_hook(const char *symbol, const char *requester)
 #if defined(MALI_QUIRKS) && defined(__aarch64__)
     if (strcmp(symbol, "property_get_int32") || !requester || getauxval(AT_SECURE)) return NULL;
     const char *enabled = getenv("HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK");
-    if (!enabled || strcmp(enabled, "1")) return NULL;
+    if (enabled && strcmp(enabled, "1")) return NULL;
     const char *base = strrchr(requester, '/');
     if (!base || strcmp(base + 1, "libGLES_mali.so")) return NULL;
     int saved_errno = errno;

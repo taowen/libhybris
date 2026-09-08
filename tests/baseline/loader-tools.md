@@ -137,8 +137,13 @@ not counted as a successful capture. The ordinary probe baseline remained
 
 ## Mali loader workaround
 
+The current known-build hook is automatic. `--icd-mali-loader-quirk 0`
+provides an explicit negative control; the bare flag retains its historical
+explicit-enable behavior. [Initialization and current regressions](../../docs/mali-mmud.md)
+cover both EGL/Vulkan orders. The following runs used the earlier opt-in policy.
+
 Mali MMUD opt-in (2026-09-07): `--icd-mali-loader-quirk` requests the
-[build-id-scoped loader-inspection workaround](../../hybris/vulkan/icd/README.md#inspected-mali-mmud-workaround-opt-in).
+[build-id-scoped loader-inspection workaround](../../hybris/vulkan/icd/README.md#inspected-mali-mmud-compatibility).
 It records the requested option, actual property adjustment and build-id,
 without changing the Android system property. X300 full run
 `20260907T065437-096b67ab` is 93 PASS / 4 UNSUPPORTED / 2 CRASH / 2 FAIL;
@@ -146,7 +151,7 @@ Redmi `20260907T065438-27c734a0` is 96 PASS / 4 UNSUPPORTED / 1 CRASH.
 Both capture/replay gates and the non-template widget validation workloads
 now pass on X300; core11, template/template-validation and native-groups remain
 open. Same-build opt-out `20260907T065418-7b030d21` still crashes at pipeline
-creation. This option is disabled by default and not a claim of general Mali
+creation. This option was disabled by default and was not a claim of general Mali
 compatibility. No unit-test suite was added; common's 130 export names are unchanged.
 
 ## ICD version discovery
@@ -163,6 +168,6 @@ Final full runs with `--icd-mali-loader-quirk`: X300
 `20260907T070031-042f6354` and Redmi `20260907T070032-2711e780` each have
 **97 PASS / 4 UNSUPPORTED / 1 CRASH** (native-groups). Actual ICD instance versions
 are 1.3.305 and 1.1.128 respectively. Core11 transfer, template/validation and
-both capture/replay gates now pass on X300. The driver-specific opt-in remains
-required there. Missing-HAL run `20260907T070107-1a7bcb32` correctly reports
+both capture/replay gates now pass on X300. The driver-specific opt-in was
+required by those builds. Missing-HAL run `20260907T070107-1a7bcb32` correctly reports
 icd-version FAIL without starting dependent cases. No unit-test suite was added.

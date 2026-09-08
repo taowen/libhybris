@@ -41,8 +41,9 @@ On Mali X300, `20260908T145458-d2dddd4d` failed before loading the ICD because
 `EGL_BAD_MATCH`; `20260908T150239-1ac3fa90` creates core 3.2 but still fails the
 packed vertex cases. These are negative compatibility results, not GL passes.
 `--api-version` must match the selected ICD's actual version, not a desired
-capability. The explicit build-ID-scoped Mali loader quirk is in libhybris,
-not a Mesa patch. Turnip neither stages nor uses hybris. No GL/GLSL version or
+capability. The build-ID-scoped Mali loader quirk is in libhybris. Current
+libraries apply it automatically for the inspected driver; `--mali-loader-quirk`
+retains explicit-enable behavior for older library builds. Turnip neither stages nor uses hybris. No GL/GLSL version or
 feature advertisement override is set. `--display` selects GLX, with
 `LIBGL_KOPPER_DISABLE=true` and the drisw X11 transport; rendering still uses
 Zink and the selected GPU Vulkan driver.

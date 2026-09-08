@@ -116,16 +116,24 @@ The generator verifies the registry SHA256 before producing the table.
 Loader contract:
 https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderDriverInterface.md
 
-## Inspected Mali MMUD workaround (opt-in)
+## Inspected Mali MMUD compatibility
 
-For the X300 Mali driver with GNU build-id
-`5ac4efe8d6175298b273dbaeb8f9d28e5e508e72`, set
-`HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK=1` before loading the HAL. The baseline
-runner offers `--icd-mali-loader-quirk`, applied only to ICD commands and their
-capture/replay commands. It is off by default, ignored during secure execution,
-and requires an AArch64 build with Mali quirks. The common hook matches the
-requesting `libGLES_mali.so` file's build-id; application hook callbacks still
-have precedence. Other drivers and property names use the existing path.
+The X300 Mali driver with GNU build-id
+`5ac4efe8d6175298b273dbaeb8f9d28e5e508e72` receives the loader-inspection
+workaround automatically in AArch64 builds with Mali quirks. Set
+`HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK=0` before loading either graphics API to
+disable it for diagnosis; `1` explicitly enables the same known-build handling.
+Other explicit values disable the hook. It remains disabled during secure
+execution. Application hook callbacks retain precedence; other drivers and
+property names retain their original behavior.
+
+The baseline runner accepts `--icd-mali-loader-quirk 0` for the negative
+control. Its existing bare `--icd-mali-loader-quirk` still means explicit `1`.
+Without that option, no MMUD environment override is added. Overrides apply to
+ICD commands and their capture/replay commands. The hook's automatic behavior
+also applies when EGL/GLES initializes this driver first: the inspected EGL,
+GLES and Vulkan paths share a once-only property decoder. Deferring the change
+until ICD initialization would miss that loading order.
 
 This driver reads Android loader-private data from the instance header during
 MMUD setup (observed crash at file offset 0xa237bc, header=0x1cdc0de).
@@ -140,8 +148,10 @@ before/after value; run metadata retains these observations.
 The driver path also inspects layer presence and dispatch function addresses.
 This is not a general implementation of Android loader-private data. Effects
 on other MMUD behavior, performance, arbitrary layers and applications remain
-unverified. The explicit opt-in is retained for that reason. Do not extrapolate
-to another firmware or use this option to claim full Mali compatibility.
+unverified. MMUD itself is not disabled: the driver can still select a
+replacement compute pipeline after the inspection is bypassed. Do not
+extrapolate to another firmware or claim full Mali compatibility.
+See [initialization evidence and regressions](../../../docs/mali-mmud.md).
 No dispatch header, Vulkan creation chain or validation rule is changed.
 
 Build and full runs on 2026-09-07: Redmi `20260907T065438-27c734a0` has

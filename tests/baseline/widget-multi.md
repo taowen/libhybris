@@ -80,7 +80,8 @@ python3 tests/baseline/run.py --serial SERIAL --icd-hal HAL \
   --case icd-ubo-multi --case icd-ubo-multi-validation
 ```
 
-Use the existing explicit `--icd-mali-loader-quirk` on the supported Mali build.
+The supported Mali build receives automatic MMUD handling in current libraries;
+the explicit `--icd-mali-loader-quirk` remains available for older builds.
 Version discovery and the ordinary ICD widget capture dependency are scheduled
 automatically. Validation and capture use separate probe executions.
 

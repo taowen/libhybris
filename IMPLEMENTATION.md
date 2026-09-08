@@ -57,9 +57,13 @@ repository. Since `734ec73`, Ardesk's `protocols/` is the sole wire-contract
 source, selected for standalone builds by `ARDESK_WSI_PROTOCOL_DIR`. Window
 regressions attach to the running Ardesk (`io.taowen.ardesk`, X display `:1`).
 Surface formats are based on AHB import queries, not ordinary-image support.
-The remaining product priority is X300 MMUD compatibility: the scoped opt-in
-switch passes GLX/EGL, while GLX without it exits 139. Compositor `read_pixels`,
-screen-capture protocol and GPU reset recovery remain outside current coverage.
+The inspected X300 MMUD loader workaround now activates automatically for its
+known driver build, including EGL-first processes. Mixed-API, Wayland/XCB
+validation and installed-Ardesk GLX/EGL teapot checks pass with newly staged
+libraries and no MMUD environment override; explicit disable reproduces the
+pipeline crash. [Evidence and scope](docs/mali-mmud.md) retain the remaining
+MMUD optimization limits. Compositor `read_pixels`, screen-capture protocol
+and GPU reset recovery remain outside current coverage.
 
 The parent
 submodule URL, build, packaging and launch defaults no longer depend on

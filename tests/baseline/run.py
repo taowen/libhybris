@@ -37,7 +37,7 @@ p.add_argument('--scaled-format-trace', action='store_true', help='Audit raw/eff
 p.add_argument('--packed-vertex-compat', choices=('missing', 'force'), help='Enable experimental packed SNORM vertex swizzle for ICD cases')
 p.add_argument('--scaled-vertex-compat', choices=('missing', 'force'), help='Enable experimental scaled vertex fallback for ICD cases')
 p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
-p.add_argument('--icd-mali-loader-quirk', action='store_true', help='Opt in to the build-id-scoped Mali MMUD loader-check workaround for ICD cases')
+p.add_argument('--icd-mali-loader-quirk', nargs='?', const='1', choices=('0', '1'), help='Override the automatic known-build Mali MMUD workaround for ICD cases: 0 disables, bare flag or 1 enables')
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
 p.add_argument('--validation-build-manifest', type=Path, help='Build provenance from tools/build-validation-layer.sh')
 p.add_argument('--validation-manifest', type=Path, help='Original layer JSON matching --validation-layer')
@@ -297,7 +297,7 @@ if a.icd_hal:
     metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
     # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('version', 'vertex-policy', 'vertex-policy-direct', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
+              for mode in ('version', 'egl-vulkan', 'vulkan-egl', 'vertex-policy', 'vertex-policy-direct', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch', 'point-size-linked')]
     cases.extend(('icd', 'point-size' + route, 'probe-glibc') for route in ('', '-gdpa', '-elf'))
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
@@ -392,8 +392,11 @@ try:
                 'PROBE_VK=$PWD/standard/libvulkan.so.1 '
                 './glibc/ld-linux-aarch64.so.1 --library-path ./standard:./hybris:./glibc ./'
                 + binary + ' ')
+        if backend == 'icd' and mode in {'egl-vulkan', 'vulkan-egl'}:
+            command = ('HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris '
+                       'HYBRIS_EGLPLATFORM=null ' + command)
         if backend in {'icd', 'icd-linked'} and a.icd_mali_loader_quirk:
-            command = 'HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK=1 ' + command
+            command = 'HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK=' + a.icd_mali_loader_quirk + ' ' + command
         if backend == 'icd' and mode == 'vk-init':
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 ' + command
         if backend == 'icd' and mode == 'life':
