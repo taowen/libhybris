@@ -26,16 +26,19 @@ failures and state the remaining race, multiwindow and lifetime gaps.
 
 The standard ICD now provides experimental XCB/Xlib WSI using TAWC-DRI 0.3.
 Separate native-window owners share the existing swapchain implementation;
-X11 buffer reuse follows protocol release events. The independent `tests/x11`
-tool now builds only clients and selects control, present, missing-protocol or
-acquire-timeout checks against an externally managed local display. Server
+X11 buffer reuse follows protocol release events. The `tests/x11` clients
+build only and run through `tests/wsi/run.py` against an externally managed
+local display. Server
 building, APK packaging and server lifecycle are outside libhybris. The
 following device results used the previous private-server fixture. Adreno and Mali passed all twelve final XCB/Xlib cases
 with VVL/SyncVal; the same production build passed Wayland swapchain review and
 headless regressions on both. No Mesa or anlabwc modification was needed.
 [Reproduction, provenance and evidence](tests/x11/README.md) document the
-fixed-size rootful single-window scope. G11 remains open for resize/out-of-date,
-rootless/multiwindow, disconnect recovery and longer lifetime coverage.
+fixed-size rootful single-window scope of that first fixture. Later unified
+`tests/wsi/run.py` coverage added XCB/Xlib resize/out-of-date and native-X
+surface-lost. G11 remains open for multiwindow, disconnect recovery, delayed
+release and longer lifetime coverage. hybris EGL X11 is not a remaining
+product path.
 
 ## Maintained dependency forks (2026-09-08)
 
@@ -48,10 +51,11 @@ retain replay comparison limits and the known unresolved failures.
 
 ## Current Mesa dependency
 
-The independent desktop-GL probes below use unmodified upstream `c3b008c1`,
-with Zink and Turnip. Ardesk's product build uses the `taowen/mesa` fork's
-`ardesk-wsi` branch at `980c6429e6cb83cb0c394ecad558211f63eab6db`, based on
-that same upstream commit with the shared WSI changes committed directly.
+Current desktop-GL probes reuse the product Mesa build (`taowen/mesa`
+`ardesk-wsi` at `bfe5f4ceb762504532ccdd7f19c1c2cdd31791b4`). Official
+unmodified upstream `c3b008c1` remains historical offscreen evidence only.
+The product fork is based on that upstream commit with the shared WSI
+changes committed directly.
 The product handoff is in Ardesk's `docs/GRAPHICS_CONSOLIDATION.md`. Both use this libhybris
 repository. Since `734ec73`, Ardesk's `protocols/` is the sole wire-contract
 source, selected for standalone builds by `ARDESK_WSI_PROTOCOL_DIR`. Window
@@ -316,8 +320,8 @@ it does not provide slot reclamation, IE first-touch or signal reentrancy.
 | G07 | Open | Default-off BC1–BC7 image operations have independent native sampling/byte references, mip/layer/subregion and retirement probes. BC4/BC5 include UNORM16/SNORM16 sampling, filtering and border/default-channel checks. Native RGB8 fixes the tested Mali BC1 RGB border case; Redmi remains FAIL. BC7 passes on Mali but retains a native sRGB filtering reference failure on Redmi. BC6H passes on Mali but retains filtering/border failures on Redmi. Complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
 | G08 | Open | Fixed SPIR-V tooling, reflection/hash/specialization records, before/after semantic evidence for each transform. |
 | G09 | Open | Noncoherent/staging/reuse and queue ordering cases; validate emulation against completion and memory visibility. |
-| G10 | Open | Fixed Mesa/Zink revision and GL target-profile requirements; GL workload results with backend attribution. |
-| G11 | Open | Xlib/XCB/Wayland surfaces and resize/release/fence/FD lifecycle through the matching receiver. |
+| G10 | Closed | Mesa/Zink is the product desktop GL frontend. Remaining Zink capability gaps belong to G07/G08. Do not rebuild a second GL frontend. |
+| G11 | Partial | Xlib/XCB/Wayland create/present/resize/out-of-date, FIFO release and native-X surface-lost pass the shared window gate. Remaining: multiwindow, disconnect, delayed release, concurrent destroy, long-term FD. hybris EGL X11 is retired, not a bypass. |
 | G12 | Open | Opt-in bounded evidence package associating shader/resource/draw/image/submit/present. |
 | G13 | Open | Versioned multi-vendor baselines, selected fixed CTS cases and original Blender failure fixtures. |
 

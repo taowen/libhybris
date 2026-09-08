@@ -1,0 +1,36 @@
+; SPIR-V
+; Version: 1.0
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %o
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %o Location 0
+OpDecorate %img DescriptorSet 0
+OpDecorate %img Binding 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%float = OpTypeFloat 32
+%v4 = OpTypeVector %float 4
+%int = OpTypeInt 32 1
+%v2int = OpTypeVector %int 2
+%bool = OpTypeBool
+%v4bool = OpTypeVector %bool 4
+%ptr_out = OpTypePointer Output %v4
+%o = OpVariable %ptr_out Output
+%img_ty = OpTypeImage %float 2D 0 0 0 1 Unknown
+%ptr_img = OpTypePointer UniformConstant %img_ty
+%img = OpVariable %ptr_img UniformConstant
+%zero = OpConstant %float 0
+%zero4 = OpConstantComposite %v4 %zero %zero %zero %zero
+%izero = OpConstant %int 0
+%coord = OpConstantComposite %v2int %izero %izero
+%true = OpConstantTrue %bool
+%true4 = OpConstantComposite %v4bool %true %true %true %true
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%loaded = OpLoad %img_ty %img
+%tex = OpImageFetch %v4 %loaded %coord Lod %izero
+%sel = OpSelect %v4 %true4 %tex %zero4
+OpStore %o %sel
+OpReturn
+OpFunctionEnd

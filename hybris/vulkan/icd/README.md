@@ -94,14 +94,18 @@ BufferRelease events. Missing protocol and incompatible visuals are rejected.
 Xlib shares its XCB connection without changing application event ownership.
 Current extent comes from X geometry; stale-size chains now return
 OUT_OF_DATE on acquire/present and can be replaced. Rejected presents still
-consume application waits. This remains an experimental X11 path; rootless,
-multiwindow and broader resize race coverage are not established.
+consume application waits. Shared `tests/wsi/run.py` covers XCB/Xlib/Wayland
+create, present, resize/out-of-date and native-X surface-lost. Remaining G11
+scope is multiwindow, disconnect, delayed release and longer lifetime, not a
+hybris EGL X11 window plugin.
 
-The [independent X11 developer tool](../../../tests/x11/README.md) builds only
-clients. Xwayland is built in Ardesk; `tests/wsi/run.py` attaches to the already
-running, installed `io.taowen.ardesk` compositor and its existing display/socket. Both Adreno and Mali passed XCB/Xlib present, protocol rejection
-and acquire timeout with VVL/SyncVal. No Mesa or anlabwc change was required.
-See that document for protocol provenance, exact runs and remaining G11 scope.
+The [X11 client probes](../../../tests/x11/README.md) build only clients and
+run through that same window runner. Xwayland is built in Ardesk; the runner
+attaches to the already running, installed `io.taowen.ardesk` compositor and
+its existing display/socket. Both Adreno and Mali passed XCB/Xlib present,
+protocol rejection, acquire timeout, resize and surface-lost with VVL/SyncVal.
+No Mesa or anlabwc change was required. See that document for protocol
+provenance, exact runs and remaining G11 scope.
 
 ## Sources
 
