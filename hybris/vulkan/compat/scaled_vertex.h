@@ -8,6 +8,7 @@
 struct hybris_scaled_attribute {
     uint32_t location;
     int is_signed;
+    int rb_swizzle;
 };
 
 static inline void *hybris_scaled_alloc(const VkAllocationCallbacks *allocator,

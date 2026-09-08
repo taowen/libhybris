@@ -19,6 +19,7 @@ p.add_argument('--backend',choices=['hybris','turnip'],default='hybris')
 p.add_argument('--hal',help='vendor HAL path, required for the hybris backend')
 p.add_argument('--api-version',required=True,help='actual ICD version from baseline version discovery')
 p.add_argument('--mali-loader-quirk',action='store_true')
+p.add_argument('--packed-vertex',choices=['1','force'],help='enable experimental packed SNORM vertex swizzle')
 p.add_argument('--profile',choices=['core32','compat32','core33'],default='core32')
 p.add_argument('--display',help='X11 DISPLAY for GLX; omit for surfaceless EGL')
 p.add_argument('--vertex-prepass',action='store_true',help='exercise explicit compute vertex prepass feasibility workload')
@@ -88,6 +89,7 @@ if a.display:
     env.update(DISPLAY=a.display, HYBRIS_GLX_PROBE='1', LIBGL_KOPPER_DISABLE='true',
                LIBGL_DRIVERS_PATH=remote+'/runtime/dri')
 if a.mali_loader_quirk:env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK']='1'
+if a.packed_vertex:env['HYBRIS_VULKAN_COMPAT_PACKED_VERTEX']=a.packed_vertex
 command='env '+' '.join(k+'='+shlex.quote(v) for k,v in env.items())+' ./runtime/ld-linux-aarch64.so.1 --library-path ./runtime:./hybris ./probe '+a.profile
 record={'backend':a.backend,'serial':a.serial,'command':command,'mesa':manifest,'hybris':hybris_manifest,
  'staged_elf_sha256':{str(x.relative_to(stage)):sha(x) for x in stage.rglob('*') if x.is_file()},'runner_sha256':sha(Path(__file__))}

@@ -9,6 +9,11 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
   while (!strstr(mode, shader->mode)) ++shader;
   const int multiple = shader->multiple, aggregate = shader->aggregate, specialized = shader->specialized;
   const unsigned instance_mode = shader->instance_mode;
+  const int packed = strstr(mode, "packed") != NULL;
+  const struct scaled_case packed_cases[] = {
+    {VK_FORMAT_A2R10G10B10_SNORM_PACK32, "A2R10G10B10_SNORM_PACK32", 8, 4, 1, VK_FORMAT_A2B10G10R10_SNORM_PACK32},
+    {VK_FORMAT_A2B10G10R10_SNORM_PACK32, "A2B10G10R10_SNORM_PACK32", 8, 4, 1, VK_FORMAT_A2B10G10R10_SNORM_PACK32},
+  };
   const uint32_t first_instance = instance_mode & 4 ? 3 : 0;
   struct allocation_probe allocations = {0};
   VkAllocationCallbacks callbacks = {.pUserData = &allocations,
@@ -377,8 +382,8 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
   VkPipelineCacheCreateInfo cache_ci = {.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
   if (specialized) CHECK(p_vkCreatePipelineCache(device, &cache_ci, &callbacks, &cache));
   unsigned tested = 0, unsupported = 0, failures = 0;
-  for (unsigned c = 0; c < sizeof(cases)/sizeof(cases[0]); ++c) {
-    const struct scaled_case *f = &cases[c];
+  for (unsigned c = 0; c < (packed ? 2 : sizeof(cases)/sizeof(cases[0])); ++c) {
+    const struct scaled_case *f = packed ? &packed_cases[c] : &cases[c];
     VkFormatProperties props;
     p_vkGetPhysicalDeviceFormatProperties(pd, f->format, &props);
     VkFormatProperties2 props2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
@@ -425,7 +430,19 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
       for (unsigned phase = 0; phase < 3; ++phase) {
         float expected[20] = {0};
         unsigned char data[192] = {0};
-        if (!instance_mode) for (unsigned col = 0; col < (aggregate ? 4u : 1u); ++col) {
+        if (packed) {
+          static const int values[3][4] = {{-512, 0, 511, -2}, {511, -257, -512, 1}, {123, -123, 0, 0}};
+          uint32_t word = 0;
+          for (unsigned component = 0; component < 4; ++component) {
+            int value = values[phase][component];
+            expected[component] = value / (component == 3 ? 1.0f : 511.0f);
+            if (expected[component] < -1) expected[component] = -1;
+            unsigned shift = component == 3 ? 30 : (c == 0 ? 2 - component : component) * 10;
+            word |= ((uint32_t)value & (component == 3 ? 3u : 1023u)) << shift;
+          }
+          for (unsigned vertex = 0; vertex < 3; ++vertex) memcpy(data + vertex * 4, &word, 4);
+        }
+        if (!instance_mode && !packed) for (unsigned col = 0; col < (aggregate ? 4u : 1u); ++col) {
           const struct scaled_case *format = aggregate && col == 2 ? second : f;
           expected[col * 4 + 3] = 1;
           for (unsigned component = 0; component < 4; ++component) {

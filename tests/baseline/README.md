@@ -2404,6 +2404,9 @@ coverage limits.
 
 ### Scaled format policy evidence
 
+[Packed SNORM vertex evidence](packed-vertex.md) documents the separate optional
+static vertex swizzle, actual shader audits and the remaining dynamic-input gap.
+
 [Format policy evidence](scaled-format-policy.md) describes the optional bounded
 raw/effective capability trace, independent native query comparison, and actual
 Adreno/Mali runs. Use `--scaled-format-trace` with scaled compatibility enabled.

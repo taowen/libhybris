@@ -18,6 +18,7 @@ struct aggregate_id {
 struct shape { size_t leaves, nodes, locations; unsigned depth, floating; };
 struct node {
     uint32_t root, type, parent, index, index_id, input, loaded, address, location;
+    uint32_t fetched;
     unsigned depth;
 };
 struct lowering {
@@ -31,6 +32,7 @@ struct lowering {
     struct node *nodes;
     size_t used;
     uint32_t bound, next, integer;
+    uint32_t fetch_scalar, fetch_type, fetch_pointer;
 };
 
 static uint32_t fresh(struct lowering *l)
@@ -114,7 +116,23 @@ static void initialize_inputs(struct lowering *l, uint32_t *result, size_t *out)
         const struct node *node = &l->nodes[i];
         if (!node->input) continue;
         result[(*out)++] = (4u << 16) | 61;
-        result[(*out)++] = node->type; result[(*out)++] = node->loaded; result[(*out)++] = node->input;
+        result[(*out)++] = node->fetched ? l->fetch_type : node->type;
+        result[(*out)++] = node->fetched ? node->fetched : node->loaded;
+        result[(*out)++] = node->input;
+        if (node->fetched) {
+            const struct aggregate_id *type = &l->ids[node->type];
+            if (type->op == 22) {
+                result[(*out)++] = (5u << 16) | 81; /* OpCompositeExtract */
+                result[(*out)++] = node->type; result[(*out)++] = node->loaded;
+                result[(*out)++] = node->fetched; result[(*out)++] = 2;
+            } else {
+                static const uint32_t components[] = {2, 1, 0, 3};
+                result[(*out)++] = ((5u + type->count) << 16) | 79; /* OpVectorShuffle */
+                result[(*out)++] = node->type; result[(*out)++] = node->loaded;
+                result[(*out)++] = node->fetched; result[(*out)++] = node->fetched;
+                for (uint32_t c = 0; c < type->count; ++c) result[(*out)++] = components[c];
+            }
+        }
         result[(*out)++] = ((4u + node->depth) << 16) | 65;
         result[(*out)++] = l->ids[node->type].private_pointer;
         result[(*out)++] = node->address; result[(*out)++] = node->root;
@@ -205,7 +223,7 @@ VkResult hybris_spirv_aggregate(const uint32_t *code, size_t size, const char *e
         if (id->op != 59 || id->storage != 1 || !id->interface || id->location == UINT32_MAX) continue;
         uint32_t pointer = id->type, type = l.ids[pointer].element;
         if (type >= l.bound) goto done;
-        if (l.ids[type].op == 21 || l.ids[type].op == 22 || l.ids[type].op == 23) continue;
+        int scalar_vector = l.ids[type].op == 21 || l.ids[type].op == 22 || l.ids[type].op == 23;
         struct shape shape;
         if (!shape_of(&l, type, 0, &shape)) {
             if (l.constant_status != VK_SUCCESS) status = l.constant_status;
@@ -214,7 +232,8 @@ VkResult hybris_spirv_aggregate(const uint32_t *code, size_t size, const char *e
         if (shape.locations > UINT32_MAX - id->location) goto done;
         int affected = 0;
         for (uint32_t j = 0; j < attribute_count; ++j)
-            affected |= attributes[j].location >= id->location && attributes[j].location - id->location < shape.locations;
+            affected |= (!scalar_vector || attributes[j].rb_swizzle) &&
+                attributes[j].location >= id->location && attributes[j].location - id->location < shape.locations;
         if (!affected) continue;
         if (!shape.floating || shape.nodes > SIZE_MAX - node_count || shape.leaves > SIZE_MAX - leaf_count ||
             shape.leaves > SIZE_MAX / (shape.depth + 1) || shape.leaves * shape.depth > SIZE_MAX - path_words) goto done;
@@ -229,6 +248,29 @@ VkResult hybris_spirv_aggregate(const uint32_t *code, size_t size, const char *e
     for (uint32_t i = 1; i < l.bound; ++i) if (l.ids[i].root) {
         uint32_t location = l.ids[i].location, type = l.ids[l.ids[i].type].element;
         if (!pointer_type(&l, type, 0) || !make_nodes(&l, i, type, 0, 0, 0, &location)) goto done;
+    }
+    for (size_t i = 0; i < l.used; ++i) {
+        struct node *node = &l.nodes[i];
+        if (!node->input) continue;
+        for (uint32_t j = 0; j < attribute_count; ++j) {
+            if (!attributes[j].rb_swizzle || attributes[j].location != node->location) continue;
+            if (l.ids[node->root].component) {
+                *reason = "packed vertex swizzle does not support split Component inputs";
+                goto done;
+            }
+            if (!(node->fetched = fresh(&l))) goto done;
+            if (!l.fetch_scalar) {
+                l.fetch_scalar = l.ids[node->type].op == 23 ? l.ids[node->type].element : node->type;
+                for (uint32_t t = 1; t < l.bound; ++t)
+                    if (l.ids[t].op == 23 && l.ids[t].element == l.fetch_scalar && l.ids[t].count == 4)
+                        l.fetch_type = t;
+                if (!l.fetch_type) {
+                    l.fetch_type = fresh(&l);
+                    l.fetch_pointer = fresh(&l);
+                } else l.fetch_pointer = pointer_type(&l, l.fetch_type, 1);
+                if (!l.fetch_type || !l.fetch_pointer) goto done;
+            }
+        }
     }
     uint32_t function = 0;
     int first_block = 0;
@@ -328,6 +370,12 @@ VkResult hybris_spirv_aggregate(const uint32_t *code, size_t size, const char *e
         }
         if (at < first_function && op == 59) continue;
         if (at == first_function) {
+            if (l.fetch_type >= l.bound) {
+                result[out++] = (4u << 16) | 23; result[out++] = l.fetch_type;
+                result[out++] = l.fetch_scalar; result[out++] = 4;
+                result[out++] = (4u << 16) | 32; result[out++] = l.fetch_pointer;
+                result[out++] = 1; result[out++] = l.fetch_type;
+            }
             if (l.integer >= l.bound) {
                 result[out++] = (4u << 16) | 21; result[out++] = l.integer; result[out++] = 32; result[out++] = 0;
             }
@@ -352,7 +400,8 @@ VkResult hybris_spirv_aggregate(const uint32_t *code, size_t size, const char *e
                 out += n;
             }
             for (size_t i = 0; i < l.used; ++i) if (l.nodes[i].input) {
-                result[out++] = (4u << 16) | 59; result[out++] = l.ids[l.nodes[i].type].input_pointer;
+                result[out++] = (4u << 16) | 59;
+                result[out++] = l.nodes[i].fetched ? l.fetch_pointer : l.ids[l.nodes[i].type].input_pointer;
                 result[out++] = l.nodes[i].input; result[out++] = 1;
             }
         }

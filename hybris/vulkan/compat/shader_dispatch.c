@@ -147,13 +147,19 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
      * dereferencing it; dynamic input would also require command-time shader
      * variants, which this experimental pipeline-only fallback cannot supply. */
     int point = device->point_size && hybris_point_size_pipeline(info);
-    if (info->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR) return device->mask ? VK_ERROR_UNKNOWN : VK_SUCCESS;
+    if (info->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR) {
+        *reason = "vertex format conversion does not support graphics pipeline libraries";
+        return device->mask ? VK_ERROR_UNKNOWN : VK_SUCCESS;
+    }
     int vertex_stage = 0;
     for (uint32_t j = 0; j < info->stageCount; ++j)
         vertex_stage |= info->pStages[j].stage == VK_SHADER_STAGE_VERTEX_BIT;
     if (!vertex_stage) return VK_SUCCESS;
     if (info->pDynamicState) for (uint32_t j = 0; j < info->pDynamicState->dynamicStateCount; ++j)
-        if (device->mask && info->pDynamicState->pDynamicStates[j] == VK_DYNAMIC_STATE_VERTEX_INPUT_EXT) return VK_ERROR_UNKNOWN;
+        if (device->mask && info->pDynamicState->pDynamicStates[j] == VK_DYNAMIC_STATE_VERTEX_INPUT_EXT) {
+            *reason = "vertex format conversion does not support dynamic vertex input";
+            return VK_ERROR_UNKNOWN;
+        }
     const VkPipelineVertexInputStateCreateInfo *input = info->pVertexInputState;
     unsigned count = 0;
     if (input) for (uint32_t j = 0; j < input->vertexAttributeDescriptionCount; ++j)
@@ -164,8 +170,10 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
      * the divisor chain (EXT/KHR aliases) intact for the backend; reject other
      * vertex-input extensions whose interaction has not been established. */
     for (const VkBaseInStructure *chain = count ? input->pNext : NULL; chain; chain = chain->pNext)
-        if (chain->sType != VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT)
+        if (chain->sType != VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT) {
+            *reason = "vertex format conversion does not support this vertex input extension chain";
             return VK_ERROR_UNKNOWN;
+        }
     struct hybris_scaled_attribute *attrs = count ? hybris_scaled_alloc(allocator, count * sizeof(*attrs), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) : NULL;
     copy->attributes = count ? hybris_scaled_alloc(allocator, input->vertexAttributeDescriptionCount * sizeof(*copy->attributes), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) : NULL;
     copy->stages = hybris_scaled_alloc(allocator, info->stageCount * sizeof(*copy->stages), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
@@ -180,7 +188,8 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
     if (copy->attributes) for (uint32_t j = 0; j < input->vertexAttributeDescriptionCount; ++j)
         for (unsigned i = 0; i < HYBRIS_SCALED_FORMAT_COUNT; ++i)
             if ((device->mask & (1u << i)) && copy->attributes[j].format == hybris_scaled_formats[i].scaled) {
-                attrs[count++] = (struct hybris_scaled_attribute){copy->attributes[j].location, hybris_scaled_formats[i].is_signed};
+                attrs[count++] = (struct hybris_scaled_attribute){copy->attributes[j].location,
+                    hybris_scaled_formats[i].is_signed, hybris_scaled_formats[i].rb_swizzle};
                 copy->attributes[j].format = hybris_scaled_formats[i].integer;
                 break;
             }

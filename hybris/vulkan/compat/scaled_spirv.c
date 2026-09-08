@@ -109,6 +109,7 @@ static VkResult convert_scaled(const uint32_t *code, size_t size, const char *en
             goto done;
         }
         for (uint32_t j = 0; j < attribute_count; ++j) {
+            if (attributes[j].rb_swizzle) continue;
             if (ids[i].location != attributes[j].location) continue;
             uint32_t pointer = ids[i].element;
             if (ids[pointer].opcode != OP_TYPE_POINTER || ids[pointer].storage != 1 ||

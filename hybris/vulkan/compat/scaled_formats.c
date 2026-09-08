@@ -10,13 +10,14 @@
 #include <sys/auxv.h>
 
 const struct hybris_scaled_format_pair hybris_scaled_formats[HYBRIS_SCALED_FORMAT_COUNT] = {
-#define PAIR(c) { VK_FORMAT_##c##_USCALED, VK_FORMAT_##c##_UINT, 0 }, \
-                { VK_FORMAT_##c##_SSCALED, VK_FORMAT_##c##_SINT, 1 }
-    PAIR(R8), PAIR(R8G8), PAIR(R8G8B8A8), PAIR(R16), PAIR(R16G16), PAIR(R16G16B16A16)
+#define PAIR(c) { VK_FORMAT_##c##_USCALED, VK_FORMAT_##c##_UINT, 0, 0 }, \
+                { VK_FORMAT_##c##_SSCALED, VK_FORMAT_##c##_SINT, 1, 0 }
+    PAIR(R8), PAIR(R8G8), PAIR(R8G8B8A8), PAIR(R16), PAIR(R16G16), PAIR(R16G16B16A16),
+    { VK_FORMAT_A2R10G10B10_SNORM_PACK32, VK_FORMAT_A2B10G10R10_SNORM_PACK32, 0, 1 }
 #undef PAIR
 };
 static pthread_once_t config_once = PTHREAD_ONCE_INIT;
-static int enabled, force, trace;
+static int enabled, force, packed_enabled, packed_force, trace;
 static _Atomic unsigned traced_devices;
 static void configure(void)
 {
@@ -24,10 +25,13 @@ static void configure(void)
     const char *value = getenv("HYBRIS_VULKAN_COMPAT_SCALED_VERTEX");
     force = value && !strcmp(value, "force");
     enabled = force || (value && !strcmp(value, "1"));
+    value = getenv("HYBRIS_VULKAN_COMPAT_PACKED_VERTEX");
+    packed_force = value && !strcmp(value, "force");
+    packed_enabled = packed_force || (value && !strcmp(value, "1"));
     value = getenv("HYBRIS_VULKAN_COMPAT_FORMAT_TRACE");
     trace = value && !strcmp(value, "1");
 }
-int hybris_scaled_enabled(void) { pthread_once(&config_once, configure); return enabled; }
+int hybris_scaled_enabled(void) { pthread_once(&config_once, configure); return enabled || packed_enabled; }
 
 struct decision {
     VkFormatProperties raw, fetch, effective;
@@ -41,11 +45,17 @@ static struct decision decide(PFN_vkGetPhysicalDeviceFormatProperties query,
     query(physical, hybris_scaled_formats[i].scaled, &d.raw);
     query(physical, hybris_scaled_formats[i].integer, &d.fetch);
     d.effective = d.raw;
+    int swizzle = hybris_scaled_formats[i].rb_swizzle;
+    int active = swizzle ? packed_enabled : enabled;
+    int forced = swizzle ? packed_force : force;
     int native = !!(d.raw.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT);
     int integer = !!(d.fetch.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT);
-    d.fallback = (force || !native) && integer;
-    d.reason = !force && native ? "native-scaled" : !integer ? "integer-fetch-unavailable" :
-               force ? "forced-integer-fetch" : "missing-scaled-fetch";
+    d.fallback = active && (forced || !native) && integer;
+    d.reason = !active ? "disabled" : !forced && native ? "native-scaled" : !integer ? "integer-fetch-unavailable" :
+               forced ? "forced-integer-fetch" : "missing-scaled-fetch";
+    if (swizzle && active)
+        d.reason = !forced && native ? "native-packed" : !integer ? "swizzled-fetch-unavailable" :
+                   forced ? "forced-swizzled-fetch" : "missing-packed-fetch";
     if (d.fallback) d.effective.bufferFeatures |= VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
     return d;
 }
@@ -71,6 +81,7 @@ unsigned hybris_scaled_mask(VkDevice device, VkPhysicalDevice physical,
     }
     unsigned mask = 0;
     if (query) for (unsigned i = 0; i < HYBRIS_SCALED_FORMAT_COUNT; ++i) {
+        if (hybris_scaled_formats[i].rb_swizzle ? !packed_enabled : !enabled) continue;
         struct decision d = decide(query, physical, i);
         if (d.fallback) mask |= 1u << i;
         if (slot < 16) fprintf(stderr,

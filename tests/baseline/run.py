@@ -34,6 +34,7 @@ p.add_argument('--bc-textures', choices=('missing', 'force'), help='Enable exper
 p.add_argument('--point-size-compat', action='store_true', help='Remove constant-one PointSize outputs only in eligible non-point pipelines')
 p.add_argument('--unused-builtins', action='store_true', help='Remove provably unaccessed output clip/cull declarations in ICD shaders')
 p.add_argument('--scaled-format-trace', action='store_true', help='Audit raw/effective scaled format decisions; requires scaled compatibility')
+p.add_argument('--packed-vertex-compat', choices=('missing', 'force'), help='Enable experimental packed SNORM vertex swizzle for ICD cases')
 p.add_argument('--scaled-vertex-compat', choices=('missing', 'force'), help='Enable experimental scaled vertex fallback for ICD cases')
 p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
 p.add_argument('--icd-mali-loader-quirk', action='store_true', help='Opt in to the build-id-scoped Mali MMUD loader-check workaround for ICD cases')
@@ -53,6 +54,8 @@ if a.scaled_format_trace and not a.scaled_vertex_compat:
     p.error('--scaled-format-trace requires --scaled-vertex-compat')
 if a.scaled_vertex_compat and not a.icd_hal:
     p.error('--scaled-vertex-compat requires --icd-hal')
+if a.packed_vertex_compat and not a.icd_hal:
+    p.error('--packed-vertex-compat requires --icd-hal')
 if a.icd_mali_loader_quirk and not a.icd_hal:
     p.error('--icd-mali-loader-quirk requires --icd-hal')
 if bool(a.validation_layer) != bool(a.validation_manifest):
@@ -266,7 +269,7 @@ for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'scaled-vertex', binary))
     cases.append((backend, 'scaled-vertex-multi', binary))
     cases.append((backend, 'scaled-vertex-literal', binary))
-    cases.extend((backend, 'scaled-vertex-' + shape, binary) for shape in ('builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
+    cases.extend((backend, 'scaled-vertex-' + shape, binary) for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
 
 timeline_queue_cases = ('timeline-queues-core', 'timeline-queues-khr')
 timeline_cases = tuple('timeline-' + family + suffix for family in ('core', 'khr')
@@ -295,7 +298,7 @@ if a.icd_hal:
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch', 'point-size-linked')]
     cases.extend(('icd', 'point-size' + route, 'probe-glibc') for route in ('', '-gdpa', '-elf'))
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
-    cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
+    cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
     cases.extend(('icd', 'scaled-vertex-builtins-' + route, 'probe-glibc') for route in ('gdpa', 'elf'))
     cases.append(('icd-linked', 'scaled-vertex-builtins-linked', 'probe-glibc-linked'))
     cases.append(('icd-linked', 'bc-images-linked', 'probe-glibc-linked'))
@@ -328,7 +331,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
+        cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
         cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'bc-decode-validation', 'bc-images-validation', 'bc-images-gdpa-validation', 'bc-images-dlsym-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-multi-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
@@ -398,6 +401,12 @@ try:
             command = 'HYBRIS_VULKAN_COMPAT_UNUSED_BUILTINS=1 ' + command
         if backend in {'icd', 'icd-linked'} and a.bc_textures:
             command = 'HYBRIS_BC_TEXTURES=' + a.bc_textures + ' ' + command
+        if backend in {'icd', 'icd-linked'} and a.packed_vertex_compat:
+            command = 'HYBRIS_VULKAN_COMPAT_PACKED_VERTEX=' + ('force' if a.packed_vertex_compat == 'force' else '1') + ' ' + command
+            if 'packed' in mode:
+                dump_remote = remote + '/' + backend + '-' + mode + '-shaders'
+                shell('mkdir -p ' + shlex.quote(dump_remote), check=True)
+                command = 'HYBRIS_VULKAN_SCALED_DUMP_DIR=' + shlex.quote(dump_remote) + ' ' + command
         if backend in {'icd', 'icd-linked'} and a.scaled_vertex_compat:
             command = 'HYBRIS_VULKAN_COMPAT_SCALED_VERTEX=' + ('force' if a.scaled_vertex_compat == 'force' else '1') + ' ' + command
             if a.scaled_format_trace:
@@ -438,7 +447,21 @@ try:
                 shader_evidence_error = str(exc)
                 print(name, 'point-size shader evidence failed:', exc)
                 code = code or 2
-        if backend in {'icd', 'icd-linked'} and mode.startswith('scaled-vertex') and a.scaled_vertex_compat:
+        if backend in {'icd', 'icd-linked'} and 'packed' in mode and a.packed_vertex_compat:
+            dump_local = a.out / (name + '-shaders')
+            dump_local.mkdir()
+            subprocess.run(adb + ['pull', dump_remote + '/.', str(dump_local)], check=True,
+                           stdout=subprocess.DEVNULL, timeout=30)
+            from packed_evidence import packed_evidence
+            try:
+                width = int(re.search(r'packed([1-4])', mode).group(1))
+                evidence = packed_evidence(dump_local, decoded, a.bundle / 'src/shaders/packed.inc', width)
+                (a.out / (name + '-shaders.json')).write_text(json.dumps(evidence, indent=2) + '\n')
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                shader_evidence_error = str(exc)
+                print(name, 'packed shader evidence failed:', exc, flush=True)
+                code = code or 2
+        if backend in {'icd', 'icd-linked'} and mode.startswith('scaled-vertex') and a.scaled_vertex_compat and 'packed' not in mode:
             dump_local = a.out / (name + '-shaders')
             dump_local.mkdir()
             subprocess.run(adb + ['pull', dump_remote + '/.', str(dump_local)], check=True,

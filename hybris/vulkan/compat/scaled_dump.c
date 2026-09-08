@@ -46,7 +46,10 @@ void hybris_scaled_dump(const uint32_t *original, size_t original_size,
     int after = write_data(directory, id, "converted", "spv", converted, converted_size);
     fprintf(stderr, "HYBRIS_SCALED_DUMP id=%u original=%d converted=%d attributes=%u\n", id, before, after, count);
     for (uint32_t i = 0; i < count; ++i)
-        fprintf(stderr, "HYBRIS_SCALED_ATTRIBUTE id=%u location=%u signed=%d\n", id, attributes[i].location, attributes[i].is_signed);
+        if (attributes[i].rb_swizzle)
+            fprintf(stderr, "HYBRIS_PACKED_ATTRIBUTE id=%u location=%u swizzle=bgra\n", id, attributes[i].location);
+        else
+            fprintf(stderr, "HYBRIS_SCALED_ATTRIBUTE id=%u location=%u signed=%d\n", id, attributes[i].location, attributes[i].is_signed);
     if (specialization) {
         int saved = specialization->dataSize <= 65536 && specialization->mapEntryCount <= 1024 &&
             write_data(directory, id, "specialization", "bin", specialization->pData, specialization->dataSize);

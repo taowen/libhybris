@@ -2,6 +2,7 @@
 #ifndef HYBRIS_SCALED_FIXTURE_H
 #define HYBRIS_SCALED_FIXTURE_H
 #include "shaders/scaled.vert.inc"
+#include "shaders/packed.inc"
 #include "shaders/scaled.builtins.inc"
 #include "shaders/scaled.divisor.inc"
 #include "shaders/scaled.multi.inc"
@@ -31,6 +32,10 @@ static const struct scaled_shader {
   unsigned multiple, aggregate, specialized, direct, instance_mode;
 } shaders[] = {
 #define SHADER(mode, code, multi, aggregate, spec, direct) {mode, code, sizeof(code), multi, aggregate, spec, direct, 0}
+  SHADER("packed1", kPacked1, 0, 0, 0, 0),
+  SHADER("packed2", kPacked2, 0, 0, 0, 0),
+  SHADER("packed3", kPacked3, 0, 0, 0, 0),
+  SHADER("packed4", kPacked4, 0, 0, 0, 0),
   /* Bits: instanced input, zero divisor, nonzero firstInstance. */
   {"divisor-zero-base", kScaledDivisorSpv, sizeof(kScaledDivisorSpv), 0, 0, 0, 0, 7},
   {"divisor-zero", kScaledDivisorSpv, sizeof(kScaledDivisorSpv), 0, 0, 0, 0, 3},

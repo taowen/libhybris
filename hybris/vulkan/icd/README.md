@@ -178,6 +178,13 @@ The 1.0 HAL fallback and multiple HALs in one process remain untested here.
 
 ## Experimental scaled vertex fallback
 
+`HYBRIS_VULKAN_COMPAT_PACKED_VERTEX=1` enables a separate, default-off static
+vertex fallback for missing A2R10G10B10 SNORM fetch using native A2B10G10R10 SNORM
+and shader R/B selection. `force` exercises it on native-capable devices.
+See [packed vertex evidence](../../../tests/baseline/packed-vertex.md) for the
+scalar/vector probes and limitations. Dynamic vertex input remains unsupported;
+the current official Mesa desktop GL draw on Mali still fails with this option.
+
 `HYBRIS_VULKAN_COMPAT_SCALED_VERTEX=1` enables an initial scaled vertex fallback
 in this standard ICD. It is disabled by default and ignored for secure
 execution. For R/RG/RGBA 8-bit and 16-bit USCALED/SSCALED, a missing vertex-buffer
