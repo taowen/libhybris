@@ -44,3 +44,27 @@ The current installed APK does not provide a connectable external :0 for these
 X11 checks. Successful TAWC-DRI presentation against an externally managed
 server remains to be rerun once its owner provides that display. Historical
 private-server passes are retained as history, not claimed for this workflow.
+
+
+The old installed test APK explicitly set `WLR_XWAYLAND=/system/bin/false`:
+its compositor never owned an enabled Xwayland service, because the former
+probe supervisor supplied it. Its mere presence is therefore insufficient for
+new X11 tests. Ardesk already supplies `libxwayland.so` via WLR_XWAYLAND and
+anlabwc sets DISPLAY from the Xwayland instance it creates. Enabling that
+existing owner-side chain and exposing its actual endpoint resolves the missing
+service prerequisite; the local display number must not be guessed.
+
+The client runner now accepts explicit `--runtime-dir` and `--wayland-display`
+(including an absolute socket path), so an external APK need not reproduce the
+old fixture's directory layout. X11-only attachment checks the package identity
+without imposing a Wayland socket location; its X client still verifies the
+actual display connection and protocol. No new anlabwc test service or control
+protocol is introduced.
+
+Endpoint follow-up validation: the Wayland probe rebuilt successfully using
+`tests/wsi/build.sh`. Mali `20260908T131733-abc11dc3` passed 24 readbacks and
+six screenshots with explicit runtime directory and an absolute Wayland socket
+path. Mali XCB control `20260908T131824-d682e188`, with a deliberately nonexistent
+Wayland runtime directory, reached the X connection and failed there with
+`api=xcb error=1` for :0. It did not reject an irrelevant Wayland endpoint or
+launch a server. Both runs left the observed compositor running.

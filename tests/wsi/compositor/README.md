@@ -5,7 +5,9 @@ The previous JNI/Java APK host and builder have been removed from this tree.
 Their historical implementation remains available in git history.
 
 Install and start a debuggable compositor APK using its owning project. It
-must provide `files/runtime/wayland-0` under its application data directory.
+must provide a Wayland endpoint for Wayland checks. The runner defaults to
+`files/runtime/wayland-0`; `--runtime-dir` and `--wayland-display` select the
+actual endpoint published by the APK. X11-only checks use DISPLAY directly.
 For X11 checks its compositor/desktop must also start a local X display with
 TAWC-DRI 0.3. Xwayland and its patches belong to Ardesk or that external APK;
 android_wlegl belongs to anlabwc. Configure X authentication there as needed.

@@ -17,7 +17,10 @@ python3 tests/x11/build.py
 Install/start the compositor with its owning project's tooling. See the
 [external service contract](compositor/README.md). The default package is
 `io.taowen.hybriswsitest`; `--package` selects another installed debuggable
-compositor package. The expected Wayland socket is `files/runtime/wayland-0`.
+compositor package. The default Wayland socket is `files/runtime/wayland-0`. Use `--runtime-dir`
+and `--wayland-display` for the endpoints supplied by the APK; an absolute
+Wayland socket path is also accepted. X11-only checks do not require a Wayland
+socket at that default path.
 The compositor/desktop must supply an existing local X display for X11 tests;
 `--display :0` is the default, and `--xauthority` supplies an optional device
 path to its authentication file. Missing services are errors, with no private

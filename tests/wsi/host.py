@@ -15,12 +15,13 @@ from manifest import sha256_file, verify_manifest
 PACKAGE = 'io.taowen.hybriswsitest'
 
 class Host:
-    def __init__(self, serial, out, package=PACKAGE):
+    def __init__(self, serial, out, package=PACKAGE, runtime_dir=None, wayland=None):
         self.package = package
         self.adb = [os.environ.get('ADB', 'adb'), '-s', serial]
         self.out = out
         self.files = '/data/user/0/' + self.package + '/files'
-        self.record = {'serial': serial, 'package': package, 'runs': [],
+        self.wayland_socket = (str(Path(runtime_dir or self.files + '/runtime') / wayland) if wayland else None)
+        self.record = {'serial': serial, 'package': package, 'wayland_socket': self.wayland_socket, 'runs': [],
                        'host_sha256': sha256_file(Path(__file__)), 'screen_settle_seconds': .6}
         locks = Path(__file__).resolve().parent / 'build/locks'
         locks.mkdir(parents=True, exist_ok=True)
@@ -49,11 +50,11 @@ class Host:
         deadline = time.monotonic() + 20
         previous = None; since = time.monotonic()
         while True:
-            ready = self.app('test -S files/runtime/wayland-0', capture_output=True).returncode == 0
+            ready = self.wayland_socket is None or self.app('test -S ' + shlex.quote(self.wayland_socket), capture_output=True).returncode == 0
             current = self.identity() if ready else None
             if current and current == previous and time.monotonic() - since >= .3: break
             if current != previous: previous = current; since = time.monotonic()
-            if time.monotonic() >= deadline: raise RuntimeError('installed compositor is not running with a stable Wayland socket; start it through its owning APK')
+            if time.monotonic() >= deadline: raise RuntimeError('installed compositor or requested Wayland endpoint is not ready; start it through its owning APK')
             time.sleep(.1)
         self.record['identity'] = current
         apk = self.shell('pm path ' + self.package, capture_output=True, text=True, check=True).stdout.strip().removeprefix('package:')

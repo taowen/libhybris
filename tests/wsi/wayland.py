@@ -29,7 +29,7 @@ def run(a, host, out):
     env = {'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker',
            'HYBRIS_EGLPLATFORM_DIR': remote + '/hybris/libhybris',
            'HYBRIS_VULKANPLATFORM_DIR': remote + '/hybris/libhybris',
-           'HYBRIS_ANDROID_SDK_VERSION': sdk, 'XDG_RUNTIME_DIR': files + '/runtime',
+           'HYBRIS_ANDROID_SDK_VERSION': sdk, 'XDG_RUNTIME_DIR': a.runtime_dir,
            'WAYLAND_DISPLAY': a.wayland}
     libraries = './hybris:./glibc'
     layer_meta = {}

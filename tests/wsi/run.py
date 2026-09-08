@@ -17,6 +17,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--serial', required=True)
     p.add_argument('--package', default=PACKAGE, help='installed debuggable compositor package; must already be running')
+    p.add_argument('--runtime-dir', help='device-side XDG_RUNTIME_DIR; defaults to the package files/runtime directory')
+    p.add_argument('--wayland-display', dest='wayland', default='wayland-0', help='existing Wayland socket name or absolute device path')
     p.add_argument('--display', default=':0', help='existing local X display supplied by the compositor')
     p.add_argument('--xauthority', help='device-side Xauthority path accessible to the compositor UID')
     p.add_argument('--platform', choices=('wayland', 'xcb', 'xlib'), default='wayland')
@@ -50,11 +52,14 @@ def main():
     if a.probe is None: a.probe = ROOT / ('tests/wsi/build' if wayland else 'tests/x11/build')
     if a.timeout is None: a.timeout = (180 if a.validation_layer or a.capture_tools else 65) if wayland else 35
     if not 5 <= a.timeout <= 300: p.error('--timeout must be between 5 and 300 seconds')
-    a.wayland, a.api = 'wayland-0', a.platform
+    a.api = a.platform
+    if a.runtime_dir is None: a.runtime_dir = '/data/user/0/' + a.package + '/files/runtime'
+    if not a.runtime_dir.startswith('/'): p.error('--runtime-dir must be an absolute device path')
+    if not a.wayland or (not a.wayland.startswith('/') and '/' in a.wayland): p.error('--wayland-display must be a socket name or absolute device path')
     a.swapchain_review = a.case == 'swapchain-review'
     out = a.out / (time.strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8])
     out.mkdir(parents=True)
-    host = Host(a.serial, out, a.package)
+    host = Host(a.serial, out, a.package, a.runtime_dir, a.wayland if wayland else None)
     host.record.update(platform=a.platform, case=a.case, requested_runs=a.repeat, status='FAIL')
     started = time.monotonic()
     try:
