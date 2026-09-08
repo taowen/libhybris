@@ -68,6 +68,8 @@ int main(int argc, char **argv) {
     rc = tls_probe();
   else if (!strcmp(mode, "native-buffer"))
     rc = native_buffer_probe();
+  else if (!strncmp(mode, "vertex-policy", 13))
+    rc = vertex_policy_probe(strstr(mode, "direct") != NULL, strstr(mode, "restricted") != NULL);
   else if (!strcmp(mode, "caps2"))
     rc = caps2_probe();
   else if (!strcmp(mode, "caps"))

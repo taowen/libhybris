@@ -11,4 +11,5 @@ VkResult hybris_shader_device_create(VkDevice device, VkPhysicalDevice physical,
     const VkAllocationCallbacks *allocator);
 void hybris_shader_device_destroy(VkDevice device);
 PFN_vkVoidFunction hybris_shader_proc(const char *name);
+int hybris_shader_device_proc_allowed(VkDevice device, const char *name);
 #endif

@@ -7,6 +7,7 @@
 #include "swapchain.h"
 #include "../compat/shader_dispatch.h"
 #include "../compat/shader_cleanup.h"
+#include "../compat/shader_policy.h"
 #include "../compat/bc_policy.h"
 #include <pthread.h>
 #include <inttypes.h>
@@ -335,7 +336,9 @@ static VkResult VKAPI_CALL create_device(VkPhysicalDevice physical,
 static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical,
     const char *layer, uint32_t *count, VkExtensionProperties *properties)
 {
-    if (layer || !hybris_bc_physical_mask(physical))
+    unsigned bc_mask = layer ? 0 : hybris_bc_physical_mask(physical);
+    unsigned shader_mask = layer ? 0 : hybris_shader_physical_mask(physical);
+    if (layer || (!bc_mask && !shader_mask))
         return hybris_icd_enumerate_device_extensions(physical, layer, count, properties);
     uint32_t available = 0;
     VkResult result = hybris_icd_enumerate_device_extensions(physical, NULL, &available, NULL);
@@ -346,7 +349,8 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     if (result != VK_SUCCESS && result != VK_INCOMPLETE) { free(all); return result; }
     uint32_t kept = 0, written = 0, capacity = properties ? *count : 0;
     for (uint32_t i = 0; i < available; ++i) {
-        if (!hybris_bc_extension_allowed(all[i].extensionName)) continue;
+        if ((bc_mask && !hybris_bc_extension_allowed(all[i].extensionName)) ||
+            (shader_mask && !hybris_shader_extension_allowed(all[i].extensionName))) continue;
         if (properties && written < capacity) properties[written++] = all[i];
         ++kept;
     }
@@ -373,6 +377,8 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     if (swapchain) return swapchain;
     PFN_vkVoidFunction bc = backend ? hybris_bc_proc(name) : NULL;
     if (bc) return bc;
+    PFN_vkVoidFunction shader_policy = backend ? hybris_shader_policy_proc(name) : NULL;
+    if (shader_policy) return shader_policy;
     bc = backend ? hybris_bc_policy_proc(name) : NULL;
     if (bc) return bc;
     PFN_vkVoidFunction image = backend ? hybris_icd_swapchain_image_proc(name) : NULL;

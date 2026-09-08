@@ -67,6 +67,17 @@ void hybris_scaled_format(PFN_vkGetPhysicalDeviceFormatProperties query,
         if (hybris_scaled_formats[i].scaled == format && decide(query, physical, i).fallback)
             properties->bufferFeatures |= VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
 }
+unsigned hybris_scaled_physical_mask(VkPhysicalDevice physical,
+    PFN_vkGetPhysicalDeviceFormatProperties query)
+{
+    unsigned mask = 0;
+    if (!hybris_scaled_enabled() || !query) return 0;
+    for (unsigned i = 0; i < HYBRIS_SCALED_FORMAT_COUNT; ++i) {
+        if (hybris_scaled_formats[i].rb_swizzle ? !packed_enabled : !enabled) continue;
+        if (decide(query, physical, i).fallback) mask |= 1u << i;
+    }
+    return mask;
+}
 unsigned hybris_scaled_mask(VkDevice device, VkPhysicalDevice physical,
     PFN_vkGetPhysicalDeviceFormatProperties query)
 {

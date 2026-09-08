@@ -80,3 +80,45 @@ expanded caps2 workload, and all 198 recorded values agree within each device.
 Production code is unchanged in this batch. These observations do not prove
 subgroup operations, multiview rendering, protected allocations, maximum-sized
 resource creation, all extension property chains or full Vulkan 1.1 semantics.
+
+
+## Static vertex conversion policy
+
+When scaled or packed vertex conversion selects a nonzero format mask, the ICD
+withholds `VK_EXT_vertex_input_dynamic_state`, `VK_EXT_graphics_pipeline_library`
+and `VK_EXT_shader_object`. Their features are false through both features2
+aliases. Explicit extension requests fail with EXTENSION_NOT_PRESENT; enabling
+a restricted feature without its extension fails with FEATURE_NOT_PRESENT,
+before adapter allocations or the HAL create call. GDPA returns NULL for
+CmdSetVertexInputEXT and the four shader-object commands. These restrictions
+match the static converter's current limits; they do not implement those paths.
+Default-off and enabled-but-zero-mask devices preserve native capabilities.
+The feature query composes with BC policy when both options are enabled.
+
+`vertex-policy` runs through native, frontend, standard-loader ICD and direct
+ICD routes. Explicit `icd-vertex-policy-restricted` and
+`icd-vertex-policy-restricted-direct` cases require a nonzero conversion mask.
+They check extension enumeration counts and a truncated prefix, both features2
+aliases, chain pointers, all 55 legacy feature values, a 16-bit-storage tail,
+five GDPA results, six rejected creates and callback allocation balance. Direct
+ICD rejection must invoke no allocation callbacks. The ordinary probe records
+native capabilities without expecting restrictions.
+
+A fresh runtime and NDK probe build passed on 2026-09-08. Device runs:
+
+| Configuration | Mali X300 | Adreno 650 | Result per device |
+| --- | --- | --- | --- |
+| Packed missing / force | `20260908T155444-1bf9ca36` | `20260908T155444-a1b776ab` | 8 PASS |
+| Default off | `20260908T160206-4b76a7f3` | `20260908T160207-8e4c2620` | 6 PASS |
+| Zero mask: scaled missing / packed missing | `20260908T155932-41e5c955` | `20260908T155932-db682db9` | 7 PASS |
+| Packed conversion plus BC missing | `20260908T160236-f26969a5` | `20260908T160237-722484da` | 5 PASS |
+
+Native, ICD and direct ICD records of all three optional extensions/features
+agree in default and zero-mask controls. Mali natively reports dynamic vertex
+input and graphics pipeline library; Adreno reports neither. Neither reports
+shader objects, so preserving a native true shaderObject feature is untested.
+Active and combined runs include packed vec4 readbacks with validation and
+shader-dump audits. The zero-mask Adreno audit requires no converted modules
+while retaining all six pixel readbacks and negative controls. This capability
+policy does not close the dynamic-input, pipeline-library or shader-object gaps.
+The [desktop GL result](packed-vertex.md) remains failing for divisor=2.

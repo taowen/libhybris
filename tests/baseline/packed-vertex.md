@@ -5,7 +5,9 @@ fallback for `A2R10G10B10_SNORM_PACK32`. It is off by default and ignored during
 secure execution. The adapter adds only the vertex-buffer format bit, and only
 when the source lacks that bit and native `A2B10G10R10_SNORM_PACK32` fetch exists.
 `force` selects the same conversion even when the source format is native.
-Image features, other packed formats and physical-device features are unchanged.
+Image features and other packed formats are unchanged. When conversion is
+selected, the [static vertex capability policy](capabilities.md#static-vertex-conversion-policy)
+restricts optional paths that cannot use this conversion.
 
 The pipeline uses native A2B SNORM fetch and a float32 vec4 Input. The shader
 selects components 2,1,0,3, truncated to its original width. Scalar inputs extract
@@ -56,4 +58,12 @@ this option (reports GL 4.4), but desktop GL drawing **fails**: Zink uses dynami
 vertex input, which the static conversion rejects. Result
 `20260908T151633-2c99069e` retains the precise diagnostic, twelve packed images
 with 256 bad pixels each, and the main draw failure. The option does not satisfy
-desktop GL acceptance. No feature or extension was hidden to bypass that failure.
+desktop GL acceptance. That initial implementation did not restrict extensions.
+
+The subsequent static vertex capability policy lets Zink select static pipelines.
+Runs `20260908T154826-e58e4297` and `20260908T155655-425e451e` (the latter
+with confirmed VVL and SyncVal activation) draw all six divisor=1 packed cases
+correctly. All six divisor=2 cases still have 128 incorrect pixels; the main
+draw reports failure because the packed subprobe fails. No validation error was
+reported. The cause of the divisor failure remains unresolved, and desktop GL
+acceptance remains **FAIL**. Mesa source is unchanged.

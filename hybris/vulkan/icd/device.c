@@ -4,6 +4,7 @@
 #include "device.h"
 #include "swapchain.h"
 #include "../compat/shader_dispatch.h"
+#include "../compat/shader_policy.h"
 #include "../compat/shader_cleanup.h"
 #include "../compat/bc_policy.h"
 #include "../compat/bc_context.h"
@@ -95,6 +96,8 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     pthread_once(&trace_once, initialize_trace);
     VkResult checked = hybris_bc_prepare_device(physical, info);
     if (checked != VK_SUCCESS) return checked;
+    checked = hybris_shader_prepare_device(physical, info);
+    if (checked != VK_SUCCESS) return checked;
     struct device_state *state = allocator
         ? allocator->pfnAllocation(allocator->pUserData, sizeof(*state),
                                   _Alignof(struct device_state), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE)
@@ -183,6 +186,7 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
 PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char *name)
 {
     if (!device || !name) return NULL;
+    if (!hybris_shader_device_proc_allowed(device, name)) return NULL;
     pthread_mutex_lock(&device_guard);
     const struct device_state *state = devices;
     while (state && state->handle != device) state = state->next;

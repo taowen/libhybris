@@ -8,6 +8,7 @@
 #include "shader_cleanup.h"
 #include "spirv_builtins.h"
 #include "point_size.h"
+#include "shader_policy.h"
 #include <stdatomic.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -46,6 +47,12 @@ static struct shader_device *find_device(VkDevice handle)
     while (device && device->handle != handle) device = device->next;
     pthread_mutex_unlock(&guard);
     return device;
+}
+int hybris_shader_device_proc_allowed(VkDevice handle, const char *name)
+{
+    if (hybris_shader_command_allowed(name)) return 1;
+    struct shader_device *device = find_device(handle);
+    return !device || !device->mask;
 }
 VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
     PFN_vkGetDeviceProcAddr resolver, PFN_vkGetPhysicalDeviceFormatProperties query,

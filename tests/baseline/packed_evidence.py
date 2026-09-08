@@ -14,10 +14,14 @@ def packed_evidence(directory, log, source, width):
         raise ValueError('packed fixture is missing')
     words = [int(x, 16) for x in re.findall(r'0x[0-9a-fA-F]{8}', fixture)]
     reference = struct.pack('<' + 'I' * len(words), *words)
+    masks = re.findall(r'^HYBRIS_SCALED_VERTEX experimental=1 force=[01] fallback_mask=0x([0-9a-f]+)$', log, re.M)
+    if len(masks) != 1:
+        raise ValueError('missing unique vertex format decision')
+    converted = bool(int(masks[0], 16) & (1 << 12))
     records = re.findall(r'^HYBRIS_SCALED_DUMP id=(\d+) original=(\d) converted=(\d) attributes=(\d+)$', log, re.M)
-    if records != [('0', '1', '1', '1')]:
-        raise ValueError('expected exactly one successful packed conversion')
-    if re.findall(r'^HYBRIS_PACKED_ATTRIBUTE (.+)$', log, re.M) != ['id=0 location=0 swizzle=bgra']:
+    if records != ([('0', '1', '1', '1')] if converted else []):
+        raise ValueError('packed shader dumps differ from the active format decision')
+    if re.findall(r'^HYBRIS_PACKED_ATTRIBUTE (.+)$', log, re.M) != (['id=0 location=0 swizzle=bgra'] if converted else []):
         raise ValueError('packed conversion attribute differs from fixture')
     if re.findall(r'^SCALED tested=(.+)$', log, re.M) != ['2 unsupported=0 failures=0 validation_errors=0']:
         raise ValueError('packed source and native control did not both complete')
@@ -26,6 +30,10 @@ def packed_evidence(directory, log, source, width):
                 for fmt in ('A2R10G10B10_SNORM_PACK32', 'A2B10G10R10_SNORM_PACK32') for phase in range(3)]
     if pixels != expected:
         raise ValueError('packed readbacks or negative control differ from fixture')
+    if not converted:
+        if list(directory.glob('*.spv')):
+            raise ValueError('native packed fetch unexpectedly dumped a conversion')
+        return {'width': width, 'converted': False, 'readbacks': len(pixels), 'modules': []}
     paths = [directory / ('000-' + kind + '.spv') for kind in ('original', 'converted')]
     if set(directory.glob('*.spv')) != set(paths):
         raise ValueError('unexpected or missing packed shader dumps')

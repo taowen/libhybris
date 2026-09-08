@@ -143,6 +143,7 @@ metadata = {name: prop(name) for name in ['ro.product.model', 'ro.build.fingerpr
 metadata['run_id'] = run_id
 metadata['instance_evidence_sha256'] = sha256_file(here / 'instance_evidence.py')
 metadata['device_evidence_sha256'] = sha256_file(here / 'device_evidence.py')
+metadata['packed_evidence_sha256'] = sha256_file(here / 'packed_evidence.py')
 metadata['commands'] = {}
 metadata['driver_observations'] = {}
 metadata['icd_mali_loader_quirk_requested'] = a.icd_mali_loader_quirk
@@ -263,6 +264,7 @@ cases.extend(('hybris', mode, 'probe-glibc') for mode in ('render-owners', 'comm
 
 for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'memory-ranges', binary))
+    cases.append((backend, 'vertex-policy', binary))
     cases.append((backend, 'bc-decode', binary))
     cases.append((backend, 'bc-images', binary))
     cases.append((backend, 'point-size', binary))
@@ -294,7 +296,7 @@ if a.icd_hal:
     metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
     # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('version', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
+              for mode in ('version', 'vertex-policy', 'vertex-policy-direct', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch', 'point-size-linked')]
     cases.extend(('icd', 'point-size' + route, 'probe-glibc') for route in ('', '-gdpa', '-elf'))
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
@@ -337,6 +339,10 @@ if a.icd_hal:
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)
     stage_shader_reference(a.bundle, a.out, metadata)
+
+if a.icd_hal and a.selected_cases:
+    cases.extend(('icd', mode, 'probe-glibc') for mode in ('vertex-policy-restricted', 'vertex-policy-restricted-direct')
+                 if 'icd-' + mode in a.selected_cases)
 
 results = []
 capabilities = {}
