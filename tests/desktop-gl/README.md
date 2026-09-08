@@ -68,6 +68,61 @@ used. Mappings must contain Gallium, the standard loader and the selected ICD
 in-memory contents or every dynamic load. The 45-second probe alarm and
 60-second host timeout remain; cleanup is restricted to the unique run directory.
 
+## Independent validation logging (2026-09-08)
+
+Validation runs now retain `validation.log` and `validation-result.json`
+separately from the application log and render result. `validation_evidence.py`
+owns settings and result evaluation. It selects `VK_DBG_LAYER_ACTION_LOG_MSG`
+without `VK_DBG_LAYER_ACTION_DEFAULT`, explicitly names the log file and disables
+message throttling. This keeps the layer's logger active when the application
+registers its own debug messenger. The runner retrieves the file before cleanup,
+compares device/host SHA-256, checks the mapped layer and SyncVal activation,
+and rejects missing logs or validation errors even when all pixels pass.
+A failed render still retains its validation result and tool/settings hashes.
+
+The pinned official Mesa source's `zink_debug_util_callback` calls empty
+`zink_error/warn/info/msg` functions in `src/gallium/drivers/zink/zink_screen.c`.
+The previous VVL default logger stopped logging once that messenger existed.
+The instance startup message therefore proved activation, but subsequent silence
+in `probe.log` did **not** prove a clean Vulkan stream. Earlier desktop-GL
+claims of zero validation errors, including the historical tables below, must
+not be used as validation acceptance unless independently revalidated. Their
+pixel and shader-file evidence remains separate. This finding is specific to
+the desktop Zink callback path; it does not invalidate independent Vulkan
+probe logs that retained their own messages.
+
+All rows below use the existing compiled probe and official Mesa runtime,
+lazy descriptors and the unmodified pinned VVL ELF
+`ad1587bed5a334930a48dbb04afca1a630ad7da012ea92cb8e17a53ce18f6934`:
+
+| Run | Scope | Rendering | Independent VVL result |
+| --- | --- | --- | --- |
+| `20260908T193637-328ed899` — Mali | Expanded vertex/compute workload, packed option | FAIL; eight attribute phases | FAIL; four errors, draw/indexed `pNext-09461` |
+| `20260908T193638-7b1434d5` — Turnip | Expanded vertex/compute workload | PASS | FAIL; 54 errors for newer, unrecognized pNext structures |
+| `20260908T193715-b3043684` — Mali | Main and twelve packed draws | PASS | PASS; SyncVal active, zero errors |
+
+The Mali messages identify divisor two with firstInstance five while
+`supportsNonZeroFirstInstance` is false, matching the four direct failing
+attribute phases 1/3/9/10 and Vulkan's
+[draw restriction](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdDraw.html).
+The four indirect failures do not receive corresponding CPU-validation
+messages; their GPU arguments are not covered by this diagnostic.
+The first original-logger run `20260908T193002-ed220a4a` again retained all eight
+render failures but no VUID in the application log. Temporary instrumented VVL
+runs confirmed the capability was correctly read as false and the divisor chain
+was present; the final runs above use the original, uninstrumented installed
+layer. This is a logging repair, not a validation-layer or rendering fix.
+
+Turnip messages report structures unknown to the pinned layer's generated
+valid-usage data (header 309), including newer properties, device features and
+rendering attachments. They remain FAIL; updating the validation dependency
+and rerunning is required before declaring a clean stream. No message is
+filtered or counted as successful coverage. All three retained logs match
+their device hashes. Temporary copies of the passing evidence reject a missing
+log, changed bytes, missing activation and missing mapped layer;
+`validation-integrity.json` retains those results. Python compilation and diff
+checks pass. G06/G12 and application acceptance remain open.
+
 ## Official upstream results (2026-09-07)
 
 All rows use the pinned upstream commit, standard Khronos validation and
@@ -76,7 +131,7 @@ SyncVal. Core 3.3 is requested explicitly; rejection is not retried as success.
 | Device/backend | Request | Result | Evidence |
 | --- | --- | --- | --- |
 | Redmi / Turnip | EGL core 3.3 | `20260907T150334-1f83f981` PASS | GL 4.6; vertex/fragment/compute SSBO 16/16/16; 38 images |
-| Redmi / Turnip | GLX core 3.3 | `20260907T150334-a0841785` PASS | Same 38 images and zero validation errors |
+| Redmi / Turnip | GLX core 3.3 | `20260907T150334-a0841785` PASS | Same 38 images; validation output incomplete (see correction above) |
 | Mali / hybris | EGL core 3.3 | `20260907T150334-3b67df69` UNSUPPORTED | EGL_BAD_MATCH |
 | Mali / hybris | GLX core 3.3 | `20260907T150334-3479d105` FAIL | GLXBadFBConfig |
 | Mali / hybris | EGL core 3.2 | `20260907T150505-6d20e1e5` FAIL | GL 3.2 / GLSL 1.50; packed attributes return GL_INVALID_ENUM |

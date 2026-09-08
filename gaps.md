@@ -988,3 +988,19 @@ firstInstance=5/0 分别导出偏移 44/4、长度 16。另复测 divisor=1，
 除数更新、零 divisor、零实例、库继承只有构建覆盖，间接范围及显式大小
 仍未验收。未证明 GPU 实际取数或定位渲染根因，G06 保持开放，详见
 [除数读回证据](tests/desktop-gl/capture.md#instance-divisor-resource-dump-repair)。
+
+
+### G06/G12 桌面验证日志被应用回调吞掉（2026-09-08）
+
+官方 Mesa 的 Zink 调试回调调用空日志函数，替换 VVL 默认 logger 后会吞掉
+后续消息；此前 probe.log 的启动提示和无 VUID 不能证明验证通过。
+桌面 runner 现显式保留 VVL 自有 logger，独立导出 validation.log 和结果，
+核对设备/主机哈希、映射和 SyncVal 激活；渲染失败仍保留验证结果，像素
+通过也不能绕过验证失败。设置与判定拆到 validation_evidence.py。
+Mali 完整用例实际检出四条 divisor=2/firstInstance=5 的 09461 违规，
+对应四个直接失败阶段；间接参数仍无 CPU 验证覆盖。Turnip 像素 PASS
+但旧层对新结构报 54 条错误，整体验证 FAIL，需升级依赖复验，不过滤。
+Mali 主绘制及十二项 packed 的独立日志、SyncVal 与像素均通过。
+历史桌面“无验证错误”声明须以此次更正为准，不能沿用为验收证据；独立
+Vulkan 探针自身日志不受此 Zink 回调问题影响。G06/G12 不关闭，详见
+[日志与三组真机证据](tests/desktop-gl/README.md#independent-validation-logging-2026-09-08)。

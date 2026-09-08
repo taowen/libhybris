@@ -461,3 +461,15 @@ zero diagnostics, mismatches or uncompared images. An earlier Mali run
 and failed at image-view create 414 with `VK_ERROR_OUT_OF_DEVICE_MEMORY`;
 that failed evidence is retained and is not counted as replay coverage.
 G06 and arbitrary application resource history remain open.
+
+
+### Validation-log correction for the attribute failures
+
+The independent logger described in [the desktop validation record](README.md#independent-validation-logging-2026-09-08)
+now reports four `pNext-09461` violations in the expanded Mali workload.
+The divisor-two/nonzero-firstInstance captures above contain invalid Vulkan
+draw combinations for this device. Their matching replay buffers/images are
+diagnostic readbacks, not acceptance of that Vulkan usage. Divisor one and
+zero-firstInstance remain separate controls. Earlier desktop application-log
+silence was caused by Zink's empty debug callback, not an established VVL
+failure to check the restriction. The rendering compatibility fix remains open.

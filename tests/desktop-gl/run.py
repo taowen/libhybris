@@ -87,7 +87,8 @@ if a.validation_layer:
     if layer['layer']['name']!='VK_LAYER_KHRONOS_validation':raise ValueError('expected Khronos validation manifest')
     layer['layer']['library_path']='./libVkLayer_khronos_validation.so'
     (stage/'layers/validation.json').write_text(json.dumps(layer))
-    (stage/'vk_layer_settings.txt').write_text('khronos_validation.validate_sync = true\nkhronos_validation.report_flags = error,warn,info\n')
+    from validation_evidence import SETTINGS
+    (stage/'vk_layer_settings.txt').write_text(SETTINGS)
 adb=[os.environ.get('ADB','adb'),'-s',a.serial]
 def shell(command,**kwargs):return subprocess.run(adb+['shell',command],**kwargs)
 remote='/data/local/tmp/hybris-desktop-gl-'+out.name
@@ -144,6 +145,15 @@ try:
         r=shell('cat '+shlex.quote(remote+'/'+name),capture_output=True)
         if not r.returncode:(out/name).write_bytes(r.stdout)
     record['probe_exit_code']=code
+    if a.validation_layer:
+        from validation_evidence import validation_evidence
+        r=shell('cat '+shlex.quote(remote+'/validation.log'),capture_output=True)
+        if not r.returncode:(out/'validation.log').write_bytes(r.stdout)
+        r=shell('sha256sum '+shlex.quote(remote+'/validation.log'),capture_output=True,text=True)
+        digest=r.stdout.split()[0] if not r.returncode and r.stdout.split() else None
+        record['validation']=validation_evidence(out,a.validation_layer,a.validation_manifest,digest)
+        (out/'validation-result.json').write_text(json.dumps(record['validation'],indent=2)+'\n')
+        if record['validation']['status']!='PASS' and code==0:code=2
     if a.capture_tools:
         from capture import collect_capture
         try:
@@ -215,13 +225,6 @@ if record['probe_exit_code']==0:
                 wanted=bytes((255,0,255,255))*256 if phase==1 else expected
                 if (out/f'procedural-{phase}.rgba').read_bytes()!=wanted:raise ValueError('procedural image mismatch')
         maps=(out/'maps.txt').read_text()
-        if a.validation_layer:
-            if 'layers/libVkLayer_khronos_validation.so' not in maps:raise ValueError('validation layer not mapped')
-            if re.search(r'Validation Error|VUID-|SYNC-HAZARD', (out/'probe.log').read_text()):raise ValueError('Vulkan validation reported errors')
-            if 'Current Enables: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT' not in (out/'probe.log').read_text():raise ValueError('SyncVal activation not confirmed')
-            record['synchronization_validation']='enabled and no reported errors'
-            record['validation_layer_sha256']=sha(a.validation_layer)
-            record['validation_manifest_sha256']=sha(a.validation_manifest)
         backends=['runtime/libvulkan_freedreno.so'] if a.backend=='turnip' else ['hybris/libhybris-vulkan-icd.so', 'vulkan.'+('mali' if 'mali' in a.hal else 'adreno')+'.so']
         for name in ['runtime/libgallium-', 'runtime/libvulkan.so.1']+backends:
             if name not in maps:raise ValueError('missing mapped backend '+name)
