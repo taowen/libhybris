@@ -1,7 +1,8 @@
 #include "probe.h"
 
-/* Partial host updates cross atom boundaries. Buffer offsets and mapped-memory
- * offsets deliberately differ, exposing missing binding-offset adjustments. */
+/* Partial host updates cross atom boundaries. Buffer offsets, binding offsets
+ * and partial-map origins differ. The final rounds exercise both finite and
+ * VK_WHOLE_SIZE ranges ending at a non-atom-aligned allocation boundary. */
 int memory_ranges_probe(int validate) {
   void *h = dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) return 2;
@@ -31,7 +32,7 @@ int memory_ranges_probe(int validate) {
   V(vkAllocateMemory); V(vkFreeMemory); V(vkBindBufferMemory);
   V(vkMapMemory); V(vkUnmapMemory); V(vkFlushMappedMemoryRanges); V(vkInvalidateMappedMemoryRanges);
   V(vkCreateCommandPool); V(vkDestroyCommandPool); V(vkAllocateCommandBuffers);
-  V(vkBeginCommandBuffer); V(vkEndCommandBuffer); V(vkCmdCopyBuffer); V(vkCmdPipelineBarrier);
+  V(vkBeginCommandBuffer); V(vkEndCommandBuffer); V(vkResetCommandBuffer); V(vkCmdCopyBuffer); V(vkCmdPipelineBarrier);
   V(vkCreateFence); V(vkDestroyFence); V(vkWaitForFences); V(vkResetFences); V(vkQueueSubmit);
   uint32_t count = 1, family;
   VkPhysicalDevice physical;
@@ -89,13 +90,15 @@ int memory_ranges_probe(int validate) {
     }
   }
   VkDeviceMemory memory[2];
-  VkDeviceSize binding[2];
+  VkDeviceSize binding[2], allocation_size[2], mapping_offset[2] = {0, 0};
   uint8_t *mapped[2];
   for (unsigned i = 0; i < 2; ++i) {
     binding[i] = requirements[i].alignment > atom ? requirements[i].alignment : atom;
-    if (binding[i] > SIZE_MAX - requirements[i].size) return 2;
+    if (binding[i] > SIZE_MAX - requirements[i].size ||
+        binding[i] + requirements[i].size > SIZE_MAX - atom) return 2;
+    allocation_size[i] = binding[i] + requirements[i].size + (atom > 1 ? atom / 2 : 0);
     VkMemoryAllocateInfo allocation = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = binding[i] + requirements[i].size, .memoryTypeIndex = (uint32_t)indices[i]};
+        .allocationSize = allocation_size[i], .memoryTypeIndex = (uint32_t)indices[i]};
     CHECK(p_vkAllocateMemory(device, &allocation, NULL, &memory[i]));
     CHECK(p_vkBindBufferMemory(device, buffers[i], memory[i], binding[i]));
     CHECK(p_vkMapMemory(device, memory[i], 0, VK_WHOLE_SIZE, 0, (void **)&mapped[i]));
@@ -110,49 +113,71 @@ int memory_ranges_probe(int validate) {
   VkMappedMemoryRange initial = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
       .memory = memory[0], .offset = binding[0], .size = bytes};
   CHECK(p_vkFlushMappedMemoryRanges(device, 1, &initial));
-  VkCommandPoolCreateInfo pci = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, .queueFamilyIndex = family};
+  VkCommandPoolCreateInfo pci = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, .queueFamilyIndex = family};
   VkCommandPool pool;
   CHECK(p_vkCreateCommandPool(device, &pci, NULL, &pool));
   VkCommandBufferAllocateInfo cai = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
       .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1};
   VkCommandBuffer command;
   CHECK(p_vkAllocateCommandBuffers(device, &cai, &command));
-  VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-  CHECK(p_vkBeginCommandBuffer(command, &begin));
-  VkMemoryBarrier upload = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-      .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_HOST_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
-      .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT};
-  p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-      VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &upload, 0, NULL, 0, NULL);
-  VkBufferCopy copy = {.srcOffset = stride, .dstOffset = stride * 2, .size = stride * 4};
-  p_vkCmdCopyBuffer(command, buffers[0], buffers[1], 1, &copy);
-  VkMemoryBarrier readback = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
-  p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-      0, 1, &readback, 0, NULL, 0, NULL);
-  CHECK(p_vkEndCommandBuffer(command));
   VkFenceCreateInfo fci = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
   VkFence fence;
   CHECK(p_vkCreateFence(device, &fci, NULL, &fence));
-  for (unsigned cycle = 0; cycle < 4; ++cycle) {
-    VkDeviceSize changed = stride * 2 + 4, length = stride + 12;
+  for (unsigned cycle = 0; cycle < 7; ++cycle) {
+    /* Keep the original four submissions. Then map just the buffer, followed
+     * by its final half plus allocation padding. Map-relative CPU addresses
+     * must not be confused with allocation-relative flush/invalidate offsets. */
+    if (cycle >= 4) {
+      for (unsigned i = 0; i < 2; ++i) {
+        p_vkUnmapMemory(device, memory[i]);
+        mapping_offset[i] = binding[i] + (cycle < 5 ? 0 : stride * 4);
+        VkDeviceSize map_size = cycle == 4 ? bytes : allocation_size[i] - mapping_offset[i];
+        CHECK(p_vkMapMemory(device, memory[i], mapping_offset[i], map_size, 0, (void **)&mapped[i]));
+        printf("MEMORY_RANGE mapping cycle=%u buffer=%u offset=%llu size=%llu allocation=%llu\n",
+            cycle, i, (unsigned long long)mapping_offset[i], (unsigned long long)map_size,
+            (unsigned long long)allocation_size[i]);
+      }
+    }
+    VkBufferCopy copy = {.srcOffset = stride * (cycle < 5 ? 1 : 4),
+        .dstOffset = stride * (cycle < 5 ? 2 : 4), .size = stride * 4};
+    if (cycle == 0 || cycle == 5) {
+      if (cycle) CHECK(p_vkResetCommandBuffer(command, 0));
+      VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+      CHECK(p_vkBeginCommandBuffer(command, &begin));
+      VkMemoryBarrier upload = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+          .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_HOST_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+          .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT};
+      p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &upload, 0, NULL, 0, NULL);
+      p_vkCmdCopyBuffer(command, buffers[0], buffers[1], 1, &copy);
+      VkMemoryBarrier readback = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+          .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+      p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+          0, 1, &readback, 0, NULL, 0, NULL);
+      CHECK(p_vkEndCommandBuffer(command));
+    }
+    VkDeviceSize changed = stride * (cycle < 5 ? 2 : 5) + 4, length = stride + 12;
     for (size_t i = 0; i < length; ++i) expected[changed + i] = (uint8_t)(cycle * 37u + i * 19u + 3u);
-    memcpy(mapped[0] + binding[0] + changed, expected + changed, (size_t)length);
+    memcpy(mapped[0] + binding[0] + changed - mapping_offset[0], expected + changed, (size_t)length);
     VkDeviceSize start = (binding[0] + changed) & ~(atom - 1);
     VkDeviceSize end = (binding[0] + changed + length + atom - 1) & ~(atom - 1);
+    if (cycle >= 5) end = allocation_size[0];
     VkMappedMemoryRange flush = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-        .memory = memory[0], .offset = start, .size = end - start};
+        .memory = memory[0], .offset = start, .size = (cycle == 4 || cycle == 6) ? VK_WHOLE_SIZE : end - start};
     CHECK(p_vkFlushMappedMemoryRanges(device, 1, &flush));
     VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .commandBufferCount = 1, .pCommandBuffers = &command};
     CHECK(p_vkQueueSubmit(queue, 1, &submit, fence));
     CHECK(p_vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     VkMappedMemoryRange invalidate = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-        .memory = memory[1], .offset = binding[1] + copy.dstOffset, .size = copy.size};
+        .memory = memory[1], .offset = binding[1] + copy.dstOffset,
+        .size = (cycle == 4 || cycle == 6) ? VK_WHOLE_SIZE :
+                cycle < 5 ? copy.size : allocation_size[1] - binding[1] - copy.dstOffset};
     CHECK(p_vkInvalidateMappedMemoryRanges(device, 1, &invalidate));
     unsigned bad = 0;
     for (size_t i = 0; i < copy.size; ++i)
-      if (mapped[1][binding[1] + copy.dstOffset + i] != expected[copy.srcOffset + i]) ++bad;
+      if (mapped[1][binding[1] + copy.dstOffset + i - mapping_offset[1]] != expected[copy.srcOffset + i]) ++bad;
     printf("MEMORY_RANGE cycle=%u atom=%llu flush=%llu+%llu invalidate=%llu+%llu bytes=%llu bad=%u\n",
         cycle, (unsigned long long)atom, (unsigned long long)flush.offset, (unsigned long long)flush.size,
         (unsigned long long)invalidate.offset, (unsigned long long)invalidate.size,

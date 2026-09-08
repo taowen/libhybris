@@ -1921,7 +1921,7 @@ non-coherent memory for both upload and readback buffers, rather than silently
 substituting coherent memory. Both buffers have a nonzero memory binding
 offset aligned to the buffer requirement and nonCoherentAtomSize.
 
-The upload buffer is initialized once. Each of four rounds changes a smaller
+The upload buffer is initialized once. Each of the first four rounds changes a smaller
 region that starts inside an atom and crosses atom boundaries, flushes the
 atom-rounded range including the binding offset, and resubmits the same
 command buffer. A GPU copy moves a larger window, including unchanged prefix
@@ -1932,8 +1932,8 @@ has finished; no queue/device wait-idle is used. The probe captures mappings
 before destroying the live objects.
 
 Range arithmetic follows [VkMappedMemoryRange](https://docs.vulkan.org/refpages/latest/refpages/source/VkMappedMemoryRange.html):
-flush/invalidate offsets are relative to the memory allocation, are atom
-aligned, and all tested finite sizes are atom multiples inside the mapping.
+flush/invalidate offsets are relative to the memory allocation and atom
+aligned. The original four rounds use finite atom-multiple sizes inside the mapping.
 This is valid-input coverage; it does not inject unflushed writes or assert
 that a particular driver must expose stale cache data for invalid input.
 
@@ -1952,11 +1952,35 @@ for this workload; native, frontend and ICD agree. Mali uses the existing
 explicit loader quirk. The AArch64 glibc/bionic probe build, staged provenance
 and required runtime mapping checks pass.
 
-This covers partial finite aligned ranges, nonzero binding and copy offsets,
-repeated host uploads and command-buffer resubmission. It does not cover
-allocation-end partial atoms, partially mapped allocations, simultaneous
-access to different atoms, cross-process mappings, or unrelated work remaining
-in flight during resource retirement. G09 remains open.
+The 2026-09-08 extension preserves those four rounds and adds three. Round 4
+unmaps and remaps only the buffer at a nonzero allocation offset, using
+VK_WHOLE_SIZE flush/invalidate that end at the mapping boundary before the
+allocation ends. Rounds 5 and 6 map only the final half of each buffer plus
+allocation padding, and copy through the last byte of the buffers. Round 5
+uses finite ranges ending at the allocation boundary with non-atom-multiple
+sizes; round 6 uses VK_WHOLE_SIZE to that same boundary. CPU access subtracts
+the current mapping origin, while flush/invalidate retain allocation offsets.
+The command buffer is re-recorded once for the final copy window and reused in
+the last round. Every round still checks all 1024 copied bytes, including
+unchanged neighbors, after a fence; no wait-idle was added.
+
+| Device | Result directory | Results |
+|---|---|---|
+| Mali X300 | `20260908T152835-5afde30e` | Four paths pass all seven rounds; standard validation/SyncVal reports zero errors |
+| Redmi Adreno 650 vendor | `20260908T152835-aed95da5` | Four paths UNSUPPORTED: no compatible non-coherent memory type |
+
+The updated NDK bionic/glibc probe build completed. On Mali the atom is 64 and
+the allocation is 2144 bytes, ending 32 bytes into an atom. Round 4 maps
+`[64,2112)`; its WHOLE_SIZE ranges start at 576 and end at 2112, not 2144.
+Rounds 5/6 map `[1088,2144)`. Round 5 flushes `[1344,2144)` (800 bytes) and
+invalidates `[1088,2144)` (1056 bytes); round 6 uses the same starts with
+WHOLE_SIZE. The logs retain mapping extents, allocation sizes, raw ranges,
+readback counts and results for native, frontend and ICD independently.
+
+This covers partial mappings and allocation-end partial atoms on this Mali
+driver, in addition to the earlier ranges and resubmissions. Simultaneous access
+to different atoms, cross-process mappings and unrelated work remaining in
+flight during resource retirement are still untested. G09 remains open.
 
 ## Condition-variable production split (2026-09-07)
 
