@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/richgel999/bc7enc_rdo",
+  "revision": "b9438627eef73a1157e84201b6fa6eb2ffd6d9f0",
+  "license": "MIT alternative",
+  "files": {
+    "bc7decomp.cpp": "cfbe156926ebd96443b4407a9da1b5b7a424fdf989fedca3cf2fd0515e0c368a",
+    "bc7decomp.h": "cbba8778640e0021f55ca686b6bc19e6960032539084c70af698922b05c5b242",
+    "LICENSE": "55627dc2d334e3156822b2ceae9e1291ac50055603d827b9e65c960594d1661c"
+  },
+  "use": "Offline golden generation only; no CPU decoder is linked into the probe or ICD."
+}

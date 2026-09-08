@@ -88,8 +88,9 @@ fails conversion. Old/new Adreno runs use identical probe binaries, and Mali
 native/forced controls pass. Ambiguous operand layouts remain conservative.
 This is an experimental shader/pipeline subset: G07/G08 remain open,
 including general interfaces, dynamic vertex input, shader objects and graphics
-pipeline libraries. A default-off [BC1–BC5 image subset](tests/baseline/bc-images.md)
-is now connected to the ICD. BC6–BC7, the remaining image semantics,
+pipeline libraries. A default-off [BC1–BC5/BC7 image subset](tests/baseline/bc-images.md)
+is now connected to the ICD. [BC7 evidence](tests/baseline/bc7.md) retains a
+Redmi native sRGB filtering reference failure. BC6H, the remaining image semantics,
 clip/cull/point-size and software timeline patches remain open. Full boundaries and evidence are in the ICD and baseline
 READMEs. Mesa remains unmodified upstream; this code connects vendor drivers.
 
@@ -282,7 +283,7 @@ it does not provide slot reclamation, IE first-touch or signal reentrancy.
 | G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Fixed headless widget capture/replay now matches all RGBA bytes. The ICD Wayland window probe now also passes Khronos VVL+SyncVal create/render/resize/retirement/destroy and GFXReconstruct virtual-swapchain copy dumps on OnePlus 8T and Mali; still need arbitrary application coverage. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
 | G06 | Partial | Fixed captures now reconstruct four dynamic UBOs across two sets and an array and identify the changed descriptor/first divergent draw. General history and runtime resource generations remain open; see the multi-descriptor evidence. |
-| G07 | Open | Default-off BC1–BC5 image operations have independent native sampling/byte references, mip/layer/subregion and retirement probes. BC4/BC5 include UNORM16/SNORM16 sampling, filtering and border/default-channel checks. Native RGB8 fixes the tested Mali BC1 RGB border case; Redmi remains FAIL. BC6–BC7 and complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
+| G07 | Open | Default-off BC1–BC5/BC7 image operations have independent native sampling/byte references, mip/layer/subregion and retirement probes. BC4/BC5 include UNORM16/SNORM16 sampling, filtering and border/default-channel checks. Native RGB8 fixes the tested Mali BC1 RGB border case; Redmi remains FAIL. BC7 passes on Mali but retains a native sRGB filtering reference failure on Redmi. BC6H and complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
 | G08 | Open | Fixed SPIR-V tooling, reflection/hash/specialization records, before/after semantic evidence for each transform. |
 | G09 | Open | Noncoherent/staging/reuse and queue ordering cases; validate emulation against completion and memory visibility. |
 | G10 | Open | Fixed Mesa/Zink revision and GL target-profile requirements; GL workload results with backend attribution. |

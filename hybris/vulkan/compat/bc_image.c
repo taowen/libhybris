@@ -12,11 +12,13 @@ VkFormat hybris_bc_image_format(VkFormat format, unsigned rgb8_mask)
         return rgb8_mask & 1 ? VK_FORMAT_R8G8B8_UNORM : VK_FORMAT_R8G8B8A8_UNORM;
     case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
     case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC3_UNORM_BLOCK:
+    case VK_FORMAT_BC7_UNORM_BLOCK:
         return VK_FORMAT_R8G8B8A8_UNORM;
     case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
         return rgb8_mask & 2 ? VK_FORMAT_R8G8B8_SRGB : VK_FORMAT_R8G8B8A8_SRGB;
     case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
     case VK_FORMAT_BC2_SRGB_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK:
+    case VK_FORMAT_BC7_SRGB_BLOCK:
         return VK_FORMAT_R8G8B8A8_SRGB;
     case VK_FORMAT_BC4_UNORM_BLOCK:
         return VK_FORMAT_R16_UNORM;

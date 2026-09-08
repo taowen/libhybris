@@ -1,8 +1,9 @@
-/* Fixed palettes computed independently of the GPU decoder. Packing only:
- * this fixture is not a second implementation of the decode algorithm. */
+/* Fixed BC1-5 palettes and independently decoded BC7 corpus. Packing only:
+ * no CPU decoder is linked into the probe or production path. */
 #ifndef HYBRIS_BC_FIXTURE_H
 #define HYBRIS_BC_FIXTURE_H
 #include "compat/bc_decode.h"
+#include "bc7_fixture.inc"
 
 static const VkFormat bc_formats[] = {
     VK_FORMAT_BC1_RGB_UNORM_BLOCK, VK_FORMAT_BC1_RGB_SRGB_BLOCK,
@@ -10,21 +11,29 @@ static const VkFormat bc_formats[] = {
     VK_FORMAT_BC2_UNORM_BLOCK, VK_FORMAT_BC2_SRGB_BLOCK,
     VK_FORMAT_BC3_UNORM_BLOCK, VK_FORMAT_BC3_SRGB_BLOCK,
     VK_FORMAT_BC4_UNORM_BLOCK, VK_FORMAT_BC4_SNORM_BLOCK,
-    VK_FORMAT_BC5_UNORM_BLOCK, VK_FORMAT_BC5_SNORM_BLOCK};
+    VK_FORMAT_BC5_UNORM_BLOCK, VK_FORMAT_BC5_SNORM_BLOCK,
+    VK_FORMAT_BC7_UNORM_BLOCK, VK_FORMAT_BC7_SRGB_BLOCK};
 #define BC_FORMAT_COUNT (sizeof(bc_formats) / sizeof(bc_formats[0]))
 static unsigned bc_mode(unsigned format_index)
-{ return format_index < 8 ? format_index / 2 : format_index - 4; }
+{ return format_index >= 12 ? 9 : format_index < 8 ? format_index / 2 : format_index - 4; }
 static unsigned bc_block_bytes(unsigned mode)
 { return mode < 2 || mode == 4 || mode == 5 ? 8 : 16; }
 static inline VkFormat bc_reference_format(unsigned f)
 {
     if (f == 8 || f == 9) return f & 1 ? VK_FORMAT_R16_SNORM : VK_FORMAT_R16_UNORM;
-    if (f >= 8) return f & 1 ? VK_FORMAT_R16G16_SNORM : VK_FORMAT_R16G16_UNORM;
+    if (f >= 8 && f < 12) return f & 1 ? VK_FORMAT_R16G16_SNORM : VK_FORMAT_R16G16_UNORM;
     return f & 1 ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
 }
 
 static unsigned bc_variant(unsigned mode, unsigned bx, unsigned by, unsigned layer, unsigned round)
-{ return (bx + 3 * by + 5 * layer + round) % (mode >= 4 ? 8 : 4); }
+{
+    if (mode == 9) return (bx + 32 * by + 137 * layer + 73 * round) % BC7_VECTOR_COUNT;
+    return (bx + 3 * by + 5 * layer + round) % (mode >= 4 ? 8 : 4);
+}
+static inline uint32_t bc_fill_word(unsigned mode)
+{ return mode == 9 ? 0x40u : 0u; }
+static inline uint32_t bc_fill_golden(unsigned mode, unsigned pixel)
+{ return mode == 9 ? bc7_fill_rgba[pixel] : mode < 2 ? 0xff000000u : 0u; }
 /* BC4/5 fixed RGTC palettes, rounded once to normalized 16-bit values.
  * Unsigned endpoints: 210/0, 0/200, 100/100, 203/13, 1/0, 254/255,
  * 255/255, 0/0. Signed: 100/-110, -100/100, -128/-128, 103/-13,
@@ -66,6 +75,7 @@ static void bc_pack_channel(uint8_t *destination, unsigned snorm, unsigned varia
 }
 static uint32_t bc_golden(unsigned mode, unsigned variant, unsigned pixel, unsigned round)
 {
+    if (mode == 9) return bc7_vectors[variant].rgba[pixel];
     if (mode >= 4) {
         uint32_t red = bc_channel_golden(mode & 1, variant, (pixel + variant + round) & 7);
         unsigned green_variant = (variant + 3) & 7;
@@ -99,6 +109,7 @@ static uint32_t bc_golden(unsigned mode, unsigned variant, unsigned pixel, unsig
 }
 static void bc_pack(uint8_t *destination, unsigned mode, unsigned variant, unsigned round)
 {
+    if (mode == 9) { memcpy(destination, bc7_vectors[variant].block, 16); return; }
     if (mode >= 4) {
         bc_pack_channel(destination, mode & 1, variant, round);
         if (mode >= 6) bc_pack_channel(destination + 8, mode & 1, (variant + 3) & 7, round + 2);

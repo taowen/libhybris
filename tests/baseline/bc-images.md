@@ -1,8 +1,10 @@
-# Experimental BC1–BC5 image fallback
+# Experimental BC1–BC5/BC7 image fallback
 
 The standard-loader ICD now intercepts application BC image creation, memory
 queries/binding, views, transfers and synchronization. This is a partial G07
-implementation; it does not provide BC6–BC7 or full Vulkan format conformance.
+implementation; it does not provide BC6H or full Vulkan format conformance.
+BC7 image sampling passes on Mali; Redmi retains a native sRGB filtering
+reference failure. See [BC7 evidence and remaining failures](bc7.md).
 The separate [decoder probe](bc-decode.md) still tests only the internal kernel.
 BC1 RGB now uses native RGB8 storage where supported. The expanded border
 probe passes on Mali and exposes an unresolved Redmi alpha failure; see the
@@ -11,8 +13,8 @@ probe passes on Mali and exposes an unresolved Redmi alpha failure; see the
 ## Policy and supported domain
 
 The default is off. `HYBRIS_BC_TEXTURES=missing` selects BC1 RGB/RGBA, BC2 and
-BC3 UNORM/sRGB and BC4/BC5 UNORM/SNORM formats lacking native optimal
-sampled-image support. `force` selects the same twelve formats for development comparisons. Environment options
+BC3/BC7 UNORM/sRGB and BC4/BC5 UNORM/SNORM formats lacking native optimal
+sampled-image support. `force` selects the same fourteen formats for development comparisons. Environment options
 are ignored in secure execution and read once per process.
 
 The initial fallback requires an application requesting Vulkan 1.1 or newer,
@@ -98,7 +100,7 @@ creates two BC images plus a size-compatible native UINT image, uploads data,
 copies BC-to-BC and through the native image, samples into an SSBO, and reads
 compressed bytes back. A fourth, native RGBA8/R16/RG16 image receives the independent
 golden palette pixels and supplies a bit-exact sampling reference. Views cover
-identity components and an R/B swizzle. The fixture has twelve formats, 9×7 and 32×32 base
+identity components and an R/B swizzle. The fixture has fourteen formats, 9×7 and 32×32 base
 images, four mip levels and three layers. Native-to-BC copies cover only whole
 blocks that fit the destination; partial compressed edge blocks are exercised
 by BC-to-BC copies. The aligned shape also exercises native 3D slices. Its base-level recording
@@ -107,7 +109,7 @@ boundary; it is still far below device image-size or memory limits.
 
 Each case submits the same recording three times with changed host data first
 written after recording. Eligible regions additionally receive a GPU-produced
-zero block at a nonzero x offset and array layer. Sampling runs without an
+fixed block (valid mode 6 for BC7, zero for BC1–BC5) at a nonzero x offset and array layer. Sampling runs without an
 application compute rebind after uploads. The output buffer uses a nonzero
 dynamic descriptor offset, allocations use nonzero bindings where permitted,
 and selected images force dedicated allocations through a pNext prefix.
@@ -273,7 +275,7 @@ Final SHA256 values:
 
 ## Remaining scope
 
-BC6–BC7, float compressed formats, mutable views, general external/sparse/host-copy
+BC6H, unresolved BC7 sRGB reference precision on Redmi, mutable views, general external/sparse/host-copy
 resources, excluded state extensions, multi-device groups, all queue-ownership
 and aliasing combinations, cube sampling, allocation-failure stress, maximum
 resource limits, performance and CTS coverage remain open. The 32×32 case

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #version 450
+#extension GL_GOOGLE_include_directive : require
+#include "bc7.glsl"
 layout(local_size_x = 64) in;
 layout(set = 0, binding = 0, std430) readonly buffer Source { uint data[]; } src;
 layout(set = 0, binding = 1, std430) writeonly buffer Destination { uint data[]; } dst;
 layout(push_constant) uniform Region {
-    uint mode; // 0..3: BC1 RGB/RGBA, BC2, BC3; 4..7: BC4/5 U/S; 8: packed RGB8
+    uint mode; // 0..3: BC1 RGB/RGBA, BC2, BC3; 4..7: BC4/5 U/S; 8: packed RGB8; 9: BC7
     uint source_word;
     uint row_blocks;
     uint layer_blocks;
@@ -130,6 +132,11 @@ void main()
     uint block = layer * r.layer_blocks + (y / 4) * r.row_blocks + x / 4;
     uint word = r.source_word + block * (r.mode < 2 || r.mode == 4 || r.mode == 5 ? 2 : 4);
     uint within = (y & 3) * 4 + (x & 3);
+    if (r.mode == 9) {
+        dst.data[r.destination_word + pixel] = bc7_rgba(
+            uvec4(src.data[word], src.data[word + 1], src.data[word + 2], src.data[word + 3]), within);
+        return;
+    }
     if (r.mode >= 4) {
         bool snorm = (r.mode & 1) != 0;
         // BC4 is a single-component R16 image. Pack two texels per storage

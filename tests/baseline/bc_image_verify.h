@@ -15,7 +15,7 @@ struct bc_image_readback {
     unsigned format, round, swizzle, patched, filtering, sampler_choice;
 };
 
-static int sampled_matches(uint32_t actual, uint32_t expected, int srgb)
+static unsigned bc_linear8(unsigned encoded)
 {
     /* Standard sRGB EOTF, rounded to eight-bit linear output. Generated from
      * the transfer function, independently of the BC palettes/kernel. */
@@ -37,9 +37,13 @@ static int sampled_matches(uint32_t actual, uint32_t expected, int srgb)
         190, 192, 194, 196, 198, 200, 202, 204, 206, 208, 210, 212, 214, 216, 218, 220,
         222, 224, 226, 229, 231, 233, 235, 237, 239, 242, 244, 246, 248, 250, 253, 255,
     };
+    return linear[encoded];
+}
+static int sampled_matches(uint32_t actual, uint32_t expected, int srgb)
+{
     for (unsigned component = 0; component < 4; ++component) {
         int want = (expected >> (8 * component)) & 255;
-        if (srgb && component < 3) want = linear[want];
+        if (srgb && component < 3) want = bc_linear8(want);
         int got = (actual >> (8 * component)) & 255;
         int tolerance = srgb && component < 3 ? 1 : 0;
         if (got - want > tolerance || want - got > tolerance) return 0;
@@ -52,7 +56,7 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
     unsigned shape_index = check->swizzle, patched = check->patched, sampler_choice = check->sampler_choice;
     uint32_t width = check->region.width, height = check->region.height;
     uint32_t pixels = width * height * check->region.layers;
-    uint32_t sample_words = f >= 8 ? 2 : 1, block_bytes = bc_block_bytes(mode);
+    uint32_t sample_words = f >= 8 && f < 12 ? 2 : 1, block_bytes = bc_block_bytes(mode);
     uint32_t columns = (width + 3) / 4, rows = (height + 3) / 4;
     uint32_t raw_size = columns * rows * check->region.layers * block_bytes;
     uint32_t source_columns = ((check->region.row_length ?: width) + 3) / 4;
@@ -60,20 +64,23 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
     uint32_t BYTES = check->bytes, RAW = check->raw_offset, dynamic_offset = check->dynamic_offset;
     const uint32_t *actual = check->actual;
     const uint32_t *reference_pixels = (const uint32_t *)(check->source + check->reference_offset);
-    unsigned bad = 0;
+    unsigned bad = 0, native_bad = 0, nearest_bad = 0, filtered_bad = 0, raw_bad = 0, sentinel_bad = 0;
     for (unsigned word = 0; word < BYTES / 4; ++word) {
         uint32_t expected = 0xcdcdcdcd;
         int matches;
+        const char *comparison = "sentinel";
         if (word >= dynamic_offset / 4 && word < dynamic_offset / 4 + sample_words * pixels) {
+            comparison = "bc-native";
             expected = actual[word + sample_words * pixels];
             matches = actual[word] == expected;
         } else if (word >= dynamic_offset / 4 + sample_words * pixels && word < dynamic_offset / 4 + 2 * sample_words * pixels) {
+            comparison = "native-golden-nearest";
             unsigned sample_word = word - dynamic_offset / 4 - sample_words * pixels;
             unsigned pixel = sample_word / sample_words;
             unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
             expected = bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
-            if (patched && z == 1 && x >= 4 && x < 8 && y < 4) expected = f < 4 ? 0xff000000 : 0;
-            if (f >= 8) {
+            if (patched && z == 1 && x >= 4 && x < 8 && y < 4) expected = bc_fill_golden(mode, (y & 3) * 4 + (x & 3));
+            if (f >= 8 && f < 12) {
                 uint32_t red = expected & 65535, green = expected >> 16;
                 uint32_t alpha = f & 1 ? 32767 : 65535;
                 expected = sample_word & 1 ? ((shape_index ? red : 0) | (alpha << 16)) :
@@ -85,10 +92,12 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
             }
         } else if (check->filtering && word >= dynamic_offset / 4 + 2 * sample_words * pixels &&
             word < dynamic_offset / 4 + 3 * sample_words * pixels) {
+            comparison = "bc-native";
             expected = actual[word + sample_words * pixels];
             matches = actual[word] == expected;
         } else if (check->filtering && word >= dynamic_offset / 4 + 3 * sample_words * pixels &&
             word < dynamic_offset / 4 + 4 * sample_words * pixels) {
+            comparison = "native-golden-filtered";
             unsigned sample_word = word - dynamic_offset / 4 - 3 * sample_words * pixels;
             unsigned pixel = sample_word / sample_words;
             unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
@@ -98,6 +107,31 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                  * component, including transparent-black borders. */
                 expected = (actual[word] & 0x00ffffff) | 0xff000000;
                 matches = actual[word] == expected;
+            } else if (f >= 12) {
+                /* Independent four-texel average of the uploaded BC7 golden.
+                 * Convert sRGB before filtering. The byte EOTF lookup adds
+                 * at most half a unit per input; output rounding adds half.
+                 * The separate BC/native comparison remains bit exact. */
+                int sums[4] = {0};
+                for (unsigned dy = 0; dy < 2; ++dy) for (unsigned dx = 0; dx < 2; ++dx) {
+                    unsigned sx = x + dx < width ? x + dx : width - 1;
+                    unsigned sy = y + dy < height ? y + dy : height - 1;
+                    uint32_t packed = bc_reference_load(reference_pixels, f, (z * height + sy) * width + sx);
+                    if (sampler_choice >= 2 && (x + dx >= width || y + dy >= height))
+                        packed = sampler_choice == 2 ? 0xffffffff : sampler_choice == 4 ? 0xff000000 : 0;
+                    if (shape_index) packed = (packed & 0xff00ff00) | ((packed & 255) << 16) | ((packed >> 16) & 255);
+                    for (unsigned c = 0; c < 4; ++c) {
+                        unsigned value = (packed >> (8 * c)) & 255;
+                        sums[c] += (f & 1) && c < 3 ? bc_linear8(value) : value;
+                    }
+                }
+                matches = 1; expected = 0;
+                for (unsigned c = 0; c < 4; ++c) {
+                    int got = (actual[word] >> (8 * c)) & 255;
+                    int tolerance = (f & 1) && c < 3 ? 4 : 2;
+                    if (abs(4 * got - sums[c]) > tolerance) matches = 0;
+                    expected |= (uint32_t)((sums[c] + 2) / 4) << (8 * c);
+                }
             } else {
                 /* The chosen coordinates average four adjacent texels with
                  * exact half weights. Check native RG16 filtering against
@@ -130,17 +164,25 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                 }
             }
         } else if (word >= RAW / 4 && word < (RAW + raw_size) / 4) {
+            comparison = "raw-blocks";
             unsigned byte = (word - RAW / 4) * 4;
             unsigned block = byte / block_bytes, x = block % columns, y = block / columns % rows, z = block / (columns * rows);
             memcpy(&expected, check->source + check->region.source_offset + ((z * source_rows + y) * source_columns + x) * block_bytes + byte % block_bytes, 4);
-            if (patched && z == 1 && x == 1 && y == 0) expected = 0;
+            if (patched && z == 1 && x == 1 && y == 0) expected = bc_fill_word(mode);
             matches = actual[word] == expected;
         } else matches = actual[word] == expected;
         if (!matches) {
-            if (bad < 3) printf("BC_IMAGES_MISMATCH word=%u actual=%08x expected=%08x srgb=%u\n", word, actual[word], expected, f & 1);
+            if (bad < 3) printf("BC_IMAGES_MISMATCH word=%u actual=%08x expected=%08x srgb=%u comparison=%s\n", word, actual[word], expected, f & 1, comparison);
+            if (!strcmp(comparison, "bc-native")) ++native_bad;
+            else if (!strcmp(comparison, "native-golden-nearest")) ++nearest_bad;
+            else if (!strcmp(comparison, "native-golden-filtered")) ++filtered_bad;
+            else if (!strcmp(comparison, "raw-blocks")) ++raw_bad;
+            else ++sentinel_bad;
             ++bad;
         }
     }
+    if (bad) printf("BC_IMAGES_FAILURES format=%u bc_native=%u nearest=%u filtered=%u raw=%u sentinel=%u\n",
+        bc_formats[f], native_bad, nearest_bad, filtered_bad, raw_bad, sentinel_bad);
     return bad;
 }
 #endif

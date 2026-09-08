@@ -73,7 +73,7 @@ int bc_decode_probe(int validate)
     p_vkGetDeviceQueue(device, family, 0, &queue);
     struct hybris_bc_decoder decoder;
     CHECK(hybris_bc_decoder_create(device, p_vkGetDeviceProcAddr, NULL, &decoder));
-    enum { BYTES = 16384 };
+    enum { BYTES = 65536 };
     VkBuffer buffers[4];
     VkDeviceMemory memory[4];
     VkDeviceSize binding[4];
@@ -129,9 +129,9 @@ int bc_decode_probe(int validate)
         unsigned format = variant < BC_FORMAT_COUNT ? variant : variant - BC_FORMAT_COUNT;
         unsigned rgb8 = variant >= BC_FORMAT_COUNT;
         unsigned mode = bc_mode(format);
-        for (unsigned shape = 0; shape < 4; ++shape) {
-            const uint32_t shapes[4][5] = {{4, 4, 1, 0, 0}, {9, 7, 3, 16, 12},
-                                         {1, 1, 2, 0, 0}, {129, 5, 2, 144, 12}};
+        for (unsigned shape = 0; shape < (mode == 9 ? 5u : 4u); ++shape) {
+            const uint32_t shapes[5][5] = {{4, 4, 1, 0, 0}, {9, 7, 3, 16, 12},
+                                         {1, 1, 2, 0, 0}, {129, 5, 2, 144, 12}, {128, 64, 1, 0, 0}};
             struct hybris_bc_region region = {.format = bc_formats[format], .rgb8 = rgb8,
                 .width = shapes[shape][0], .height = shapes[shape][1], .layers = shapes[shape][2],
                 .row_length = shapes[shape][3], .image_height = shapes[shape][4],
@@ -151,7 +151,7 @@ int bc_decode_probe(int validate)
                     p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                         0, 1, &before, 0, NULL, 0, NULL);
                     if (gpu_write) {
-                        p_vkCmdFillBuffer(command, buffers[0], 0, BYTES, 0);
+                        p_vkCmdFillBuffer(command, buffers[0], 0, BYTES, bc_fill_word(mode));
                         VkMemoryBarrier filled = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                             .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT};
                         p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -175,7 +175,7 @@ int bc_decode_probe(int validate)
                             VkResult wanted = VK_ERROR_INITIALIZATION_FAILED;
                             switch (rejection) {
                             case 0: invalid.format = VK_FORMAT_BC6H_UFLOAT_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
-                            case 1: invalid.format = VK_FORMAT_BC7_UNORM_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
+                            case 1: invalid.format = VK_FORMAT_BC6H_SFLOAT_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
                             case 2: invalid.source_range = invalid.source_offset + 7; break;
                             case 3: invalid.destination_range = invalid.destination_offset + 63; break;
                             case 4: invalid.source_offset = UINT64_MAX; break;
@@ -235,7 +235,7 @@ int bc_decode_probe(int validate)
                                 if (pixel >= pixels) break;
                                 unsigned x = pixel % region.width, y = pixel / region.width % region.height;
                                 unsigned z = pixel / (region.width * region.height);
-                                uint32_t value = gpu_write ? 0 : bc_golden(mode,
+                                uint32_t value = gpu_write ? bc_fill_golden(mode, (y & 3) * 4 + (x & 3)) : bc_golden(mode,
                                     bc_variant(mode, x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
                                 expected |= ((value >> (8 * (byte % 3))) & 255) << (8 * part);
                             }
@@ -245,7 +245,7 @@ int bc_decode_probe(int validate)
                             unsigned x = pixel % region.width;
                             unsigned y = pixel / region.width % region.height;
                             unsigned z = pixel / (region.width * region.height);
-                            uint32_t value = gpu_write ? (mode < 2 ? 0xff000000 : 0) :
+                            uint32_t value = gpu_write ? bc_fill_golden(mode, (y & 3) * 4 + (x & 3)) :
                                 bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
                             expected |= value << (16 * part);
                         }
@@ -276,7 +276,7 @@ int bc_decode_probe(int validate)
     if (destroy_messenger) destroy_messenger(instance, messenger, NULL);
     p_vkDestroyInstance(instance, NULL);
     dlclose(h);
-    printf("BC_DECODE_SUMMARY formats=12 encodings=14 readbacks=%u failures=%u validation_errors=%u image_interception=0\n",
+    printf("BC_DECODE_SUMMARY formats=14 encodings=16 corpus_blocks=512 readbacks=%u failures=%u validation_errors=%u image_interception=0\n",
         readbacks, failures, validation.errors);
-    return failures || validation.errors || readbacks != (BC_FORMAT_COUNT + 2) * 4 * 4 ? 2 : 0;
+    return failures || validation.errors || readbacks != ((BC_FORMAT_COUNT + 2) * 4 + 2) * 4 ? 2 : 0;
 }

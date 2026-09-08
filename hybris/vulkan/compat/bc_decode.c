@@ -76,6 +76,7 @@ VkResult hybris_bc_prepare(const struct hybris_bc_region *r,
     case VK_FORMAT_BC4_SNORM_BLOCK: mode = 5; break;
     case VK_FORMAT_BC5_UNORM_BLOCK: mode = 6; break;
     case VK_FORMAT_BC5_SNORM_BLOCK: mode = 7; break;
+    case VK_FORMAT_BC7_UNORM_BLOCK: case VK_FORMAT_BC7_SRGB_BLOCK: mode = 9; break;
     default: return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
     if (r->rgb8) {

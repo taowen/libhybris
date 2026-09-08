@@ -69,12 +69,14 @@ unsigned hybris_bc_physical_mask(VkPhysicalDevice physical)
             queues[i].minImageTransferGranularity.depth != 1) return 0;
     }
     unsigned mask = 0;
-    for (unsigned i = 0; i < 12; ++i) {
+    for (unsigned i = 0; i < 16; ++i) {
         VkFormat format = VK_FORMAT_BC1_RGB_UNORM_BLOCK + i;
+        VkFormat backing = hybris_bc_image_format(format, physical_rgb8_mask(physical));
+        if (backing == VK_FORMAT_UNDEFINED) continue;
         VkFormatProperties native, decoded;
         GetPhysicalDeviceFormatProperties(physical, format, &native);
         if (policy == 1 && (native.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) continue;
-        GetPhysicalDeviceFormatProperties(physical, hybris_bc_image_format(format, physical_rgb8_mask(physical)), &decoded);
+        GetPhysicalDeviceFormatProperties(physical, backing, &decoded);
         VkFormatFeatureFlags required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
             VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
         if ((decoded.optimalTilingFeatures & required) == required) mask |= 1u << i;
@@ -83,7 +85,7 @@ unsigned hybris_bc_physical_mask(VkPhysicalDevice physical)
 }
 static int emulates(VkPhysicalDevice physical, VkFormat format)
 {
-    return format >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && format <= VK_FORMAT_BC5_SNORM_BLOCK &&
+    return format >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && format <= VK_FORMAT_BC7_SRGB_BLOCK &&
         (hybris_bc_physical_mask(physical) & (1u << (format - VK_FORMAT_BC1_RGB_UNORM_BLOCK)));
 }
 int hybris_bc_format_properties(VkPhysicalDevice physical, VkFormat format, VkFormatProperties *properties)

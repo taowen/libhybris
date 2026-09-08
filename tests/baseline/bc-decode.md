@@ -1,11 +1,11 @@
-# Internal BC1–BC5 GPU decoder
+# Internal BC1–BC5/BC7 GPU decoder
 
 `hybris/vulkan/compat/bc_decode.c` provides a Vulkan 1.0 compute kernel for the
-12 BC1 RGB/RGBA, BC2/BC3 UNORM/sRGB and BC4/BC5 UNORM/SNORM formats.
+14 BC1 RGB/RGBA, BC2/BC3/BC7 UNORM/sRGB and BC4/BC5 UNORM/SNORM formats.
 BC1–BC3 output is tightly packed RGBA8. BC1 RGB also supports packed RGB8
 for native three-channel images (four pixels per three storage words). BC4 writes packed R16 pairs (zero
 padding after an odd final texel); BC5 writes RG16. sRGB output retains encoded
-RGB bytes and the image performs the sampling conversion. BC6–BC7 are rejected. The block interpretation follows
+RGB bytes and the image performs the sampling conversion. BC7 also outputs RGBA8; BC6H is rejected. See [BC7 provenance and evidence](bc7.md). The block interpretation follows
 the [Vulkan compressed-format mapping](https://docs.vulkan.org/spec/latest/appendices/compressedtex.html)
 and the S3TC/RGTC chapters of the Khronos Data Format Specification linked there.
 The kernel expands RGB565 endpoints by bit replication and uses integer
@@ -36,9 +36,10 @@ kernel helper.
 ## Existing baseline case
 
 `bc-decode` and `bc-decode-validation` use the existing executable and runner;
-there is no separate test harness. Each execution checks 224 readbacks:
-12 format encodings plus two RGB8 output encodings, each with 4 region shapes
-and 4 submissions. Shapes are 4×4×1, 9×7×3 with
+there is no separate test harness. Each execution checks 264 readbacks:
+14 format encodings plus two RGB8 output encodings, each with 4 region shapes
+and 4 submissions, plus a 128×64 BC7 corpus shape for both BC7 formats
+with 4 submissions. Shapes are 4×4×1, 9×7×3 with
 16-texel rows/12-texel layer height, 1×1×2, and 129×5×2 with 144/12 strides.
 The last shape reduces the caller's dispatch limit to one workgroup to exercise
 splitting without allocating a device-limit-sized buffer.

@@ -134,7 +134,7 @@ int bc_images_probe(int validate, int route)
     }
     /* Record native behavior for the unimplemented formats as well, including
      * when an earlier format is unsupported. Do not hide partial BC support. */
-    for (VkFormat format = VK_FORMAT_BC6H_UFLOAT_BLOCK; format <= VK_FORMAT_BC7_SRGB_BLOCK; ++format) {
+    for (VkFormat format = VK_FORMAT_BC6H_UFLOAT_BLOCK; format <= VK_FORMAT_BC6H_SFLOAT_BLOCK; ++format) {
         VkFormatProperties properties;
         p_vkGetPhysicalDeviceFormatProperties(physical, format, &properties);
         printf("BC_IMAGES_UNIMPLEMENTED format=%u linear=%u optimal=%u buffer=%u\n",
@@ -327,7 +327,7 @@ int bc_images_probe(int validate, int route)
             int use_sync2 = sync2 && (mip & 1);
             sync2_cases += use_sync2;
             unsigned mode = bc_mode(f);
-            unsigned sampler_choice = linear_filter[f] ? 1 + (f < 2 ? mip : mip % 3) : 0;
+            unsigned sampler_choice = linear_filter[f] ? 1 + (f < 2 || f >= 12 ? mip : mip % 3) : 0;
             /* Legacy opaque-black sampling with nonidentity swizzles is undefined. */
             unsigned view_swizzled = shape_index && sampler_choice != 4;
             uint32_t block_bytes = bc_block_bytes(mode);
@@ -422,7 +422,7 @@ int bc_images_probe(int validate, int route)
             CHECK(p_vkBeginCommandBuffer(command, &begin));
             p_vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
             p_vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &descriptors, 1, &dynamic_offset);
-            uint32_t shape[] = {width, height, LAYERS, f >= 8 ? 1 + (f & 1) : 0, linear_filter[f] != 0};
+            uint32_t shape[] = {width, height, LAYERS, f >= 8 && f < 12 ? 1 + (f & 1) : 0, linear_filter[f] != 0};
             p_vkCmdPushConstants(command, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(shape), shape);
             VkMemoryBarrier before = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                 .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
@@ -458,7 +458,7 @@ int bc_images_probe(int validate, int route)
             if (patched) {
                 /* A GPU-produced block overwrites a nonzero x/layer subregion.
                  * Host upload bytes at this offset deliberately contain 0xa5. */
-                p_vkCmdFillBuffer(command, buffers[0], 8192, block_bytes, 0);
+                p_vkCmdFillBuffer(command, buffers[0], 8192, block_bytes, bc_fill_word(mode));
                 VkMemoryBarrier ready = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                     .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT};
                 p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -551,7 +551,7 @@ int bc_images_probe(int validate, int route)
                     unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
                     uint32_t reference_pixel = bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round),
                         (y & 3) * 4 + (x & 3), round);
-                    if (patched && z == 1 && x >= 4 && x < 8 && y < 4) reference_pixel = f < 4 ? 0xff000000 : 0;
+                    if (patched && z == 1 && x >= 4 && x < 8 && y < 4) reference_pixel = bc_fill_golden(mode, (y & 3) * 4 + (x & 3));
                     bc_reference_store(reference_pixels, f, pixel, reference_pixel);
                 }
                 VkMappedMemoryRange upload_range = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -610,7 +610,7 @@ int bc_images_probe(int validate, int route)
     p_vkDestroyDevice(device, NULL);
     if (destroy_messenger) destroy_messenger(instance, messenger, NULL);
     p_vkDestroyInstance(instance, NULL); dlclose(h);
-    printf("BC_IMAGES_SUMMARY formats=12 shapes=2 readbacks=%u copy2_cases=%u sync2_cases=%u maintenance4=%u format_list=%u failures=%u validation_errors=%u route=%d\n",
+    printf("BC_IMAGES_SUMMARY formats=14 shapes=2 readbacks=%u copy2_cases=%u sync2_cases=%u maintenance4=%u format_list=%u failures=%u validation_errors=%u route=%d\n",
         readbacks, copies2_cases, sync2_cases, maintenance4, format_list, failures, validation.errors, route);
     return failures || validation.errors || readbacks != BC_FORMAT_COUNT * 2 * 4 * 3 ? 2 : 0;
 }
