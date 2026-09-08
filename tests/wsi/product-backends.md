@@ -216,3 +216,49 @@ fallback in the runtime evidence. Every advertised usage still needs its own
 real operation coverage; requesting a usage flag is not that coverage. Arbitrary
 allocator layouts, maximum-size allocations, mutable views, disconnect/release
 races and teapot/scene application gates remain outside these results.
+
+## Native scene shared Host — 2026-09-08
+
+Ardesk's `tests/test-scene-ahb-device.py` now uses the same Host as the Vulkan
+window probes: per-device exclusion, external APK/PID/starttime identity,
+bounded execution, owned-client cleanup and physical screenshot transport.
+The exact scene pixel checker is separated into `tests/scene_ahb_evidence.py`;
+its pixel expectations and tolerance are unchanged. The scene remains a
+native bionic AHB/TAWC-DRI workload, not a Vulkan client. VVL and Vulkan capture
+are not applicable evidence for this workload.
+
+Each run actually builds the client with NDK Clang and retains the build
+command/compiler, source and XCB build dependency hashes, deployed ELF hash,
+client PID, negotiated protocol, maps, actual Android library hashes, four
+screenshots and compositor FD snapshots. Unique timestamp/UUID directories
+prevent previous results from being overwritten. A pixel failure is recorded
+while subsequent phases continue, so a successful client exit cannot hide an
+incorrect physical scene.
+
+Final client SHA256:
+`6d4251bcd78fa97c20306e825e215e2f2ddf4e9b930bb4cb382bbc4dfbdde018`.
+Raw results are in the parent checkout's `build/scene-ahb/`.
+
+| Run | Device / installed APK | Result |
+| --- | --- | --- |
+| `20260908T224154-8803b145` | X300, `f89f8169…` | PASS; four phases, 193 sample positions / 1,737 pixels; FD 254 → 254 |
+| `20260908T224155-58e5dd0c` | Redmi, older `6ce84106…` | FAIL; missing third-row windows, wrong shm/AHB order and alpha; client exit 0 does not override pixel failures; FD 200 → 200 |
+| `20260908T224156-3169e052` | OnePlus 8T at `192.168.1.28:5555`, `f89f8169…` | FAIL before scene; X11 connection code 1, no active Xwayland observed |
+
+X300 and Redmi retain 298 and 252 mapped-library hashes respectively. All
+three runs leave the external service identity unchanged. The Redmi APK was
+already documented as not receiving the scene composition update; no APK was
+installed or restarted by this batch. Earlier failed/intermediate runs are
+retained in the same directory, including the first Redmi run that stopped
+at the first bad pixel. Historical OnePlus success is not counted as a pass
+for its current unavailable X display.
+
+The shared Host's existing Vulkan screenshot path was independently exercised
+by Mali XCB present + VVL, `build/scene-host-wsi-results/20260908T224058-0b7bf0b8`:
+eight exact readbacks, two physical screenshots, eight presents/seven releases,
+no early reuse and zero validation errors. This used the same verified ICD,
+loader and validation inputs as the preceding format matrix.
+
+These results establish the native scene gate on X300 with shared transport
+and evidence. They do not close teapot's application VVL/capture gate, Vulkan
+alpha/usage semantics, native buffer release races or long-run FD stability.

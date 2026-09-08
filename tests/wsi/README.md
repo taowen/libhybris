@@ -137,3 +137,12 @@ open. Headless baseline and desktop-GL application tests are separate suites.
 The [frontend deletion record](frontend-removal.md) lists the removed code,
 final build checks, vendor-ICD window regressions and the retained XCB resize
 validation failure with pre-deletion controls.
+
+## Native scene application gate
+
+The parent Ardesk `tests/test-scene-ahb-device.py` reuses this Host for the
+per-device lock, external compositor identity, bounded client execution,
+screenshots and cleanup. Its four-phase AHB scene checker remains in the
+owning product; it does not stage a Vulkan backend or claim VVL/capture
+coverage. Each invocation creates a unique evidence directory and records
+actual client/library hashes. See [application evidence](product-backends.md#native-scene-shared-host--2026-09-08).

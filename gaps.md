@@ -1086,3 +1086,15 @@ extent 上限，创建时再检查实际选择的路径。AHB/HAL 与 DMA-BUF �
 和屏幕证据。构建及真机结果见[导入能力门](tests/wsi/product-backends.md#dma-buf-import-capability-gate--2026-09-08)。
 未知 allocator 布局仍在分配/导入时拒绝；各 usage 位的实际操作、复杂
 SRGB/alpha、最大尺寸、故障竞态和应用级窗口门未因此闭合，G11 继续开放。
+
+### G11 原生 scene 复用共同 Host（2026-09-08）
+
+父仓库十二窗口 AHB scene 门复用 WSI Host 的设备锁、外部服务身份、
+有界执行、截图和清理；像素检查按职责独立，预期与容差不变。每次实际
+NDK 构建并保留独立目录、源码/ELF/实际库哈希及四阶段证据。X300 通过
+193 采样位置、1,737 像素，FD 254→254；Redmi 旧 APK 的缺图/层级/alpha
+失败被门禁识别，即使客户端正常退出也不能 PASS。一加当前无可用 X
+服务，运行失败而非沿用历史通过。共同 Host 的 Vulkan XCB/VVL 回归
+通过。详见[scene 证据](tests/wsi/product-backends.md#native-scene-shared-host--2026-09-08)。
+此 native AHB 用例不计入 Vulkan validation/capture；teapot 应用门、
+Vulkan alpha/usage 语义、release 竞态和长期 FD 检查继续开放。

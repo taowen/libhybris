@@ -101,7 +101,12 @@ class Host:
         if cwd.returncode == 0 and cwd.stdout.strip() == remote:
             self.app('kill -TERM ' + pid, capture_output=True)
 
-    def execute(self, command, remote, out, timeout, diagnostics=None):
+    def screenshot(self, path):
+        with path.open('wb') as picture:
+            subprocess.run(self.adb + ['exec-out', 'screencap', '-p'],
+                           stdout=picture, check=True, timeout=10)
+
+    def execute(self, command, remote, out, timeout, diagnostics=None, on_line=None):
         launch = 'cd ' + shlex.quote(remote) + ' && echo $$ > runner.pid && exec env ' + command
         process = subprocess.Popen(self.adb + ['shell', 'run-as ' + self.package + ' sh -c ' + shlex.quote(launch)],
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -118,7 +123,10 @@ class Host:
                         if not data: selector.unregister(key.fileobj); continue
                         last_output = time.monotonic(); log.write(data); log.flush(); pending += data
                         while b'\n' in pending:
-                            line, pending = pending.split(b'\n', 1); print(line.decode(errors='replace'), flush=True)
+                            line, pending = pending.split(b'\n', 1)
+                            decoded = line.decode(errors='replace')
+                            print(decoded, flush=True)
+                            if on_line: on_line(decoded)
                             match = re.search(rb'^(?:WSI_FRAME|X11_RESIZE_FRAME) epoch=(\d+) frame=(0|7)\b', line)
                             simple = re.search(rb'^X11_FRAME frame=(0|7)\b', line)
                             frame = match.groups() if match else (b'0', simple[1]) if simple else None
@@ -128,8 +136,7 @@ class Host:
                                 # clients keep these two frames still for two seconds.
                                 time.sleep(.6)
                                 path = out / ('screen-' + frame[0].decode() + '-' + frame[1].decode() + '.png')
-                                with path.open('wb') as picture:
-                                    subprocess.run(self.adb + ['exec-out', 'screencap', '-p'], stdout=picture, check=True, timeout=10)
+                                self.screenshot(path)
             return process.wait(timeout=5)
         except (OSError, subprocess.SubprocessError):
             if diagnostics: diagnostics.snapshot(remote, "runner failed before stopping owned client")
