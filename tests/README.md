@@ -11,8 +11,7 @@ The [acceptance checklist](../gaps.md) remains authoritative for the full projec
 | --- | --- |
 | Headless baseline | [Small EGL/GLES and Vulkan smoke test](baseline/README.md) |
 | Desktop OpenGL | [Official Mesa/Zink, EGL and GLX](desktop-gl/README.md) |
-| Window presentation | [Wayland/X11 surfaces, swapchains and external compositor](wsi/README.md) |
-| X11 clients | [Independent X11 integration](x11/README.md) |
+| Window presentation | [Wayland/XCB/Xlib surfaces, swapchains and external compositor](wsi/README.md); X11 clients are built by `tests/x11` and run only through this runner |
 
 ## Headless regression topics
 

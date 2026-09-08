@@ -79,9 +79,9 @@ FAIL in their raw records; no screen or release gate was weakened.
 
 ## Remaining scope
 
-Ardesk teapot/scene application workloads are not automatically covered by
-these Vulkan clients. Import-path capability parity, delayed release,
-disconnect and destruction races still need a complete common gate.
+Ardesk teapot/scene application workloads reuse Host rather than these
+Vulkan clients. Delayed release, disconnect and destruction races are
+coverage expansions, not a second window runner.
 `swapchain-review` remains hybris-only because it uses adapter-specific
 allocation hooks. The external display without TAWC-DRI needed for the
 missing-protocol case was not exercised in this batch. These results do not

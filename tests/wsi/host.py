@@ -106,6 +106,28 @@ class Host:
             subprocess.run(self.adb + ['exec-out', 'screencap', '-p'],
                            stdout=picture, check=True, timeout=10)
 
+    def deploy(self, stage, remote, binary, mode='755'):
+        self.upload(stage, remote)
+        path = remote + '/' + binary
+        self.app('chmod ' + mode + ' ' + shlex.quote(path), check=True)
+        digest = self.app('sha256sum ' + shlex.quote(path), capture_output=True, text=True, check=True).stdout.split()[0]
+        return digest
+
+    def pull_maps(self, remote, out, required=()):
+        maps = self.app('cat ' + shlex.quote(remote + '/maps.txt'),
+                        capture_output=True, text=True, check=True).stdout
+        (out / 'maps.txt').write_text(maps)
+        missing = [name for name in required if name not in maps]
+        if missing:
+            raise RuntimeError('library mappings missing: ' + ', '.join(missing))
+        paths = sorted({line.split(maxsplit=5)[5] for line in maps.splitlines()
+            if len(line.split(maxsplit=5)) == 6 and line.split(maxsplit=5)[5].startswith('/') and '.so' in line.split(maxsplit=5)[5]})
+        if paths:
+            hashes = self.app('sha256sum ' + shlex.join(paths),
+                              capture_output=True, text=True, check=True).stdout
+            (out / 'android-library-hashes.txt').write_text(hashes)
+        return maps
+
     def execute(self, command, remote, out, timeout, diagnostics=None, on_line=None):
         launch = 'cd ' + shlex.quote(remote) + ' && echo $$ > runner.pid && exec env ' + command
         process = subprocess.Popen(self.adb + ['shell', 'run-as ' + self.package + ' sh -c ' + shlex.quote(launch)],

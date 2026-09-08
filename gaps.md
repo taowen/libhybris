@@ -40,7 +40,9 @@ Blender 经 Zink 的启动/渲染不再作为验收条件；上述失败保留�
 2. 可运行标准 validation/capture 工具的加载链。
 3. 从一次 draw/submit 追到实际 descriptor、内存内容、attachment 和最终呈现缓冲区的证据链。
 4. 有真实能力约束、有像素回归测试的格式/着色器/同步兼容处理。
-5. 桌面 GL 前端，以及独立于 GPU 后端的窗口提交机制。
+5. 应用级窗口（teapot/scene）与 Vulkan 探针仍是不同工作负载；故障竞态和 advertised usage 的真实操作尚未用共同门打完。
+
+窗口提交本身已经不是缺口：产品路径是 Zink + 标准 loader → ICD/Turnip WSI → TAWC-DRI / android_wlegl → anlabwc。不要再做第二套跨进程 present 或 hybris EGL 桌面窗口插件。
 
 建议大幅改造 **GPU API 层、兼容层和诊断层**，保留已有 Android loader、libc hooks、TLS 修补作为底座，先用回归测试保护它们。重写 TLS 和图形兼容层同时进行，会让故障来源难以区分。
 
@@ -81,26 +83,28 @@ Blender 经 Zink 的启动/渲染不再作为验收条件；上述失败保留�
 | [Vulkan 包装](hybris/vulkan/vulkan.c) / [导出](hybris/vulkan/vulkan_exports.c) | 独立文件持有导出 trampoline，GIPA/GDPA 对少数 WSI 函数拦截，其余转发 | 所有新加兼容处理都会覆盖静态链接、dlsym、GIPA、GDPA 四种入口 |
 | [Vulkan 平台构建](hybris/vulkan/platforms/Makefile.am) | common/null/wayland；Xlib/XCB surface 在 Vulkan 包装中返回不支持 | 历史 `vulkanplatform_x11.so` 仍是当前源码能力 |
 | [GLES 包装](hybris/glesv2/glesv2.c) | GLES 导出与 Android 库桥接 | 提供桌面 OpenGL core/compat、GLX 或完整 GL→GLES 转换 |
-| [EGL X11](hybris/egl/platforms/x11/x11_window.cpp) | `TAWC-DRI` 与 `m_present_sock` 分支并存；后者发 AHB3 私有消息 | EGL X11 已只有统一窗口协议，或已经支持 Vulkan X11 |
-| [Vulkan Wayland](hybris/vulkan/platforms/wayland/wayland_window.cpp) | android_wlegl 缓冲区提交和 fence 等待 | 已通过 resize、surface lost、多窗口和 compositor release 压力测试 |
+| EGL 桌面窗口插件 | 已删除；`ws_init` 拒绝 wayland/x11 | 不能再把 hybris EGL 当前窗口当产品路径 |
+| ICD Wayland/X11 WSI | `vulkan/icd/` 经 android_wlegl / TAWC-DRI 提交 | 已通过共同窗口门；故障竞态仍开放 |
 | [loader bridge](hybris/common/linker_bridge.c)、[libc hooks](hybris/common/hooks.c)、[同步桥接](hybris/common/bionic_sync.c)、[TLS 说明](TAWC_FORK.md) | 独立 Android linker、libc/线程桥接、ARM64 TLS thunk | 任意 Android 版本、任意 vendor library 都兼容 |
 
 摸底中发现本机旧安装目录残留 `vulkanplatform_x11.so`，但当前源码没有相应构建目标。以后必须干净 staging，并记录实际加载文件的 build-id/SHA256，不能拿安装目录文件名证明源码功能。
 
 ### 2.3 Vortek / Gladio 能借鉴什么
 
-本地 Vortek client `f2c50d8`、Gladio client `58d21ab`；宿主参考源码现位于工作区 `x11-glibc-apk`，与固定 Winlator archive 的对应文件一致；详见 [源码范围核对](docs/vortek-scope.md)。这些是设计参考，不是已经通过 CTS 的正确性 oracle。
+Gladio/Vortek 的跨进程 command IPC、PRESENT_SOCKET 和 APK 内 GPU host
+已经从产品树删除。现行接入是同进程：Zink + 标准 loader → hybris ICD 或
+Turnip，窗口经 TAWC-DRI / android_wlegl 交给 anlabwc。历史参考源码在
+工作区 `x11-glibc-apk`，见 [源码范围核对](docs/vortek-scope.md)；那是算法
+对照，不是产品路径，也不是 CTS oracle。
 
-| 参考 | 观察到的能力 | 移植时的缺口 |
+| 参考 | 观察到的能力 | 产品现状 |
 |---|---|---|
-| [Vortek ShaderInspector](../../../x11-glibc-apk/app/src/main/cpp/vortekrenderer/src/shader_inspector.c) | scaled vertex format 转换、SPIR-V 处理、按 Mali/DXVK 条件启用处理 | 要去除 RPC object 依赖；转换前后验证、语义等价、设备/驱动条件与关闭开关 |
-| [Vortek TextureDecoder](../../../x11-glibc-apk/app/src/main/cpp/vortekrenderer/src/texture_decoder.c) | BC 解码与替代 image/upload；当前 `getBCInfo` 明列 BC1–BC5 | 不是完整 BC1–BC7 支持证明；还需 mip/layer/subregion/sRGB/SNORM 等语义 |
-| [timeline 等待传输](../../../x11-glibc-apk/app/src/main/cpp/vortekrenderer/src/timeline_semaphore.c) | 工作线程调用原生 vkWaitSemaphores，经 eventfd 返回 RPC 等待结果 | 不是 timeline 软件模拟；libhybris 已有原生 core/KHR 透传。缺失硬件特性的模拟另属 G09，不能将这个文件当作已有实现 |
-| [Gladio 自述](../gladio/README.md) | GL 1.x 模拟、shader 转换、纹理解压，重点为旧游戏 | 是 client 项目自述，不代表父项目移植的宿主具备全部功能 |
-| [当前 Gladio 宿主](../../android/app/src/main/cpp/gladio_host.c) | GLES context、部分命令处理；switch 默认分支直接跳过 | 必须逐 API 清点，不能靠现有宿主推定完整桌面 GL 兼容 |
+| Vortek ShaderInspector | scaled vertex / SPIR-V 条件处理 | 同进程 ICD `compat/`，无 RPC object |
+| Vortek TextureDecoder | BC 解码与替代 upload | 同进程 ICD `compat/` |
+| timeline 等待传输 | 经 eventfd 的 RPC 等待 | 未移植；原生 core/KHR timeline 透传 |
+| Gladio 宿主 / 命令环 | GLES 命令 IPC | 已删除；桌面 GL 走 Zink |
 
-Vortek 的封包不能改善 API 语义；其可复用价值在 compatibility algorithms。把算法改成同进程调用 backend dispatch，不需要保留 command ring/socket。
-若移植代码，逐文件保留许可证与来源；两个 client 根目录许可证为 LGPL-2.1，宿主源码另行按文件核对。这是移植边界记录，不影响本次只读调研。
+Vortek 的封包不能改善 API 语义。不要把 command ring/socket 加回来。
 
 ## 3. 两次 Blender 失败揭示的缺口
 
@@ -143,13 +147,12 @@ Vortek 的封包不能改善 API 语义；其可复用价值在 compatibility al
 ## 4. 建议的目标结构
 
 ```text
-桌面 GL 应用 ─→ Mesa/Zink 或独立 GL→GLES 前端 ─┐
-GLES 应用 ────→ GLES compatibility + diagnostics ├→ 同进程 ABI bridge → Android 驱动
-Vulkan 应用 ──→ Vulkan compatibility + diagnostics┘
-                          │
-                          └→ 独立 WSI / buffer lifecycle
-                               ├→ Wayland 扩展 → compositor
-                               └→ X11 buffer protocol → Xwayland → compositor
+桌面 GL 应用 ─→ Mesa Zink ─┐
+                           ├→ 标准 loader → hybris ICD 或 Turnip
+Vulkan 应用 ───────────────┘         │
+                                     ├→ Wayland：android_wlegl → anlabwc → Surface
+                                     └→ X11：TAWC-DRI → Xwayland → android_wlegl → anlabwc
+GLES 应用 ─→ hybris GLES（非产品窗口路径）
 ```
 
 API 兼容处理不认识窗口 XID/合成器私有 socket；WSI 不修改 shader 或伪装 GPU feature。AHB 是可共享缓冲区，不是命令协议。

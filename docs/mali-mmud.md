@@ -67,8 +67,8 @@ Automatic mode leaves the MMUD environment variable unset:
   GLX and Wayland EGL both pass hardware, shader, swap and normal-exit checks.
   `/proc/PID/maps` identifies the newly staged common library, and the process
   environment confirms the MMUD variable is absent. Both Android screenshots
-  show the orange teapot within its decorated window. These are visual checks,
-  not full-window pixel comparisons. The runner, logs and provenance are saved
+  show the orange teapot within its decorated window. These MMUD records are
+  visual checks, not the later Host teapot pixel gate. The runner, logs and provenance are saved
   with the result. Ardesk, its Mesa and the APK remain installed unchanged.
   An earlier temporary launch (`mmud-teapots-20260908T182535`) forced an absolute
   HAL path under the guest rootfs shim and failed namespace access before
