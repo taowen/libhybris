@@ -905,3 +905,16 @@ divisor=2 曾失败。现确认 Zink 的旧 EXT 属性查询在 KHR-only Mali �
 packed 图像和主绘制均通过 VVL/SyncVal，未改 Mesa 或新增 EXT 宣告。
 独立 Vulkan 动态 stride + divisor=1/2/3 在 Mali 通过，Adreno 缺少对应动态
 扩展；这些固定离屏结果不代表完整 GL、窗口或所有实例化语义验收。详见 [结果与未覆盖项](tests/baseline/packed-vertex.md)。
+
+
+### G06 多重绘制捕获步长修复（2026-09-08）
+
+固定 Turnip 探针的 `multidraw-0.rgba` 回放差异已定位到 GFXReconstruct
+忽略应用 12 字节步长、按连续 8 字节结构捕获参数。修复已作为
+`taowen/gfxreconstruct` 的 `b52a3841` fork 提交接入，未增加本地补丁。
+新捕获 `20260908T184224-9046f986` 的四项绘制参数正确，50 次读回中
+38 张保存图像全部一致；原始渲染 PASS，回放仍因编译标志告警为 FAIL。
+Mali 回归 `20260908T184306-c221eed9` 的 15 张保存图像全部匹配，
+回放 PASS，但原始属性错误仍使渲染 FAIL。两者各有 12 张原始图像未保存，
+不计为比较覆盖。边界步长与任意应用未验收，G06 不关闭；详见
+[捕获证据](tests/desktop-gl/capture.md#strided-multi-draw-capture-repair)。

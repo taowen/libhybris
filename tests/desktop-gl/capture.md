@@ -177,8 +177,8 @@ Turnip also mismatched the same multidraw image with `-m rebind`
 (`20260908T172622-4e3a0435`), alongside a missing image-layout warning. The
 no-translation run still reports the tool's removal of the pipeline
 compile-required flag. These are retained failures, not evidence of an
-unchanged Turnip application image. The root cause of that pixel divergence
-remains open.
+unchanged Turnip application image. The pixel divergence was subsequently
+traced to strided multi-draw capture, as recorded below.
 
 The patched tool also passes the existing independent Adreno HAL widget run
 `20260908T173058-6d4246a2`: version, UBO and all ordinary/dynamic/multiple
@@ -192,9 +192,48 @@ final runs were checked. Earlier manual commands, failed logs and partial
 outputs remain under the source captures' `capture/replay-attempts/`.
 
 
-The current builder uses `taowen/gfxreconstruct` at
+The fork migration initially pinned `taowen/gfxreconstruct` at
 `e6865bedad471a7ffaada05b6b18b29d77da36ee` directly. The comparisons above
 predate the fork migration and retain their original build identities.
 The empty-submit change is now a normal fork commit; the builder applies no
 patch. New manifests record `source-repository.txt` and `source-revision.txt`
 alongside the actual source-tree and installed-file hashes.
+
+### Strided multi-draw capture repair
+
+The builder now pins [fork commit b52a3841](https://github.com/taowen/gfxreconstruct/commit/b52a3841f7669872b85e75435cf90b4d373eb5fa).
+The change lives in the fork, with custom encoders and regenerated dispatch
+entry declarations; the libhybris builder applies no patch.
+
+In Turnip capture `20260908T173401-b1104260`, call 4124 records four
+`vkCmdDrawMultiEXT` draws with a 12-byte application stride. The generic
+encoder read consecutive 8-byte structures. It serialized `(3,3), (0,0),
+(0,118), (6,3)` instead of the probe's `(3,3), (0,0), (6,3), (9,3)`
+(first vertex, vertex count). Replay also used the original 12-byte stride
+on the compact decoded array. The last blue band became magenta in
+`multidraw-0.rgba`; the original GL rendering passed.
+
+The custom encoders read each logical draw at its application stride and
+serialize compact structures with a matching compact stride. Converter JSON
+therefore shows the normalized replay stride, not the application's physical
+spacing. The driver still receives the original pointer and stride. Indexed
+draws with a shared `pVertexOffset` do not read the ignored per-draw offset.
+These rules follow the Vulkan [multi-draw](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdDrawMultiEXT.html)
+and [indexed multi-draw](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdDrawMultiIndexedEXT.html)
+parameter semantics. Old captures with missing draw data require recapture.
+
+The AArch64 capture layer and replay tools were rebuilt using the pinned
+builder. Fresh device evidence uses the existing expanded GL probe:
+
+| Run | Original rendering | Replay evidence |
+| --- | --- | --- |
+| `20260908T184224-9046f986` — Turnip, lazy descriptors, no memory translation | PASS | 50 readbacks; all 38 saved images match, including `multidraw-0.rgba`. Call 4124 contains the four correct draws and stride 8. Replay remains FAIL because the tool warns about removing the pipeline compile-required flag. |
+| `20260908T184306-c221eed9` — Mali, lazy descriptors, rebind, packed vertex enabled | FAIL; existing attribute failures remain | Replay PASS; 27 readbacks and all 15 saved images match, including the failed original images. Automatic MMUD activation is used without the loader-check override. |
+
+Both runs retain 12 readbacks whose originals the probe does not save; these
+are not counted as matched images. The Turnip fixture exercises padded
+non-indexed draws, compact indexed draws, and indexed draws with a shared
+offset. Zero stride, overlapping records and an ignored offset at a guard-page
+boundary have not been separately exercised on a device. No warning gate was
+relaxed. The remaining compile-required warning, arbitrary application replay,
+and G04/G06/G10/G12 acceptance remain open.
