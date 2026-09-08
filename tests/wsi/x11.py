@@ -115,9 +115,9 @@ def run(a, host, out):
                 frames = re.findall(r'^X11_RESIZE_FRAME epoch=(\d+) frame=(\d+) image=\d+ size=(\d+)x(\d+) pixels=(\d+) exact=1$', log, re.M)
                 expected = [(str(epoch), str(frame), str(w), str(h), str(w*h)) for epoch, (w,h) in enumerate(sizes) for frame in range(8)]
                 if frames != expected: raise ValueError('missing exact resized frame sequence')
-                transitions = re.findall(r'^X11_RESIZE epoch=(\d+) size=(\d+)x(\d+) out_of_date=1 fence_unsignaled=1 semaphore_reused=1 old_images_preserved=1$', log, re.M)
+                transitions = re.findall(r'^X11_RESIZE epoch=(\d+) size=(\d+)x(\d+) out_of_date=1 fence_unsignaled=1 present_wait_idle=1 semaphore_reused=1 old_images_preserved=1$', log, re.M)
                 if transitions != [('1', '160', '120'), ('2', '256', '192')]: raise ValueError('missing resize/synchronization verdicts')
-                record['resize'] = {'transitions': 2, 'frames': 24, 'out_of_date': True, 'semaphore_reused': True}
+                record['resize'] = {'transitions': 2, 'frames': 24, 'out_of_date': True, 'present_wait_idle': True, 'semaphore_reused': True}
 
             active = {}; serials = set(); presents = releases = 0
             for event, window, serial, buffer in re.findall(r'^X11_WSI event=(present|release) window=(\d+) serial=(\d+) buffer=(0x[0-9a-f]+)$', log, re.M):

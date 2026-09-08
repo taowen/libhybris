@@ -7,20 +7,22 @@
 
 /* Keep an acquired image across a real X resize. A rejected present must
  * consume its semaphore before that same binary semaphore can be signaled
- * again. An empty submit with a fence bounds that independent reuse check. */
+ * again. Wait for the rejected present queue operations before re-signaling;
+ * an empty submit with a fence then bounds the independent reuse check. */
 int x11_resize(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhysicalDevice physical,
     VkDevice device, VkQueue queue, xcb_connection_t *connection, xcb_window_t window,
     VkSwapchainCreateInfoKHR *sw, VkSwapchainKHR *chain, VkCommandBuffer command,
-    VkFence fence, VkSemaphore ready, unsigned epoch, unsigned width, unsigned height)
+    VkFence fence, const VkSemaphore *ready_by_image, unsigned epoch, unsigned width, unsigned height)
 {
     V(vkAcquireNextImageKHR); V(vkWaitForFences); V(vkResetFences); V(vkGetFenceStatus);
     V(vkGetSwapchainImagesKHR); V(vkResetCommandBuffer); V(vkBeginCommandBuffer);
-    V(vkCmdPipelineBarrier); V(vkEndCommandBuffer); V(vkQueueSubmit); V(vkQueuePresentKHR);
+    V(vkCmdPipelineBarrier); V(vkEndCommandBuffer); V(vkQueueSubmit); V(vkQueuePresentKHR); V(vkQueueWaitIdle);
     V(vkGetPhysicalDeviceSurfaceCapabilitiesKHR); V(vkCreateSwapchainKHR); V(vkDestroySwapchainKHR);
     uint32_t held, count = 8; VkImage images[8];
     OK(vkGetSwapchainImagesKHR(device, *chain, &count, images));
     OK(vkAcquireNextImageKHR(device, *chain, 2000000000ull, VK_NULL_HANDLE, fence, &held));
     if (held >= count) return 2;
+    VkSemaphore ready = ready_by_image[held];
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 2000000000ull));
     OK(vkResetFences(device, 1, &fence));
     OK(vkResetCommandBuffer(command, 0));
@@ -56,6 +58,10 @@ int x11_resize(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhysicalDev
     VkResult presented = vkQueuePresentKHR(queue, &present);
     printf("X11_RESIZE_PRESENT epoch=%u result=%d per_chain=%d\n", epoch, presented, per_chain);
     if (presented != VK_ERROR_OUT_OF_DATE_KHR || per_chain != presented) return 2;
+    /* OUT_OF_DATE still enqueues the present waits. Complete those queue
+     * operations before this binary semaphore is signaled again. This probe
+     * does not use swapchain-maintenance presentation fences. */
+    OK(vkQueueWaitIdle(queue));
     submit.commandBufferCount = 0;
     OK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));
     VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
@@ -73,6 +79,6 @@ int x11_resize(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhysicalDev
     for (unsigned i = 0; i < count; ++i) if (old_images[i] != images[i]) return 2;
     vkDestroySwapchainKHR(device, *chain, NULL);
     *chain = replacement; sw->oldSwapchain = VK_NULL_HANDLE;
-    printf("X11_RESIZE epoch=%u size=%ux%u out_of_date=1 fence_unsignaled=1 semaphore_reused=1 old_images_preserved=1\n", epoch, width, height);
+    printf("X11_RESIZE epoch=%u size=%ux%u out_of_date=1 fence_unsignaled=1 present_wait_idle=1 semaphore_reused=1 old_images_preserved=1\n", epoch, width, height);
     return 0;
 }

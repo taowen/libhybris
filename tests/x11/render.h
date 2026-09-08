@@ -9,6 +9,6 @@ int x11_render(PFN_vkGetInstanceProcAddr, xcb_connection_t *, xcb_window_t, xcb_
 
 int x11_resize(PFN_vkGetInstanceProcAddr, VkInstance, VkPhysicalDevice, VkDevice, VkQueue,
     xcb_connection_t *, xcb_window_t, VkSwapchainCreateInfoKHR *, VkSwapchainKHR *,
-    VkCommandBuffer, VkFence, VkSemaphore, unsigned, unsigned, unsigned);
+    VkCommandBuffer, VkFence, const VkSemaphore *, unsigned, unsigned, unsigned);
 
 #endif

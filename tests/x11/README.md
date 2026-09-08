@@ -27,3 +27,48 @@ results in the [integration review](../wsi/integration-review.md) and
 [history archive](../wsi/history.md) describe the previous fixture and do not
 prove the externally managed service workflow. Missing-protocol checks now
 require an existing display without TAWC-DRI, supplied by its external owner.
+
+## Resize semaphore synchronization (2026-09-08)
+
+The resize probe now waits for the rejected present's queue operations before
+re-signaling the same binary semaphore. It also selects the semaphore using
+the actually acquired image index, rather than always selecting image zero.
+The old probe re-signaled immediately after `VK_ERROR_OUT_OF_DATE_KHR` and
+VVL 1.4.362 reported two `VUID-vkQueueSubmit-pSignalSemaphores-00067` errors
+on each device. The [pre-change records and controls](../wsi/frontend-removal.md)
+remain intact.
+
+The [WSI specification](https://docs.vulkan.org/spec/latest/chapters/VK_KHR_surface/wsi.html)
+requires the semaphore waits to remain enqueued when present returns out of
+date; returning from the call is not an observation that those waits completed.
+This fixed negative-case probe calls `vkQueueWaitIdle` before the empty
+signal/wait submissions. It still verifies both out-of-date results, unchanged
+acquire index, unsignaled fence, reuse of the same semaphore and preservation
+of old swapchain image handles. The runner requires `present_wait_idle=1` in
+both transition records; it does not discard validation messages.
+
+This probe uses unextended swapchain synchronization. Queue idle here is not
+a general replacement for presentation fences or compositor buffer release.
+The [Khronos semaphore-reuse guide](https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html)
+describes that distinction. VVL's pinned
+[state tracker](https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/538f91f14cd39274263eb15e6b4228f355370353/layers/state_tracker/state_tracker.cpp)
+clears the old swapchain wait tracking on successful queue idle when neither
+swapchain-maintenance1 extension is enabled.
+
+The X11 client was actually rebuilt. Its SHA-256 is
+`751d5e9f360a1eb9faec644b4ee32136167ab91c5b9a726f0a55caefafc9018f`.
+The verified ICD/runtime and VVL build are the same as the deletion regression;
+only the probe and its evidence check changed. No unit tests were added.
+
+| Device / API | Run | Result |
+| --- | --- | --- |
+| Mali / XCB | `20260908T212159-df46e944` | PASS |
+| Adreno vendor HAL / XCB | `20260908T212159-d6bc31a9` | PASS |
+| Mali / Xlib | `20260908T212238-f4b7b345` | PASS |
+| Adreno vendor HAL / Xlib | `20260908T212238-58838a84` | PASS |
+
+Every run has three sizes, 24 exact GPU readbacks, six matching screenshots,
+two complete resize transitions and zero VVL errors. Results are retained in
+`/tmp/libhybris-resize-wait-results/`. Python compilation and diff checks pass.
+This resolves the reproduced resize-probe validation failure; it is not Turnip
+window coverage or completion of all WSI synchronization/teapot gates.

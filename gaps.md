@@ -1047,3 +1047,13 @@ EGL 属性覆盖钩子，以及整个 Vulkan frontend 窗口插件加载层。IC
 和捕获回放通过，Mali XCB/Adreno Xlib 普通呈现通过。XCB resize 各两条 00067
 错误在删除前构建上同样复现，仍为 FAIL。详见[删除及对照证据](tests/wsi/frontend-removal.md)。
 本批不关闭 G06/G12，也不将 vendor ICD 结果扩大为 Turnip 窗口验收。
+
+### X11 resize 探针同步修正（2026-09-08）
+
+已修正上一批 XCB resize 的 00067：失败 present 返回不代表入队的 semaphore
+wait 已完成，探针先等待队列操作，再对同一个信号量执行 signal/wait 检查；
+信号量按实际 acquire 图像索引选择。原有 out-of-date、未触发 fence、原 index、
+旧图像保留检查均保留。实际重编客户端后，Mali/Adreno vendor ICD 的 XCB/Xlib
+四组运行各 24 帧、六张屏幕截图通过，VVL 各零错误。规范依据及记录见
+[X11 同步证据](tests/x11/README.md#resize-semaphore-synchronization-2026-09-08)。
+本批只关闭复现的探针同步错误，未关闭 G06/G12 或 Turnip 产品窗口验收。

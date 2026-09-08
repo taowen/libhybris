@@ -61,8 +61,10 @@ the recorded GFXReconstruct build. Results are under the build's
 | Pre-deletion XCB resize controls: Mali `20260908T211349-9e842e4c`; Adreno `20260908T211349-f2655df1` | Same two validation errors each with the previous libraries and runner; this failure predates deletion |
 
 The resize failure occurs when the existing probe re-signals the semaphore
-after the rejected out-of-date present. It remains an unresolved validation
-gate; pixel success does not override it. Initial failed runs also remain:
+after the rejected out-of-date present. It was retained as an unresolved
+validation gate in this deletion batch; the subsequent
+[probe synchronization correction](../x11/README.md#resize-semaphore-synchronization-2026-09-08)
+records the fix and new runs without rewriting these failures. Initial failed runs also remain:
 `210331-*` exposed the lost direct-export guard (fixed and rerun);
 `210714-*` exposed missing client libX11; `211001-e2255697` and
 `211014-8c94d74e` rejected mismatched libc search origins before device execution.

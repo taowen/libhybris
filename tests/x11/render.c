@@ -179,7 +179,7 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
       if (epoch) {
         unsigned width = epoch == 1 ? 160 : 256, height = epoch == 1 ? 120 : 192;
         if (x11_resize(gip, instance, physical, device, queue, connection, window,
-                &sw, &chain, command, fence, ready[0], epoch, width, height)) return 2;
+                &sw, &chain, command, fence, ready, epoch, width, height)) return 2;
         for (uint32_t i = 0; i < count; ++i) vkDestroySemaphore(device, ready[i], NULL);
         free(images); free(ready);
         OK(vkGetSwapchainImagesKHR(device, chain, &count, NULL));
