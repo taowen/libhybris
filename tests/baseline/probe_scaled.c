@@ -9,6 +9,7 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
   while (!strstr(mode, shader->mode)) ++shader;
   const int multiple = shader->multiple, aggregate = shader->aggregate, specialized = shader->specialized;
   const unsigned instance_mode = shader->instance_mode;
+  const int dynamic_stride = strstr(mode, "divisor-stride") != NULL;
   const int packed = strstr(mode, "packed") != NULL;
   const struct scaled_case packed_cases[] = {
     {VK_FORMAT_A2R10G10B10_SNORM_PACK32, "A2R10G10B10_SNORM_PACK32", 8, 4, 1, VK_FORMAT_A2B10G10R10_SNORM_PACK32},
@@ -146,8 +147,11 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
                            .pQueueCreateInfos = &qc};
   VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR divisor_features = {0};
   const char *divisor_extension = NULL;
+  const char *stride_extensions[2];
+  VkPhysicalDeviceExtendedDynamicStateFeaturesEXT stride_features = {0};
   if (instance_mode) {
     int status = scaled_divisor_features(gip, instance, pd, instance_mode, &dc, &divisor_features, &divisor_extension);
+    if (!status && dynamic_stride) status = scaled_stride_features(gip, instance, pd, &dc, &stride_features, stride_extensions);
     if (status) {
       if (messenger) destroy_messenger(instance, messenger, NULL);
       p_vkDestroyInstance(instance, NULL);
@@ -157,6 +161,8 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
   }
   VkDevice device;
   CHECK(p_vkCreateDevice(pd, &dc, NULL, &device));
+  PFN_vkCmdBindVertexBuffers2EXT bind_stride = (void *)gip(instance, "vkCmdBindVertexBuffers2EXT");
+  if (dynamic_stride && !bind_stride) return 2;
   if (route) {
     V(vkGetDeviceProcAddr);
 #ifdef HYBRIS_PROBE_LINKED
@@ -354,6 +360,10 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
       .pColorBlendState = &blend,
       .layout = pipeline_layout,
       .renderPass = rp};
+  VkDynamicState stride_state = VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE_EXT;
+  VkPipelineDynamicStateCreateInfo dynamic = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+      .dynamicStateCount = 1, .pDynamicStates = &stride_state};
+  if (dynamic_stride) gp.pDynamicState = &dynamic;
   VkVertexInputBindingDescription binding = {.binding = 0, .inputRate = instance_mode ? VK_VERTEX_INPUT_RATE_INSTANCE : VK_VERTEX_INPUT_RATE_VERTEX};
   VkVertexInputBindingDivisorDescriptionKHR divisor_binding = {.binding = 0, .divisor = 1};
   VkPipelineVertexInputDivisorStateCreateInfoKHR divisor_state = {
@@ -407,7 +417,7 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
     const struct scaled_case *second = &cases[((c + 6) % 12) ^ 1];
     attributes[aggregate ? 1 : 0].format = f->format;
     attributes[2].format = second->format;
-    binding.stride = aggregate ? 64 : f->bits / 8 * f->components;
+    binding.stride = dynamic_stride ? 0 : aggregate ? 64 : f->bits / 8 * f->components;
     unsigned rounds = instance_mode ? (instance_mode & 2 ? 1 : 3) : specialized ? 4 : 1;
     for (unsigned round = 0; round < rounds; ++round) {
       const uint32_t column_counts[] = {2, 4, 3, 2};
@@ -466,6 +476,15 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
         }
         if (instance_mode) scaled_divisor_data(f, divisor_binding.divisor, first_instance, phase, data, expected);
         else if (phase == 2) expected[aggregate ? 4 : 0] += 1;
+        VkDeviceSize fetch_stride = f->bits / 8 * f->components + (phase == 1 ? 8 : 4);
+        if (dynamic_stride) {
+          unsigned char tight[192];
+          memcpy(tight, data, sizeof(tight));
+          memset(data, 0xa5, sizeof(data));
+          unsigned width = f->bits / 8 * f->components;
+          for (unsigned row = 0; row < 8; ++row)
+            memcpy(data + 4 + row * fetch_stride, tight + row * width, width);
+        }
         CHECK(p_vkMapMemory(device, imem, 0, sizeof(data), 0, &mapped));
         memcpy(mapped, data, sizeof(data));
         p_vkUnmapMemory(device, imem);
@@ -485,7 +504,14 @@ int scaled_vertex_probe(int validate, int route, const char *mode) {
         p_vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
         p_vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         VkDeviceSize offset = 0;
-        p_vkCmdBindVertexBuffers(cb, 0, 1, &ibo, &offset);
+        if (dynamic_stride) {
+          offset = 4;
+          VkDeviceSize overwritten_stride = fetch_stride + 4;
+          bind_stride(cb, 0, 1, &ibo, &offset, NULL, &overwritten_stride);
+          bind_stride(cb, 0, 1, &ibo, &offset, NULL, &fetch_stride);
+          printf("SCALED STRIDE case=%u round=%u phase=%u offset=4 overwritten=%llu stride=%llu\n",
+              c, round, phase, (unsigned long long)overwritten_stride, (unsigned long long)fetch_stride);
+        } else p_vkCmdBindVertexBuffers(cb, 0, 1, &ibo, &offset);
         p_vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, push.size, expected);
         p_vkCmdDraw(cb, instance_mode ? 6 : 3, instance_mode ? 4 : 1, 0, first_instance);
         p_vkCmdEndRenderPass(cb);

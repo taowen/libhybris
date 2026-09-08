@@ -29,7 +29,7 @@ def vertex_input(text, entry):
     return inputs[0]
 
 
-def scaled_evidence(directory, log, forced, source, unused_builtins=False):
+def scaled_evidence(directory, log, forced, source, unused_builtins=False, dynamic_stride=False):
     validator = shutil.which('spirv-val')
     if not validator:
         raise ValueError('spirv-val is required to audit converted modules')
@@ -40,6 +40,19 @@ def scaled_evidence(directory, log, forced, source, unused_builtins=False):
     reference = hashlib.sha256(struct.pack('<' + 'I' * len(words), *words)).hexdigest()
     multiple = source.name in ('scaled.multi.inc', 'scaled.group-multi.inc')
     grouped = source.name.startswith('scaled.group')
+    if dynamic_stride:
+        stride_caps = re.findall(r'^SCALED STRIDE extension=([01]) feature=([01])$', log, re.M)
+        if 'SCALED STRIDE UNSUPPORTED' in log:
+            if len(stride_caps) != 1 or stride_caps[0] == ('1', '1') or 'SCALED INSTANCE' in log or list(directory.glob('*.spv')):
+                raise ValueError('invalid unsupported stride evidence')
+            return {'forced': forced, 'unsupported': 'extended dynamic state', 'capabilities': stride_caps, 'modules': []}
+        if stride_caps != [('1', '1')]:
+            raise ValueError('missing stride capabilities')
+        strides = re.findall(r'^SCALED STRIDE case=(\d+) round=(\d+) phase=(\d+) offset=4 overwritten=(\d+) stride=(\d+)$', log, re.M)
+        expected_strides = [(str(c), str(r), str(p), str(width + (8 if p == 1 else 4) + 4), str(width + (8 if p == 1 else 4)))
+                            for c, width in enumerate((1,1,2,2,4,4,2,2,4,4,8,8)) for r in range(3) for p in range(3)]
+        if strides != expected_strides:
+            raise ValueError('dynamic stride sequence incomplete or incorrect')
     rounds = 1
     divisor_evidence = None
     if source.name == 'scaled.divisor.inc':

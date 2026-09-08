@@ -56,6 +56,39 @@ static int scaled_divisor_features(PFN_vkGetInstanceProcAddr gip, VkInstance ins
   return 0;
 }
 
+/* Negotiate the command-time binding stride separately from dynamic vertex input. */
+static int scaled_stride_features(PFN_vkGetInstanceProcAddr gip, VkInstance instance,
+    VkPhysicalDevice pd, VkDeviceCreateInfo *dc,
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *features, const char **extensions) {
+  PFN_vkEnumerateDeviceExtensionProperties enumerate = (void *)gip(instance, "vkEnumerateDeviceExtensionProperties");
+  PFN_vkGetPhysicalDeviceFeatures2 query = (void *)gip(instance, "vkGetPhysicalDeviceFeatures2");
+  uint32_t count = 0;
+  CHECK(enumerate(pd, NULL, &count, NULL));
+  VkExtensionProperties *available = calloc(count, sizeof(*available));
+  if (!available) return 2;
+  VkResult result = enumerate(pd, NULL, &count, available);
+  unsigned advertised = 0;
+  if (result == VK_SUCCESS) for (uint32_t i = 0; i < count; ++i)
+    if (!strcmp(available[i].extensionName, VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME)) advertised = 1;
+  free(available);
+  CHECK(result);
+  features->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
+  VkPhysicalDeviceFeatures2 out = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = features};
+  query(pd, &out);
+  printf("SCALED STRIDE extension=%u feature=%u\n", advertised, features->extendedDynamicState);
+  if (!advertised || !features->extendedDynamicState) {
+    puts("SCALED STRIDE UNSUPPORTED extended dynamic state");
+    return 3;
+  }
+  extensions[0] = dc->ppEnabledExtensionNames[0];
+  extensions[1] = VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME;
+  dc->ppEnabledExtensionNames = extensions;
+  dc->enabledExtensionCount = 2;
+  features->pNext = (void *)dc->pNext;
+  dc->pNext = features;
+  return 0;
+}
+
 static void scaled_divisor_data(const struct scaled_case *format, unsigned divisor,
     uint32_t first, unsigned phase, unsigned char *data, float *expected) {
   float rows[8][4] = {{0}};

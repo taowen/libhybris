@@ -67,3 +67,14 @@ correctly. All six divisor=2 cases still have 128 incorrect pixels; the main
 draw reports failure because the packed subprobe fails. No validation error was
 reported. The cause of the divisor failure remains unresolved, and desktop GL
 acceptance remains **FAIL**. Mesa source is unchanged.
+
+
+A temporary trace immediately before the ICD's backend CreateGraphicsPipelines
+call in `20260908T160612-b2766ef1` and isolated-build repeat
+`20260908T161056-c5371984` observes twelve one-binding packed pipelines with
+instance-rate input and no vertex-input divisor `pNext` chain. Both retain the
+same six divisor=2 failures. This narrows the investigation to missing submitted
+divisor state; it does not establish where that state was lost. The temporary
+instrumentation was removed. Independent [dynamic binding stride](scaled-instancing.md#dynamic-binding-stride)
+checks pass on Mali with explicit divisor state, including forced conversion,
+but they use scaled formats and do not prove the failing GL workload correct.

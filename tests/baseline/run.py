@@ -143,6 +143,7 @@ metadata = {name: prop(name) for name in ['ro.product.model', 'ro.build.fingerpr
 metadata['run_id'] = run_id
 metadata['instance_evidence_sha256'] = sha256_file(here / 'instance_evidence.py')
 metadata['device_evidence_sha256'] = sha256_file(here / 'device_evidence.py')
+metadata['scaled_evidence_sha256'] = sha256_file(here / 'scaled_evidence.py')
 metadata['packed_evidence_sha256'] = sha256_file(here / 'packed_evidence.py')
 metadata['commands'] = {}
 metadata['driver_observations'] = {}
@@ -271,7 +272,7 @@ for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'scaled-vertex', binary))
     cases.append((backend, 'scaled-vertex-multi', binary))
     cases.append((backend, 'scaled-vertex-literal', binary))
-    cases.extend((backend, 'scaled-vertex-' + shape, binary) for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
+    cases.extend((backend, 'scaled-vertex-' + shape, binary) for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-stride', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
 
 timeline_queue_cases = ('timeline-queues-core', 'timeline-queues-khr')
 timeline_cases = tuple('timeline-' + family + suffix for family in ('core', 'khr')
@@ -300,7 +301,7 @@ if a.icd_hal:
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch', 'point-size-linked')]
     cases.extend(('icd', 'point-size' + route, 'probe-glibc') for route in ('', '-gdpa', '-elf'))
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
-    cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
+    cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-stride', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
     cases.extend(('icd', 'scaled-vertex-builtins-' + route, 'probe-glibc') for route in ('gdpa', 'elf'))
     cases.append(('icd-linked', 'scaled-vertex-builtins-linked', 'probe-glibc-linked'))
     cases.append(('icd-linked', 'bc-images-linked', 'probe-glibc-linked'))
@@ -333,7 +334,7 @@ if a.icd_hal:
             raise SystemExit('expected Khronos validation layer manifest')
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
-        cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
+        cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-stride', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
         cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'bc-decode-validation', 'bc-images-validation', 'bc-images-gdpa-validation', 'bc-images-dlsym-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-multi-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
@@ -481,7 +482,7 @@ try:
                     from aggregate_evidence import aggregate_evidence
                     evidence = aggregate_evidence(dump_local, decoded, source)
                 else:
-                    evidence = scaled_evidence(dump_local, decoded, a.scaled_vertex_compat == 'force', source, unused_builtins=a.unused_builtins)
+                    evidence = scaled_evidence(dump_local, decoded, a.scaled_vertex_compat == 'force', source, unused_builtins=a.unused_builtins, dynamic_stride="divisor-stride" in mode)
                 if a.scaled_format_trace:
                     from format_evidence import format_evidence
                     native_log = a.out / ('native-' + mode.removesuffix('-validation') + '.log')

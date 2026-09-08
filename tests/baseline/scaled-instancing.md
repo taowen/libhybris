@@ -78,3 +78,45 @@ cover dynamic vertex input, graphics pipeline libraries, indirect draws,
 multiple instance-rate bindings, maximum-divisor stress or full applications.
 Mali zero/nonzero-first cases remain untested because the device does not
 support them. BC/swizzle/sRGB and general SPIR-V compatibility gates remain open.
+
+
+## Dynamic binding stride
+
+`scaled-vertex-divisor-stride` combines the existing divisor=1/2/3 shader with
+`VK_EXT_extended_dynamic_state` and `vkCmdBindVertexBuffers2EXT`. Pipeline stride
+is dynamic. Each phase scatters eight distinct records behind a four-byte offset
+with guard padding; phase 1 uses a different stride. Before every draw, the probe
+sets a larger stride and then overwrites it with the correct stride. It reuses
+each pipeline for three phases, including the existing deliberately wrong
+expected-red control. This checks the last command's stride, instance cadence,
+offset and pipeline reuse together. It does not use dynamic vertex-input formats.
+
+The runner registers native, frontend and ICD cases plus the ICD `-validation`
+variant. Capability negotiation precedes device creation; a missing extension or
+feature returns UNSUPPORTED. The shader auditor checks all 108 stride records,
+all 108 complete-image readbacks and the actual conversion modules. Its hash is
+recorded in run metadata. Select the cases with the existing loader arguments:
+
+```sh
+--case native-scaled-vertex-divisor-stride \
+--case hybris-scaled-vertex-divisor-stride \
+--case icd-scaled-vertex-divisor-stride \
+--case icd-scaled-vertex-divisor-stride-validation
+```
+
+Fresh AArch64 runtime and Bionic/glibc probe builds completed on 2026-09-08.
+The runtime was rebuilt after removing temporary pipeline instrumentation.
+
+| Device / mode | Run | Result |
+| --- | --- | --- |
+| Mali X300 / force | `20260908T161318-ed05bd23` | 6 PASS: four dynamic-stride routes, static-divisor validation regression and version discovery |
+| Adreno 650 / missing | `20260908T161319-ed41850d` | 2 PASS / 4 UNSUPPORTED: version and static-divisor validation pass; extended dynamic state is absent |
+| Mali X300 / missing | `20260908T161418-f530e91b` | 3 PASS: two ICD dynamic-stride routes and version; zero conversion mask, no shader dumps |
+
+Each successful rendering case executes 36 pipelines and 108 full-image
+readbacks with no pixel failures; validation cases report zero errors. The two
+converted Mali dynamic-stride cases validate 144 original/converted modules in
+total. Adreno's unsupported dynamic cases create no device or shader modules.
+These observations cover one binding, direct draws and EXT command dispatch.
+Core command aliases, indirect draws, multiple bindings, zero divisor with
+dynamic stride, maximum strides and the packed-format combination remain open.

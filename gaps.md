@@ -899,5 +899,7 @@ clip/cull、PointSize 以及不明确的结构/指针形式保持原样，不提
 通过原生 A2B SNORM fetch 和 shader R/B 选择补足该格式；双机 scalar/vec2/vec3/
 vec4、负对照、实际 SPIR-V 审计及既有 scaled 聚合回归通过。Mali 原生 A2R
 不支持，未把其 native 控制组记作该格式通过。官方 Mesa 已能创建 GL 3.3
-上下文，但实际绘制仍因动态顶点输入被拒绝；没有隐藏扩展或把上下文创建
-当成桌面 GL 验收完成。详见 [结果与未覆盖项](tests/baseline/packed-vertex.md)。
+上下文。后续静态转换能力策略使应用选择静态管线，divisor=1 绘制通过，
+divisor=2 仍失败；边界诊断观察到缺少 divisor 状态，具体丢失位置未确定。
+独立 Vulkan 动态 stride + divisor=1/2/3 在 Mali 通过，Adreno 缺少对应动态
+扩展，不能替代 GL 验收。详见 [结果与未覆盖项](tests/baseline/packed-vertex.md)。
