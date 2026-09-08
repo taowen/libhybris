@@ -201,7 +201,7 @@ alongside the actual source-tree and installed-file hashes.
 
 ### Strided multi-draw capture repair
 
-The builder now pins [fork commit b52a3841](https://github.com/taowen/gfxreconstruct/commit/b52a3841f7669872b85e75435cf90b4d373eb5fa).
+The multi-draw repair is [fork commit b52a3841](https://github.com/taowen/gfxreconstruct/commit/b52a3841f7669872b85e75435cf90b4d373eb5fa).
 The change lives in the fork, with custom encoders and regenerated dispatch
 entry declarations; the libhybris builder applies no patch.
 
@@ -237,3 +237,55 @@ offset. Zero stride, overlapping records and an ignored offset at a guard-page
 boundary have not been separately exercised on a device. No warning gate was
 relaxed. The remaining compile-required warning, arbitrary application replay,
 and G04/G06/G10/G12 acceptance remain open.
+
+### Replay with captured pipeline compile-control flags
+
+The builder now pins [fork commit 1f918617](https://github.com/taowen/gfxreconstruct/commit/1f918617ec0d34c0ee7a23a9b7199bfd5e343283),
+which includes the multi-draw and empty-submit repairs. Add
+`--replay-preserve-compile-flags` to the desktop runner's `--replay-capture`
+command to pass `--preserve-pipeline-compile-flags` to the replay tool.
+The explicit setting and full command are saved in `replay-result.json`.
+
+By default, GFXReconstruct removes
+`VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT` and warns. That
+warning alone does not establish that the driver needed compilation. The new
+option forwards this captured flag through both the ordinary and omitted-cache
+pipeline paths. It does not filter diagnostics. Vulkan specifies that a
+[compile-required creation produces a null pipeline](https://docs.vulkan.org/refpages/latest/refpages/source/VkPipelineCreateFlagBits.html).
+If preserving the flag produces `VK_PIPELINE_COMPILE_REQUIRED` where the
+capture returned a different result, replay stops at that mismatch before
+using the missing pipeline. This mode can therefore reject captures that the
+default portable replay could render.
+
+The AArch64 tools were rebuilt from the committed fork source. Fresh expanded
+probe evidence, with explicit lazy descriptors and the preserve option:
+
+| Run | Original rendering | Replay |
+| --- | --- | --- |
+| `20260908T185229-cad9675b` — Turnip, no memory translation | PASS | PASS, no diagnostics; all 38 saved images match across 50 readbacks |
+| `20260908T185229-da38cfbb` — Mali, rebind, packed vertex enabled, automatic MMUD | FAIL; existing attribute errors remain | PASS, no diagnostics; all 15 saved images match across 27 readbacks |
+
+Each run still has 12 original packed images not saved by the probe. No new
+comparison coverage is claimed for those readbacks. These results replace the
+previous Turnip warning failure only for the explicit preserve configuration;
+the default mode continues to warn and fail the runner's warning gate.
+
+A separate same-capture comparison restaged Turnip's saved runtime and capture,
+then used the tool's built-in `--capture` mode to record actual replay calls.
+Both default and preserve modes made 22 graphics/compute pipeline creation
+calls with `VK_SUCCESS`. All nine original `0x00000500` graphics flags became
+`0x00000400` in default mode and remained `0x00000500` in preserve mode. The
+other pipeline flags and results matched the original. Default mode retained
+the removal warning; preserve mode had no warning. These recapture checks did
+not request resource dumps; the image comparisons come from the fresh probe
+runs above. Commands, logs, recaptured traces, converted calls, flag summaries
+and file hashes are under that run's `capture/compile-flag-comparison/`.
+
+The same comparison with `MESA_SHADER_CACHE_DISABLE=true` also completed with
+the same flag/result observations, retained under `capture/compile-flag-no-cache/`.
+It did not trigger `VK_PIPELINE_COMPILE_REQUIRED`. The early-exit branch,
+omitted-cache flag preservation, flagged compute/ray-tracing pipelines and
+asynchronous creation have code/build coverage only, not separate device
+acceptance. Python compilation, shell syntax and rejection of the preserve
+option without `--replay-capture` were checked. G04/G06/G10/G12 and arbitrary
+application replay remain open.

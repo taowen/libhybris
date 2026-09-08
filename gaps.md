@@ -918,3 +918,18 @@ Mali 回归 `20260908T184306-c221eed9` 的 15 张保存图像全部匹配，
 回放 PASS，但原始属性错误仍使渲染 FAIL。两者各有 12 张原始图像未保存，
 不计为比较覆盖。边界步长与任意应用未验收，G06 不关闭；详见
 [捕获证据](tests/desktop-gl/capture.md#strided-multi-draw-capture-repair)。
+
+
+### G06 保留管线编译标志的回放（2026-09-08）
+
+GFXReconstruct fork `1f918617` 增加显式保留编译控制标志的回放选项，
+桌面 runner 经 `--replay-preserve-compile-flags` 接入。Turnip
+`20260908T185229-cad9675b` 原始渲染、回放均 PASS，38 张保存图像全部一致，
+无工具告警。同一捕获的二次捕获证实：默认模式把 9 次创建的 `0x500`
+改为 `0x400`，保留模式实际向驱动传递 `0x500`，均创建成功。禁用 Mesa
+磁盘缓存的对照也保持该结果；未触发“需要编译”的提前退出分支。
+Mali `20260908T185229-da38cfbb` 回放 PASS，15 张保存图像全部匹配，
+原始属性错误仍为 FAIL。各 12 张未保存的原图不计为比较覆盖。
+没有过滤告警或放宽门槛；默认回放仍保留原告警行为。详见
+[编译标志证据](tests/desktop-gl/capture.md#replay-with-captured-pipeline-compile-control-flags)，
+G06 与任意应用验收保持开放。

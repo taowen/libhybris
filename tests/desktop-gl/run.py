@@ -28,6 +28,7 @@ p.add_argument('--vertex-draws',action='store_true',help='run ordinary procedura
 p.add_argument('--capture-tools',type=Path,help='pinned GFXReconstruct install; records Vulkan calls, separately from validation')
 p.add_argument('--replay-capture',action='store_true',help='replay the fixed fixture and compare saved image readbacks')
 p.add_argument('--replay-memory',choices=['none','rebind'],default='none',help='GFXReconstruct replay memory translation')
+p.add_argument('--replay-preserve-compile-flags',action='store_true',help='forward captured pipeline compile-control flags without the replay tool removing them')
 p.add_argument('--validation-layer',type=Path,help='glibc AArch64 Khronos validation layer')
 p.add_argument('--validation-manifest',type=Path,help='matching original validation JSON')
 a=p.parse_args()
@@ -35,6 +36,7 @@ if a.backend=='hybris' and not a.hal:p.error('--hal is required for hybris')
 if a.backend=='turnip' and (a.hal or a.mali_loader_quirk):p.error('Turnip does not use a vendor HAL or Mali loader quirk')
 if a.replay_capture and not a.capture_tools:p.error('--replay-capture requires --capture-tools')
 if a.replay_memory!='none' and not a.replay_capture:p.error('--replay-memory requires --replay-capture')
+if a.replay_preserve_compile_flags and not a.replay_capture:p.error('--replay-preserve-compile-flags requires --replay-capture')
 if a.capture_tools and a.validation_layer:p.error('capture and validation require separate runs with the pinned tools')
 if bool(a.validation_layer)!=bool(a.validation_manifest):p.error('provide both validation layer and manifest')
 if not re.fullmatch(r'\d+\.\d+\.\d+',a.api_version):p.error('invalid API version')
@@ -151,7 +153,7 @@ try:
     if a.replay_capture and record['capture']['status']=='PASS':
         from replay import replay_capture
         try:
-            record['capture']['replay']=replay_capture(shell,remote,out,library_path,env,a.replay_memory,sha)
+            record['capture']['replay']=replay_capture(shell,remote,out,library_path,env,a.replay_memory,sha,a.replay_preserve_compile_flags)
         except (OSError,ValueError,subprocess.SubprocessError) as error:
             record['capture']['replay']={'status':'FAIL','error':str(error)}
         if record['capture']['replay']['status']!='PASS' and code==0:code=2

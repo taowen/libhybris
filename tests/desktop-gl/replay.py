@@ -7,7 +7,7 @@ from capture_files import preserve_binaries
 from replay_readbacks import readback_request, compare_readbacks
 
 
-def replay_capture(shell, remote, out, library_path, env, memory, sha):
+def replay_capture(shell, remote, out, library_path, env, memory, sha, preserve_compile_flags=False):
     evidence = out / 'capture'
     request, readbacks = readback_request(out, memory)
     encoded = json.dumps(request, indent=2) + '\n'
@@ -21,8 +21,10 @@ def replay_capture(shell, remote, out, library_path, env, memory, sha):
                shlex.join(k + '=' + v for k, v in tool_env.items()) +
                ' ./runtime/ld-linux-aarch64.so.1 --library-path ' + shlex.quote(library_path) +
                ' ./capture-tools/gfxrecon-replay --swapchain offscreen -m ' + shlex.quote(memory) +
+               (' --preserve-pipeline-compile-flags' if preserve_compile_flags else '') +
                ' --dump-resources replay-request.json --dump-resources-dir replay desktop.gfxr')
     record = {'command': command, 'memory_translation': memory, 'exit_code': None,
+              'preserve_pipeline_compile_flags': preserve_compile_flags,
               'scope': 'fixed probe replay readbacks; original rendering status remains separate'}
     try:
         result = shell('sh -c ' + shlex.quote(command), capture_output=True, timeout=60)
