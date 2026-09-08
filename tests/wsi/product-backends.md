@@ -86,3 +86,58 @@ disconnect and destruction races still need a complete common gate.
 allocation hooks. The external display without TAWC-DRI needed for the
 missing-protocol case was not exercised in this batch. These results do not
 close all WSI or application gaps and do not change Zink's upstream policy.
+
+## Native X window loss — 2026-09-08
+
+The common `--case surface-lost` client acquires an image, transitions it to
+PRESENT_SRC and submits its present semaphore. It then destroys the real X
+window with a checked request, leaving the Vulkan surface and swapchain alive.
+Capability query, acquire, present and per-swapchain result must report
+SURFACE_LOST. Failed acquire must leave its index untouched and its fence
+unsignaled. After rejected-present queue operations complete, the same binary
+semaphore must accept another signal/wait pair with a bounded fence wait.
+This shares the preparation and semaphore checks with resize in
+`tests/x11/surface_change.c`. The client clears ownership of the destroyed
+native window so ordinary cleanup does not destroy it twice.
+
+The failed-present wait requirement also applies to SURFACE_LOST; see
+[Khronos vkQueuePresentKHR](https://docs.vulkan.org/refpages/latest/refpages/source/vkQueuePresentKHR.html).
+All successful X11 Vulkan cases now require live selected-loader/ICD mappings
+and, for validation runs, the actual layer mapping and zero-error verdict.
+Previously the host applied these checks only to present/resize; the negative
+clients still checked their own validation errors. Missing-protocol now saves
+its mappings before teardown, but still requires an external suitable display.
+
+The initial Turnip run `20260908T215458-61dbd032` failed: capability query
+reported SURFACE_LOST, but acquire returned SUCCESS with image index 1.
+The raw failure is retained. The driver drained configure/release events and
+checked connection failure, but TAWC-DRI has no native-window-destroy event.
+Mesa `7a6286fc` queries target window geometry before declaring a successful
+X11 drain, so an empty event queue cannot make a destroyed window look live.
+It also checks the actual extent if configure delivery has not caught up.
+This adds X11 round trips; throughput/latency impact has not been measured.
+
+The actual rebuild uses Mesa `7a6286fc337f75c63bb194ba6402566c99283fd7`,
+tree `c8b2f23b0204cac816be0e86e8762a0a5e3c3fd1`, Turnip SHA256
+`9276b78b402981aecfeed329c96cd9ad5867c082b46da3d3434e44124b873bfc`.
+The X11 client and watchdog were rebuilt and their source/binary hashes checked
+against the build manifest. Devices, hybris runtime and VVL are as above.
+Raw records for this batch are under `/tmp/libhybris-surface-lost-results/`.
+
+| Gate | Hybris / Mali | Product Turnip / Redmi |
+| --- | --- | --- |
+| XCB surface-lost + validation | `20260908T215458-f2b8ea1d` PASS | `20260908T220104-b06cbe93` PASS |
+| Xlib surface-lost + validation | `20260908T215622-70160091` PASS | `20260908T220129-6f0fd2b3` PASS |
+| XCB resize + validation | `20260908T215701-933e5728` PASS | `20260908T220200-1f2456a3` PASS |
+| Xlib resize + validation | Not rerun in this batch | `20260908T220247-601169e5` PASS |
+| XCB acquire-timeout + validation | `20260908T215732-e98ee540` PASS | `20260908T220321-c0b40b15` PASS |
+
+The resize controls retain 24 exact readbacks, six physical screenshots and
+two out-of-date/semaphore-reuse transitions each; Mali observes 23 releases,
+Turnip 19, for 24 presents without early reuse. Surface-loss checks intentionally
+do not claim physical presentation of the destroyed window. Successful runs
+have zero validation errors and verified loader, ICD and validation mappings.
+
+This case uses acquire before rejected present; it does not cover present-first
+loss discovery, compositor/connection shutdown, delayed release or concurrent
+window destruction. No application-level recovery or long-run FD claim is made.

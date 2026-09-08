@@ -74,3 +74,9 @@ two complete resize transitions and zero VVL errors. Results are retained in
 `/tmp/libhybris-resize-wait-results/`. Python compilation and diff checks pass.
 This resolves the reproduced resize-probe validation failure; it is not Turnip
 window coverage or completion of all WSI synchronization/teapot gates.
+
+`surface_change.c` shares the image preparation and rejected-present semaphore
+check between `resize` and `surface-lost`. The latter destroys the real native
+window while keeping its Vulkan surface/swapchain alive, then checks surface
+loss and ordinary Vulkan cleanup. It is not a compositor shutdown or concurrent
+destruction test. Both cases run through the common WSI backend selector.

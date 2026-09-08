@@ -21,12 +21,12 @@ engine = os.environ.get('CONTAINER_ENGINE', 'podman')
 image = subprocess.check_output([str(ROOT / 'tools/ensure-builder.sh')], text=True).strip()
 image_id = subprocess.check_output([engine, 'image', 'inspect', '--format', '{{.Id}}', image], text=True).strip()
 client = out / 'client-source'; client.mkdir(exist_ok=True)
-for name in ('probe_xcb.c', 'render.c', 'resize.c', 'render.h'): shutil.copy2(ROOT / 'tests/x11' / name, client / name)
+for name in ('probe_xcb.c', 'render.c', 'surface_change.c', 'render.h'): shutil.copy2(ROOT / 'tests/x11' / name, client / name)
 shutil.copy2(ROOT / 'tools/stage-runtime.py', client / 'stage-runtime.py')
 shutil.rmtree(out / 'runtime', ignore_errors=True)
 run(engine, 'run', '--rm', '--userns=keep-id', '--volume', str(out) + ':/out:Z', '--workdir', '/out/client-source',
     image_id, 'bash', '-eu', '-c',
-    'aarch64-linux-gnu-gcc -O2 -g -Wall -Wextra probe_xcb.c render.c resize.c -lxcb -lX11-xcb -lX11 -ldl -o probe-xcb\n'
+    'aarch64-linux-gnu-gcc -O2 -g -Wall -Wextra probe_xcb.c render.c surface_change.c -lxcb -lX11-xcb -lX11 -ldl -o probe-xcb\n'
     'cp probe-xcb /out/probe-xcb\n'
     'python3 stage-runtime.py --hybris /out/client-source --runtime /out/runtime '
     '--search /usr/aarch64-linux-gnu/lib --search /lib/aarch64-linux-gnu --search /usr/lib/aarch64-linux-gnu')
@@ -35,7 +35,7 @@ manifest = {'builder': image_id, 'ndk_compiler': str(cc),
             'stage_runtime_sha256': sha(client / 'stage-runtime.py'),
             'ndk_compiler_sha256': sha(cc),
             'sources': {name: sha(ROOT / 'tests/x11' / name) for name in
-                        ('build.py', 'session.c', 'probe_xcb.c', 'render.c', 'resize.c', 'render.h')},
+                        ('build.py', 'session.c', 'probe_xcb.c', 'render.c', 'surface_change.c', 'render.h')},
             'files': {name: sha(out / name) for name in ('probe-xcb', 'x11-session')}}
 (out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 print(out)

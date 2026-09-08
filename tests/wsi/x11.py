@@ -97,13 +97,20 @@ def run(a, host, out):
                 if hashes is not None: (out / 'android-library-hashes.txt').write_text(hashes.stdout)
         cleanup(lambda: app('rm -rf ' + shlex.quote(remote), check=True, timeout=10))
         record['cleanup_errors'] = cleanup_errors
-    if code == 0 and a.case in ('present', 'resize'):
+    if code == 0 and a.case != 'control':
         try:
+            maps = (out / 'maps.txt').read_text()
+            verify_backend_maps(backend, maps)
             if a.validation_layer:
                 log = (out / 'probe.log').read_text()
                 if re.findall(r'^X11_VALIDATION errors=(\d+)$', log, re.M) != ['0'] or re.search(r'^VALIDATION ', log, re.M):
                     raise ValueError('validation failed')
-                record['validation_layer_sha256'] = sha256_file(stage / 'layers/libVkLayer_khronos_validation.so')
+                if 'libVkLayer_khronos_validation.so' not in maps:
+                    raise ValueError('validation layer mapping missing')
+        except (ValueError, OSError) as error:
+            record['validation_or_mapping_error'] = str(error); code = 2
+    if code == 0 and a.case in ('present', 'resize'):
+        try:
             sizes = [(320, 240), (160, 120), (256, 192)] if a.case == 'resize' else [(320, 240)]
             record['screen'] = [verify_epoch(out, epoch, size) for epoch, size in enumerate(sizes)]
             log = (out / 'probe.log').read_text()
@@ -128,9 +135,6 @@ def run(a, host, out):
                     releases += 1
             if presents != 8 * len(sizes) or releases < 5 * len(sizes): raise ValueError('missing TAWC-DRI presentation/release evidence')
             record['protocol'] = {'presents': presents, 'releases': releases, 'reuse_after_release': True}
-            maps = (out / 'maps.txt').read_text()
-            if a.validation_layer and 'libVkLayer_khronos_validation.so' not in maps: raise ValueError('validation layer mapping missing')
-            verify_backend_maps(backend, maps)
         except (ValueError, OSError) as error: record['screen_error'] = str(error); code = 2
     if code == 0 and a.case == 'missing-protocol':
         log = (out / 'probe.log').read_text()
@@ -139,6 +143,11 @@ def run(a, host, out):
     if code == 0 and a.case == 'acquire-timeout':
         if not re.search(r'^X11_ACQUIRE held=3 zero=NOT_READY finite=TIMEOUT elapsed_ns=\d+ index_unchanged=1 fence_unsignaled=1$', (out / 'probe.log').read_text(), re.M):
             record['acquire_error'] = 'missing timeout verdict'; code = 2
+    if code == 0 and a.case == 'surface-lost':
+        log = (out / 'probe.log').read_text()
+        verdict = 'X11_SURFACE_LOST capabilities=1 acquire=1 present=1 index_unchanged=1 fence_unsignaled=1 present_wait_idle=1 semaphore_reused=1'
+        if log.splitlines().count(verdict) != 1:
+            record['surface_lost_error'] = 'missing surface loss/synchronization verdict'; code = 2
     record['status'] = 'PASS'  if code == 0 else 'UNSUPPORTED' if code == 3 else 'TIMEOUT' if code in (124, 142) else 'FAIL'
     record['exit_code'] = code
     record['elapsed_seconds'] = round(time.monotonic() - started, 3)

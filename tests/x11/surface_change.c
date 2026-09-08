@@ -5,14 +5,14 @@
 #define V(name) PFN_##name name = (PFN_##name)gip(instance, #name); if (!name) return 2
 #define OK(call) do { VkResult r = (call); if (r != VK_SUCCESS) { printf("X11_RESIZE_ERROR %s result=%d\n", #call, r); return 2; } } while (0)
 
-/* Keep an acquired image across a real X resize. A rejected present must
+/* Keep an acquired image across a real X resize or native-window destruction. A rejected present must
  * consume its semaphore before that same binary semaphore can be signaled
  * again. Wait for the rejected present queue operations before re-signaling;
  * an empty submit with a fence then bounds the independent reuse check. */
-int x11_resize(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhysicalDevice physical,
-    VkDevice device, VkQueue queue, xcb_connection_t *connection, xcb_window_t window,
+int x11_surface_change(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhysicalDevice physical,
+    VkDevice device, VkQueue queue, xcb_connection_t *connection, xcb_window_t *window,
     VkSwapchainCreateInfoKHR *sw, VkSwapchainKHR *chain, VkCommandBuffer command,
-    VkFence fence, const VkSemaphore *ready_by_image, unsigned epoch, unsigned width, unsigned height)
+    VkFence fence, const VkSemaphore *ready_by_image, unsigned epoch, unsigned width, unsigned height, int lost)
 {
     V(vkAcquireNextImageKHR); V(vkWaitForFences); V(vkResetFences); V(vkGetFenceStatus);
     V(vkGetSwapchainImagesKHR); V(vkResetCommandBuffer); V(vkBeginCommandBuffer);
@@ -40,25 +40,29 @@ int x11_resize(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhysicalDev
     OK(vkQueueSubmit(queue, 1, &submit, fence));
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 2000000000ull));
     OK(vkResetFences(device, 1, &fence));
+    VkResult expected = lost ? VK_ERROR_SURFACE_LOST_KHR : VK_ERROR_OUT_OF_DATE_KHR;
     uint32_t dimensions[] = {width, height};
     xcb_generic_error_t *error = xcb_request_check(connection,
-        xcb_configure_window_checked(connection, window, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, dimensions));
+        lost ? xcb_destroy_window_checked(connection, *window) :
+        xcb_configure_window_checked(connection, *window, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, dimensions));
     if (error) { free(error); return 2; }
+    if (lost) *window = XCB_NONE;
     VkSurfaceCapabilitiesKHR caps;
-    OK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, sw->surface, &caps));
-    if (caps.currentExtent.width != width || caps.currentExtent.height != height) return 2;
+    VkResult queried = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, sw->surface, &caps);
+    printf("X11_CHANGE_CAPS lost=%d result=%d\n", lost, queried);
+    if (lost ? queried != expected : queried != VK_SUCCESS || caps.currentExtent.width != width || caps.currentExtent.height != height) return 2;
     uint32_t untouched = UINT32_MAX;
     VkResult acquired = vkAcquireNextImageKHR(device, *chain, 0, VK_NULL_HANDLE, fence, &untouched);
     printf("X11_RESIZE_ACQUIRE epoch=%u result=%d index=%u\n", epoch, acquired, untouched);
-    if (acquired != VK_ERROR_OUT_OF_DATE_KHR || untouched != UINT32_MAX || vkGetFenceStatus(device, fence) != VK_NOT_READY) return 2;
+    if (acquired != expected || untouched != UINT32_MAX || vkGetFenceStatus(device, fence) != VK_NOT_READY) return 2;
     VkResult per_chain = VK_SUCCESS;
     VkPresentInfoKHR present = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1, .pWaitSemaphores = &ready, .swapchainCount = 1,
         .pSwapchains = chain, .pImageIndices = &held, .pResults = &per_chain};
     VkResult presented = vkQueuePresentKHR(queue, &present);
     printf("X11_RESIZE_PRESENT epoch=%u result=%d per_chain=%d\n", epoch, presented, per_chain);
-    if (presented != VK_ERROR_OUT_OF_DATE_KHR || per_chain != presented) return 2;
-    /* OUT_OF_DATE still enqueues the present waits. Complete those queue
+    if (presented != expected || per_chain != presented) return 2;
+    /* OUT_OF_DATE and SURFACE_LOST still enqueue the present waits. Complete those queue
      * operations before this binary semaphore is signaled again. This probe
      * does not use swapchain-maintenance presentation fences. */
     OK(vkQueueWaitIdle(queue));
@@ -70,6 +74,10 @@ int x11_resize(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhysicalDev
     OK(vkQueueSubmit(queue, 1, &submit, fence));
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 2000000000ull));
     OK(vkResetFences(device, 1, &fence));
+    if (lost) {
+        printf("X11_SURFACE_LOST capabilities=1 acquire=1 present=1 index_unchanged=1 fence_unsignaled=1 present_wait_idle=1 semaphore_reused=1\n");
+        return 0;
+    }
     sw->oldSwapchain = *chain; sw->imageExtent = caps.currentExtent;
     VkSwapchainKHR replacement;
     OK(vkCreateSwapchainKHR(device, sw, NULL, &replacement));

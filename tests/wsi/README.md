@@ -73,6 +73,7 @@ hybris-only because it exercises that adapter's allocation hooks.
 | Wayland | `swapchain-review` | Present plus allocator, timeout, retirement, old images and multi-present boundaries |
 | XCB/Xlib | `present` | Eight GPU readbacks, two physical screenshots, TAWC-DRI release before reuse |
 | XCB/Xlib | `resize` | 24 readbacks, three sizes, six screenshots, acquire/present out-of-date, semaphore reuse and swapchain replacement |
+| XCB/Xlib | `surface-lost` | Destroy the native window while holding an image; surface/acquire/present errors, unchanged acquire index/fence and present semaphore reuse |
 | XCB/Xlib | `acquire-timeout` | Zero/finite acquire timeout with unchanged index and unsignaled fence |
 | XCB/Xlib | `missing-protocol` | Support false and eight surface rejections; requires an existing externally managed display without TAWC-DRI |
 | XCB/Xlib | `control` | XCB create/map/clear/GetImage environment check; no Vulkan or GPU claim |
@@ -90,7 +91,9 @@ the allocator-failure workload. Capture retains file identity, metadata,
 conversion and virtual-swapchain replay checks from the previous runner.
 `--trace` enables compiled Wayland tracepoints; build with
 `tools/build-aarch64.sh --debug --incremental` first. X11 protocol serials are
-always collected with a per-owner bound.
+always collected with a per-owner bound. Every successful Vulkan case, including
+negative cases, must retain the selected loader/ICD mappings and, when requested,
+the validation layer mapping plus its zero-error verdict.
 
 Current cross-backend device results: [product window gates](product-backends.md).
 

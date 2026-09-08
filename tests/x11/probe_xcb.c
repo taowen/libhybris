@@ -49,7 +49,7 @@ static int control(xcb_connection_t *c, xcb_screen_t *screen, xcb_window_t windo
     }
     return 0;
 }
-static int present(xcb_connection_t *connection, xcb_screen_t *screen, xcb_window_t window, Display *display) {
+static int present(xcb_connection_t *connection, xcb_screen_t *screen, xcb_window_t *window, Display *display) {
     void *library = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
     if (!library) { printf("X11_VULKAN loader=%s\n", dlerror()); return 2; }
     PFN_vkGetInstanceProcAddr gip = (PFN_vkGetInstanceProcAddr)dlsym(library, "vkGetInstanceProcAddr");
@@ -84,9 +84,10 @@ static int version(void) {
 }
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "version")) return version();
-    if (argc != 2 || (strcmp(argv[1], "control") && strcmp(argv[1], "present") && strcmp(argv[1], "missing-protocol") && strcmp(argv[1], "acquire-timeout") && strcmp(argv[1], "resize"))) return 2;
+    if (argc != 2 || (strcmp(argv[1], "control") && strcmp(argv[1], "present") && strcmp(argv[1], "missing-protocol") && strcmp(argv[1], "acquire-timeout") && strcmp(argv[1], "resize") && strcmp(argv[1], "surface-lost"))) return 2;
     setvbuf(stdout, NULL, _IONBF, 0); alarm(22);
     printf("X11_CLIENT pid=%ld\n", (long)getpid());
+    if (!strcmp(argv[1], "surface-lost")) setenv("HYBRIS_X11_SURFACE_LOST", "1", 1);
     if (!strcmp(argv[1], "resize")) setenv("HYBRIS_X11_RESIZE", "1", 1);
     if (!strcmp(argv[1], "acquire-timeout")) setenv("HYBRIS_X11_ACQUIRE_TIMEOUT", "1", 1);
     if (!strcmp(argv[1], "missing-protocol")) setenv("HYBRIS_X11_EXPECT_MISSING", "1", 1);
@@ -124,9 +125,9 @@ int main(int argc, char **argv) {
             XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT, values), "create")) goto done;
     if (checked(c, xcb_map_window_checked(c, window), "map")) goto destroy;
     printf("X11_WINDOW id=%u size=320x240\n", window);
-    code = !strcmp(argv[1], "control") ? control(c, screen, window) : present(c, screen, window, display);
+    code = !strcmp(argv[1], "control") ? control(c, screen, window) : present(c, screen, &window, display);
 destroy:
-    if (checked(c, xcb_destroy_window_checked(c, window), "destroy")) code = 2;
+    if (window && checked(c, xcb_destroy_window_checked(c, window), "destroy")) code = 2;
 done:
     if (display) XCloseDisplay(display); else xcb_disconnect(c);
     printf("X11_RESULT case=%s status=%s\n", argv[1], code == 0 ? "PASS" : code == 3 ? "UNSUPPORTED" : "FAIL");

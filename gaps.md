@@ -9,7 +9,7 @@
 现行 compositor 入口为已安装的 `io.taowen.ardesk`；Xwayland 由 Ardesk
 构建，libhybris 只构建客户端。后文 `io.taowen.hybriswsitest` 等名称属于
 注明日期的历史记录，不能作为当前夹具或验收步骤。
-产品 Mesa 已使用 `taowen/mesa` 的 WSI fork `ae5de449`；下面的官方
+产品 Mesa 已使用 `taowen/mesa` 的 WSI fork `7a6286fc`；下面的官方
 `c3b008c1` 仅为历史离屏证据；desktop-gl 已直接复用产品 Mesa 构建和库。
 frontend Wayland/X11 窗口插件、Vulkan 插件加载层及 PRESENT_SOCKET 已删除，
 ICD 所需的 native-window 实现移至 `vulkan/icd/`。
@@ -1059,3 +1059,16 @@ wait 已完成，探针先等待队列操作，再对同一个信号量执行 si
 四组运行各 24 帧、六张屏幕截图通过，VVL 各零错误。规范依据及记录见
 [X11 同步证据](tests/x11/README.md#resize-semaphore-synchronization-2026-09-08)。
 本批只关闭复现的探针同步错误，未关闭 G06/G12 或 Turnip 产品窗口验收。
+
+### G11 原生 X 窗口销毁后的 surface lost（2026-09-08）
+
+共同 `surface-lost` 探针在已 acquire 图像并提交呈现信号后，实际销毁 X
+窗口，检查 capability/acquire/present 的 surface-lost 返回、失败 acquire
+的索引/fence、失败 present 等待及 semaphore 复用。复用 resize 的同步
+辅助代码；所有成功的 Vulkan X11 负例也必须留存实际 loader/ICD/layer
+映射和 validation 零错误记录。Turnip 首次运行暴露 capability 已失败而
+acquire 仍成功的问题：TAWC-DRI 没有窗口销毁事件，空事件队列不证明窗口
+仍存在。产品 Mesa 增加实际 geometry 检查。原始失败保留；构建和真机
+记录见[共同窗口证据](tests/wsi/product-backends.md#native-x-window-loss--2026-09-08)。
+本批不证明断连恢复、延迟 release、并发销毁或应用恢复；新增 X11 查询
+开销未做性能测量，G11 继续开放。

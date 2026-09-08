@@ -18,7 +18,15 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_message(VkDebugUtilsMessageSeverityF
     }
     return VK_FALSE;
 }
-int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_window_t window, xcb_visualid_t visual, Display *display) {
+static int save_maps(void) {
+    FILE *maps = fopen("/proc/self/maps", "r"), *saved = fopen("maps.txt", "w");
+    if (!maps || !saved) return 2;
+    char line[2048]; while (fgets(line, sizeof(line), maps)) if (fputs(line, saved) < 0) return 2;
+    int bad = ferror(maps); fclose(maps); if (fclose(saved) || bad) return 2;
+    return 0;
+}
+int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_window_t *native_window, xcb_visualid_t visual, Display *display) {
+    xcb_window_t window = *native_window;
     int validate = getenv("HYBRIS_X11_VALIDATION") != NULL;
     VkInstance instance = VK_NULL_HANDLE;
     V(vkCreateInstance);
@@ -81,6 +89,7 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
             printf("X11_REJECT attempt=%u result=%d\n", attempt, rejected);
             if (rejected != VK_ERROR_UNKNOWN) return 2;
         }
+        if (save_maps()) return 2;
         if (destroy_debug) destroy_debug(instance, messenger, NULL);
         vkDestroyInstance(instance, NULL);
         if (validate) printf("X11_VALIDATION errors=%u\n", atomic_load(&validation_errors));
@@ -179,12 +188,17 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
         printf("X11_ACQUIRE held=%u zero=NOT_READY finite=TIMEOUT elapsed_ns=%lld index_unchanged=1 fence_unsignaled=1\n", count, (long long)elapsed);
         goto finish;
     }
+    if (getenv("HYBRIS_X11_SURFACE_LOST")) {
+        if (x11_surface_change(gip, instance, physical, device, queue, connection, native_window,
+                &sw, &chain, command, fence, ready, 0, 0, 0, 1)) return 2;
+        goto finish;
+    }
     unsigned epochs = getenv("HYBRIS_X11_RESIZE") ? 3 : 1;
     for (unsigned epoch = 0; epoch < epochs; ++epoch) {
       if (epoch) {
         unsigned width = epoch == 1 ? 160 : 256, height = epoch == 1 ? 120 : 192;
-        if (x11_resize(gip, instance, physical, device, queue, connection, window,
-                &sw, &chain, command, fence, ready, epoch, width, height)) return 2;
+        if (x11_surface_change(gip, instance, physical, device, queue, connection, native_window,
+                &sw, &chain, command, fence, ready, epoch, width, height, 0)) return 2;
         for (uint32_t i = 0; i < count; ++i) vkDestroySemaphore(device, ready[i], NULL);
         free(images); free(ready);
         OK(vkGetSwapchainImagesKHR(device, chain, &count, NULL));
@@ -246,10 +260,7 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
       }
     }
 finish: ;
-    FILE *maps = fopen("/proc/self/maps", "r"), *saved = fopen("maps.txt", "w");
-    if (!maps || !saved) return 2;
-    char line[2048]; while (fgets(line, sizeof(line), maps)) if (fputs(line, saved) < 0) return 2;
-    int bad = ferror(maps); fclose(maps); if (fclose(saved) || bad) return 2;
+    if (save_maps()) return 2;
     OK(vkQueueWaitIdle(queue));
     vkDestroyFence(device, fence, NULL); vkDestroyCommandPool(device, pool, NULL);
     vkDestroyBuffer(device, buffer, NULL); vkFreeMemory(device, memory, NULL);
