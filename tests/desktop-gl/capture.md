@@ -242,7 +242,7 @@ and G04/G06/G10/G12 acceptance remain open.
 
 ### Replay with captured pipeline compile-control flags
 
-The builder now pins [fork commit 1f918617](https://github.com/taowen/gfxreconstruct/commit/1f918617ec0d34c0ee7a23a9b7199bfd5e343283),
+The compile-control option is [fork commit 1f918617](https://github.com/taowen/gfxreconstruct/commit/1f918617ec0d34c0ee7a23a9b7199bfd5e343283),
 which includes the multi-draw and empty-submit repairs. Add
 `--replay-preserve-compile-flags` to the desktop runner's `--replay-capture`
 command to pass `--preserve-pipeline-compile-flags` to the replay tool.
@@ -361,3 +361,50 @@ only. This index does not reconstruct shader/descriptor state, vertex-buffer
 contents, all dynamic-state invalidation rules, GPU indirect arguments or
 secondary command buffers. Complete vertex-input metadata is not complete
 pipeline execution evidence, and G06 remains open.
+
+### Dynamic vertex stride resource-dump repair
+
+The builder now pins [fork commit e3aa74fb](https://github.com/taowen/gfxreconstruct/commit/e3aa74fb78d651ceb70e45607b020f9ac29ab43f).
+The resource dumper recorded `vkCmdBindVertexBuffers2` strides in bound-buffer
+metadata but omitted them from the dynamic vertex-input snapshot. With null
+`pSizes`, dump sizing therefore used the pipeline's zero strides. The fix
+updates the shared dynamic stride state when `pStrides` is provided, preserves
+it when strides are not changed, resets the bound size on a bind with null
+`pSizes`, and permits zero stride in `vkCmdSetVertexInputEXT`.
+
+This was reproduced on the saved Mali capture
+`20260908T190556-bb8da642`, first attribute draw 2103, command-buffer begin 1914,
+submit 2128. The original tool reported all strides as zero and dumped only
+4/4/4/8 bytes at offset 4. Its after-draw attachment nevertheless matched the
+failed `attributes-0.rgba`; that image match did not validate the buffer dumps.
+The rejected evidence is retained in `capture/vertex-dump-attempt/`.
+
+The rebuilt tool replayed the **same capture**, with `DumpVertexIndexBuffer`,
+`DumpBeforeCommand` and `DumpRawImages` enabled. Results and device-verified
+file hashes are in `capture/vertex-dump-verified/`, along with the exact request,
+command, replay binary hash, tool manifest and repeatable staging script.
+
+| Binding / captured buffer | Effective stride | Dump offset / size | Compared contents |
+| --- | --- | --- | --- |
+| 0 / 185 | 16 | 116 / 44 | Three position records starting at vertex 7, including padding |
+| 1 / 186 | 8 | 44 / 28 | Four tint records starting at instance 5, including padding |
+| 2 / 187 | 8 | 60 / 20 | Three signed integer records, `(-123, 321)`, including padding |
+| 3 / 188 | 8 | 60 / 20 | Three half-float records, `(0.5, -2.0)`, including padding |
+
+Every retained byte matches the independently reconstructed source fixture
+range. The exported BGRA attachment after the draw, converted to RGBA, still
+matches the failed original GL image. This establishes replay GPU buffer
+readbacks before one failing draw, not actual hardware attribute fetches or
+the cause of the shader's failed checks. The selected draw uses divisor one
+and null `pSizes`. General divisor handling, explicit size bounds, indirect
+fetch ranges and null-stride/zero-stride edge cases have not been separately
+accepted. The fixed tool has no multi-draw resource-dump handler, so equivalent
+Turnip multi-draw vertex-buffer evidence is not claimed.
+
+The AArch64 tools were built from the committed fork source. Fresh full image
+regression with lazy descriptors and preserved compile flags remains:
+Turnip `20260908T191451-aba46d46` rendering/replay PASS, 50/50 images; Mali
+`20260908T191452-7de65374` rendering FAIL with the existing attribute errors,
+replay PASS, 27/27 images. Both replay logs have no diagnostics or uncompared
+images. The new fork pin passes shell syntax and diff checks. G06 and arbitrary
+application resource history remain open.

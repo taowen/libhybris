@@ -959,3 +959,16 @@ packed vertex 的 12 种参数组合现在保存真实原图，包含失败图�
 和链接后销毁检查均符合预期。此处完整仅指顶点输入元数据，不包含资源
 内容、全部动态状态失效规则或任意应用首错定位；G06 仍开放，详见
 [管线库证据](tests/desktop-gl/capture.md#pipeline-library-vertex-input-provenance)。
+
+
+### G06 失败绘制的动态步长资源读回（2026-09-08）
+
+Mali 捕获的首个属性 draw 2103 暴露了工具错误：动态步长 16/8/8/8
+被导出器当成 0，只读每个缓冲区开头少量字节。GFXReconstruct fork
+`e3aa74fb` 修复动态步长记录；同一捕获复验得到正确偏移
+116/44/60/60、长度 44/28/20/20，全部字节匹配探针构造的输入，且设备
+与主机文件哈希一致。绘制后附件仍匹配失败原图，因此没有把取证成功
+记成渲染修复。新工具完整回归为 Turnip 50/50 图像匹配、渲染/回放 PASS；
+Mali 27/27 匹配、回放 PASS、原始渲染 FAIL。仅验证这一 divisor=1、
+无显式绑定大小的失败绘制；硬件实际取数、其它范围计算及首错原因仍未
+闭合。详见[动态步长读回](tests/desktop-gl/capture.md#dynamic-vertex-stride-resource-dump-repair)，G06 不关闭。
