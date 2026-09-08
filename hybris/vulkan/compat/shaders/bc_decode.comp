@@ -4,7 +4,7 @@ layout(local_size_x = 64) in;
 layout(set = 0, binding = 0, std430) readonly buffer Source { uint data[]; } src;
 layout(set = 0, binding = 1, std430) writeonly buffer Destination { uint data[]; } dst;
 layout(push_constant) uniform Region {
-    uint mode; // 0..3: BC1 RGB/RGBA, BC2, BC3; 4..7: BC4 U/S, BC5 U/S
+    uint mode; // 0..3: BC1 RGB/RGBA, BC2, BC3; 4..7: BC4/5 U/S; 8: packed RGB8
     uint source_word;
     uint row_blocks;
     uint layer_blocks;
@@ -20,6 +20,33 @@ uvec3 rgb565(uint value)
 {
     uvec3 c = uvec3(value >> 11, (value >> 5) & 63, value & 31);
     return (c << uvec3(3, 2, 3)) | (c >> uvec3(2, 4, 2));
+}
+
+uint color_rgba(uint word, uint within, uint mode)
+{
+    uint endpoints = src.data[word];
+    uint c0 = endpoints & 65535, c1 = endpoints >> 16;
+    uvec3 a = rgb565(c0), b = rgb565(c1), color;
+    uint index = (src.data[word + 1] >> (within * 2)) & 3;
+    uint alpha = 255;
+    if (index == 0) color = a;
+    else if (index == 1) color = b;
+    else if (mode >= 2 || c0 > c1)
+        color = index == 2 ? (2 * a + b) / 3 : (a + 2 * b) / 3;
+    else if (index == 2) color = (a + b) / 2;
+    else {
+        color = uvec3(0);
+        if (mode == 1) alpha = 0;
+    }
+    return color.r | (color.g << 8) | (color.b << 16) | (alpha << 24);
+}
+
+uint rgb8_texel(uint pixel)
+{
+    uint x = pixel % r.width, y = (pixel / r.width) % r.height;
+    uint layer = pixel / (r.width * r.height);
+    uint block = layer * r.layer_blocks + (y / 4) * r.row_blocks + x / 4;
+    return color_rgba(r.source_word + block * 2, (y & 3) * 4 + (x & 3), 0) & 0xffffff;
 }
 
 uint index3(uint word, uint pixel)
@@ -84,6 +111,19 @@ void main()
     if (local_pixel >= r.chunk_pixels) return;
     uint pixel = r.first_pixel + local_pixel;
     if (pixel >= r.pixels) return;
+    if (r.mode == 8) {
+        // Four RGB texels occupy three storage words. Only their first
+        // invocation writes, so odd rows/layers never race at byte boundaries.
+        if ((pixel & 3) != 0) return;
+        uint count = min(r.pixels - pixel, 4);
+        uvec4 colors = uvec4(0);
+        for (uint i = 0; i < count; ++i) colors[i] = rgb8_texel(pixel + i);
+        uint at = r.destination_word + (pixel / 4) * 3;
+        dst.data[at] = colors[0] | (colors[1] << 24);
+        if (count >= 2) dst.data[at + 1] = (colors[1] >> 8) | (colors[2] << 16);
+        if (count >= 3) dst.data[at + 2] = (colors[2] >> 16) | (colors[3] << 8);
+        return;
+    }
     uint x = pixel % r.width;
     uint y = (pixel / r.width) % r.height;
     uint layer = pixel / (r.width * r.height);
@@ -111,24 +151,11 @@ void main()
         return;
     }
     uint color_word = word + (r.mode < 2 ? 0 : 2);
-    uint endpoints = src.data[color_word];
-    uint c0 = endpoints & 65535, c1 = endpoints >> 16;
-    uvec3 a = rgb565(c0), b = rgb565(c1), color;
-    uint index = (src.data[color_word + 1] >> (within * 2)) & 3;
-    uint alpha = 255;
-    if (index == 0) color = a;
-    else if (index == 1) color = b;
-    else if (r.mode >= 2 || c0 > c1)
-        color = index == 2 ? (2 * a + b) / 3 : (a + 2 * b) / 3;
-    else if (index == 2) color = (a + b) / 2;
-    else {
-        color = uvec3(0);
-        if (r.mode == 1) alpha = 0;
-    }
+    uint rgba = color_rgba(color_word, within, r.mode);
+    uint alpha = rgba >> 24;
     if (r.mode == 2)
         alpha = ((src.data[word + within / 8] >> ((within & 7) * 4)) & 15) * 17;
     else if (r.mode == 3) alpha = alpha3(word, within);
     // sRGB variants retain encoded bytes; image sampling performs the EOTF.
-    dst.data[r.destination_word + pixel] = color.r | (color.g << 8) |
-                                         (color.b << 16) | (alpha << 24);
+    dst.data[r.destination_word + pixel] = (rgba & 0xffffff) | (alpha << 24);
 }

@@ -297,3 +297,9 @@ Format queries and device restrictions follow the same opt-in policy;
 `textureCompressionBC` is not raised. See the [image fallback scope and probes](../../../tests/baseline/bc-images.md)
 and the separate [internal decoder evidence](../../../tests/baseline/bc-decode.md).
 BC6–BC7 and full G07 acceptance remain open.
+
+BC1 RGB storage now follows the physical device's optimal RGB8/sRGB sampled
+and transfer capabilities. This fixes the tested Mali border/default-alpha
+behavior without changing color precision. Redmi still uses RGBA8 and fails
+the added transparent-black border comparison; it is retained as FAIL rather
+than skipped. See the [RGB8 evidence and limits](../../../tests/baseline/bc-rgb8.md).

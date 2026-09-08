@@ -161,6 +161,7 @@ static VkResult decode(struct hybris_bc_transfer *t, VkCommandBuffer command,
                 buffer_barrier(t, command, t->scratch, VK_PIPELINE_STAGE_TRANSFER_BIT,
                     VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
                 struct hybris_bc_region decoding = {.format = image->format,
+                    .rgb8 = image->decoded_format == VK_FORMAT_R8G8B8_UNORM || image->decoded_format == VK_FORMAT_R8G8B8_SRGB,
                     .width = width, .height = height, .layers = 1,
                     .source_offset = source - base, .source_range = range,
                     .destination_range = buffers[1].range};

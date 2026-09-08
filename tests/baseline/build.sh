@@ -30,7 +30,7 @@ rm -rf "$PROBE_SRC"
 mkdir -p "$PROBE_SRC/shaders" "$PROBE_SRC/compat/shaders"
 cp "$ROOT/hybris/vulkan/compat/"bc_decode.{c,h} "$PROBE_SRC/compat/"
 cp "$ROOT/hybris/vulkan/compat/shaders/"bc_decode.{comp,inc} "$ROOT/hybris/vulkan/compat/shaders/generate-bc.py" "$PROBE_SRC/compat/shaders/"
-cp bc_fixture.h native_buffer_render.h native_buffer_fixture.h scaled_divisor.h scaled_fixture.h allocation_fixture.h render_path.h tls_fixture.cpp sync_fixture.h stdio_fixture.h widget_fixture.h "$PROBE_SRC/"
+cp bc_image_verify.h bc_fixture.h native_buffer_render.h native_buffer_fixture.h scaled_divisor.h scaled_fixture.h allocation_fixture.h render_path.h tls_fixture.cpp sync_fixture.h stdio_fixture.h widget_fixture.h "$PROBE_SRC/"
 for source in "${SOURCES[@]}"; do
     [[ "$source" == compat/* ]] || cp "$source" "$PROBE_SRC/"
 done

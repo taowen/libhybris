@@ -5,7 +5,8 @@
 
 /* Internal GPU kernel, not an advertisement of Vulkan compressed-image support.
  * Output is RGBA8 for BC1-3, R16 UNORM/SNORM for BC4, RG16 for BC5.
- * BC4 writes pairs of texels per uint32; an odd final texel has zero padding.
+ * BC1 RGB can instead write tightly packed RGB8, four pixels per three words.
+ * BC4 writes pairs of texels per uint32. Partial final words have zero padding.
  * Source/destination are non-overlapping storage-buffer descriptor ranges.
  * Offsets below are relative to those ranges, not to bound device memory.
  * The caller owns buffers/descriptors and their synchronization/lifetime.
@@ -21,6 +22,7 @@ struct hybris_bc_decoder {
 };
 struct hybris_bc_region {
     VkFormat format;
+    VkBool32 rgb8; /* BC1 RGB only: packed RGB8 instead of RGBA8 output */
     uint32_t width, height, layers;
     uint32_t row_length, image_height; /* zero means tightly packed */
     VkDeviceSize source_offset, destination_offset;

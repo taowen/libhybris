@@ -4,6 +4,9 @@ The standard-loader ICD now intercepts application BC image creation, memory
 queries/binding, views, transfers and synchronization. This is a partial G07
 implementation; it does not provide BC6–BC7 or full Vulkan format conformance.
 The separate [decoder probe](bc-decode.md) still tests only the internal kernel.
+BC1 RGB now uses native RGB8 storage where supported. The expanded border
+probe passes on Mali and exposes an unresolved Redmi alpha failure; see the
+[RGB8 correction and remaining failure](bc-rgb8.md).
 
 ## Policy and supported domain
 
@@ -23,7 +26,7 @@ layers and cube-compatible creation, with sampled/transfer usage. Linear,
 sparse, mutable, storage, attachment, external-memory and host-copy images
 are not advertised. Sparse format and maintenance4 sparse-memory queries return
 no requirements for selected emulated formats. The image-format queries use the corresponding native
-RGBA8, R16 or RG16 format's limits and restrict sample counts and usages consistently.
+RGB8, RGBA8, R16 or RG16 format's limits and restrict sample counts and usages consistently.
 Format properties expose only sampled, linear-filter and transfer support.
 `textureCompressionBC` remains false: that feature promises the complete BC
 family, including capabilities this fallback does not implement. Individual
@@ -43,7 +46,11 @@ apply only to the opt-in device with selected emulated formats.
 ## Implementation and resource ownership
 
 Each selected image has a compressed storage/transfer buffer and a native
-decoded image: RGBA8 for BC1–BC3, R16 for BC4, RG16 for BC5. The compressed backing is bound to the application's allocation;
+decoded image: RGB8 for BC1 RGB where optimal native sampled/transfer support
+exists, otherwise RGBA8; RGBA8 for BC1 RGBA/BC2/BC3, R16 for BC4, RG16 for BC5.
+The RGB8 choice is per physical device and sRGB variant, and is retained on
+each image for view creation and upload packing. The RGBA8 alternative still
+has the documented BC1 RGB border-alpha defect on Redmi. The compressed backing is bound to the application's allocation;
 the decoded image has an internal allocation. Dedicated requirements are
 queried independently. Image memory requirements, dedicated allocation chains,
 BindImageMemory2 device-group indices, and maintenance4's allocation-free memory
@@ -75,6 +82,10 @@ retire. Decoder descriptor sets are immutable for a recording; scratch and
 pools are reclaimed on command-buffer/pool reset, free or destruction. Image
 barriers and event dependencies also cover the compressed backing, by mip and
 array-layer range. Classic and synchronization2/KHR entry points are wrapped.
+
+RGB8 output packs four pixels into three storage words without overlapping
+byte writes; a partial final word is zero-padded. It retains the existing
+BC1 color bytes and native sRGB conversion, and adds no host decoding.
 
 The modules separate image storage, transfer/decoding, command state, object
 registries, resource entry points, image copies, barriers and capability policy.
@@ -119,7 +130,14 @@ between texel centers, using clamp-to-edge, opaque-white and transparent-black
 borders. These BC/native filtered samples must match bit for bit. The native
 result is separately checked against the four-texel arithmetic average; only
 its interpolated R/G values permit one 16-bit step for filtering/packing
-rounding. Default components remain exact. Validation modes
+rounding. Default components remain exact. BC1 RGB now additionally checks
+clamp-to-edge plus white, transparent-black and opaque-black borders. Its
+filtered RGB values use the independent native RGBA8 image as the exact oracle
+and alpha must remain one. The reference view supplies alpha one only where
+that swizzle has defined behavior; opaque-black cases use identity views.
+The expanded case is intentionally FAIL on Redmi until its border behavior
+is corrected. CPU pixel/sentinel checks now live in `bc_image_verify.h`,
+separate from Vulkan recording. Validation modes
 cover GIPA/GDPA and the standard loader's exported core ELF/link entry points.
 KHR aliases use GIPA/GDPA because the standard loader does not export those
 aliases as ELF symbols. These modes enable synchronization validation at the
@@ -260,6 +278,8 @@ resources, excluded state extensions, multi-device groups, all queue-ownership
 and aliasing combinations, cube sampling, allocation-failure stress, maximum
 resource limits, performance and CTS coverage remain open. The 32×32 case
 covers descriptor-pool rollover, not general large-image limits. BC1 RGB's
-RGBA backing also still requires work for border/default-alpha semantics;
-the new single/two-channel border checks cover only BC4/BC5. Creation support
+RGBA backing still fails border/default-alpha semantics on devices without
+the required native RGB8 support; the new RGB8 path fixes the tested Mali
+cases. Custom border colors and general sampler/view combinations remain
+outside the fixed-border probe's coverage. Creation support
 or these probes must not be read as completion of G07 as a whole.

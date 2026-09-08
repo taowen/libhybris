@@ -125,12 +125,14 @@ int bc_decode_probe(int validate)
     VkFence fence;
     CHECK(p_vkCreateFence(device, &fi, NULL, &fence));
     unsigned failures = 0, readbacks = 0;
-    for (unsigned format = 0; format < BC_FORMAT_COUNT; ++format) {
+    for (unsigned variant = 0; variant < BC_FORMAT_COUNT + 2; ++variant) {
+        unsigned format = variant < BC_FORMAT_COUNT ? variant : variant - BC_FORMAT_COUNT;
+        unsigned rgb8 = variant >= BC_FORMAT_COUNT;
         unsigned mode = bc_mode(format);
         for (unsigned shape = 0; shape < 4; ++shape) {
             const uint32_t shapes[4][5] = {{4, 4, 1, 0, 0}, {9, 7, 3, 16, 12},
                                          {1, 1, 2, 0, 0}, {129, 5, 2, 144, 12}};
-            struct hybris_bc_region region = {.format = bc_formats[format],
+            struct hybris_bc_region region = {.format = bc_formats[format], .rgb8 = rgb8,
                 .width = shapes[shape][0], .height = shapes[shape][1], .layers = shapes[shape][2],
                 .row_length = shapes[shape][3], .image_height = shapes[shape][4],
                 .source_offset = 12, .destination_offset = 20, .source_range = BYTES, .destination_range = BYTES};
@@ -163,7 +165,7 @@ int bc_decode_probe(int validate)
                         .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT};
                     p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                         0, 1, &uploaded, 0, NULL, 0, NULL);
-                    if (format == 0 && shape == 0 && round == 0) {
+                    if (variant == 0 && shape == 0 && round == 0) {
                         /* Rejections happen in the live recording, before any
                          * dispatch or state change; the normal readback below
                          * also checks the surrounding sentinel words. */
@@ -187,6 +189,13 @@ int bc_decode_probe(int validate)
                             printf("BC_REJECT case=%u result=%d expected=%d\n", rejection, rejected, wanted);
                             if (rejected != wanted) return 2;
                         }
+                    }
+                    if (variant == BC_FORMAT_COUNT && shape == 0 && round == 0) {
+                        struct hybris_bc_region invalid = region;
+                        invalid.format = VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+                        VkResult rejected = hybris_bc_decode_record(&decoder, command, descriptors, &invalid, &limits);
+                        printf("BC_REJECT_RGB8_FORMAT result=%d expected=%d\n", rejected, VK_ERROR_INITIALIZATION_FAILED);
+                        if (rejected != VK_ERROR_INITIALIZATION_FAILED) return 2;
                     }
                     CHECK(hybris_bc_decode_record(&decoder, command, descriptors, &region, &limits));
                     VkMemoryBarrier decoded = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -217,10 +226,20 @@ int bc_decode_probe(int validate)
                 for (unsigned word = 0; word < BYTES / 4; ++word) {
                     uint32_t expected = 0xcdcdcdcd;
                     unsigned packed = mode == 4 || mode == 5;
-                    unsigned words = packed ? (pixels + 1) / 2 : pixels;
+                    unsigned words = rgb8 ? (pixels * 3 + 3) / 4 : packed ? (pixels + 1) / 2 : pixels;
                     if (word >= 5 && word < 5 + words) {
                         expected = 0;
-                        for (unsigned part = 0; part < (packed ? 2 : 1); ++part) {
+                        if (rgb8) {
+                            for (unsigned part = 0; part < 4; ++part) {
+                                unsigned byte = (word - 5) * 4 + part, pixel = byte / 3;
+                                if (pixel >= pixels) break;
+                                unsigned x = pixel % region.width, y = pixel / region.width % region.height;
+                                unsigned z = pixel / (region.width * region.height);
+                                uint32_t value = gpu_write ? 0 : bc_golden(mode,
+                                    bc_variant(mode, x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
+                                expected |= ((value >> (8 * (byte % 3))) & 255) << (8 * part);
+                            }
+                        } else for (unsigned part = 0; part < (packed ? 2 : 1); ++part) {
                             unsigned pixel = (word - 5) * (packed ? 2 : 1) + part;
                             if (pixel >= pixels) break;
                             unsigned x = pixel % region.width;
@@ -236,8 +255,8 @@ int bc_decode_probe(int validate)
                         ++bad;
                     }
                 }
-                printf("BC_DECODE format=%u shape=%u round=%u gpu_write=%d pixels=%u bad=%u\n",
-                    bc_formats[format], shape, round, gpu_write, pixels, bad);
+                printf("BC_DECODE format=%u rgb8=%u shape=%u round=%u gpu_write=%d pixels=%u bad=%u\n",
+                    bc_formats[format], rgb8, shape, round, gpu_write, pixels, bad);
                 failures += bad;
                 ++readbacks;
                 CHECK(p_vkResetFences(device, 1, &fence));
@@ -257,7 +276,7 @@ int bc_decode_probe(int validate)
     if (destroy_messenger) destroy_messenger(instance, messenger, NULL);
     p_vkDestroyInstance(instance, NULL);
     dlclose(h);
-    printf("BC_DECODE_SUMMARY formats=12 readbacks=%u failures=%u validation_errors=%u image_interception=0\n",
+    printf("BC_DECODE_SUMMARY formats=12 encodings=14 readbacks=%u failures=%u validation_errors=%u image_interception=0\n",
         readbacks, failures, validation.errors);
-    return failures || validation.errors || readbacks != BC_FORMAT_COUNT * 4 * 4 ? 2 : 0;
+    return failures || validation.errors || readbacks != (BC_FORMAT_COUNT + 2) * 4 * 4 ? 2 : 0;
 }

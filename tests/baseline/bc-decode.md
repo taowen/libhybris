@@ -2,7 +2,8 @@
 
 `hybris/vulkan/compat/bc_decode.c` provides a Vulkan 1.0 compute kernel for the
 12 BC1 RGB/RGBA, BC2/BC3 UNORM/sRGB and BC4/BC5 UNORM/SNORM formats.
-BC1–BC3 output is tightly packed RGBA8. BC4 writes packed R16 pairs (zero
+BC1–BC3 output is tightly packed RGBA8. BC1 RGB also supports packed RGB8
+for native three-channel images (four pixels per three storage words). BC4 writes packed R16 pairs (zero
 padding after an odd final texel); BC5 writes RG16. sRGB output retains encoded
 RGB bytes and the image performs the sampling conversion. BC6–BC7 are rejected. The block interpretation follows
 the [Vulkan compressed-format mapping](https://docs.vulkan.org/spec/latest/appendices/compressedtex.html)
@@ -35,8 +36,9 @@ kernel helper.
 ## Existing baseline case
 
 `bc-decode` and `bc-decode-validation` use the existing executable and runner;
-there is no separate test harness. Each execution checks 192 readbacks:
-12 formats × 4 region shapes × 4 submissions. Shapes are 4×4×1, 9×7×3 with
+there is no separate test harness. Each execution checks 224 readbacks:
+12 format encodings plus two RGB8 output encodings, each with 4 region shapes
+and 4 submissions. Shapes are 4×4×1, 9×7×3 with
 16-texel rows/12-texel layer height, 1×1×2, and 129×5×2 with 144/12 strides.
 The last shape reduces the caller's dispatch limit to one workgroup to exercise
 splitting without allocating a device-limit-sized buffer.
@@ -57,7 +59,8 @@ buffer. The fourth submission records a GPU fill of the upload buffer and
 checks the resulting zero block. Buffers have nonzero memory binding offsets;
 mapped allocations are flushed/invalidated in full. Ten live-recording
 rejection controls cover BC6/BC7, short ranges, offset/dimension overflow,
-invalid strides and unavailable dispatch/range limits. SyncVal is enabled in
+invalid strides and unavailable dispatch/range limits. An additional control
+rejects requesting RGB8 output for BC1 RGBA. SyncVal is enabled in
 the validation case.
 
 From the repository root, after the normal library and baseline builds:
@@ -122,3 +125,13 @@ counter failures and separate application-image results are recorded in the
 [BC4/BC5 image evidence](bc-images.md#bc4bc5-extension-evidence-2026-09-08).
 The current generated decoder include SHA256 is
 `2a5cfc7a7314b75134eb7a5d01d7253c72bb86af2c264cd07739c02a650002d9`.
+
+## Packed RGB8 evidence
+
+The current kernel also emits the original BC1 RGB bytes in three-byte texels,
+without changing interpolation or sRGB encoding. Four-pixel groups own their
+three output words; partial groups zero-fill the last word and do not overrun
+the checked descriptor range. The two additional encodings are exercised on
+both devices even where native RGB8 images are unavailable. Their current
+224-readback results and the separate, device-dependent image behavior are
+recorded in [the RGB8 batch](bc-rgb8.md).

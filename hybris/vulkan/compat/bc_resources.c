@@ -27,7 +27,7 @@ static VkResult VKAPI_CALL create_image(VkDevice handle, const VkImageCreateInfo
     VkResult result;
     if (emulates(device, info->format)) {
         result = hybris_bc_image_create(handle, device->resolver, &device->memory, info,
-            allocator, &resource->emulated);
+            device->rgb8_mask, allocator, &resource->emulated);
         if (result == VK_SUCCESS) *out = resource->emulated.image;
     } else {
         result = CreateImage(handle, info, allocator, out);
@@ -211,7 +211,7 @@ static VkResult VKAPI_CALL create_view(VkDevice handle, const VkImageViewCreateI
     VkImageViewCreateInfo translated = *info;
     if (resource && resource->emulated.image) {
         if (info->format != resource->format) return VK_ERROR_FORMAT_NOT_SUPPORTED;
-        translated.format = hybris_bc_image_format(info->format);
+        translated.format = resource->emulated.decoded_format;
     }
     PROC(CreateImageView);
     return CreateImageView(handle, &translated, allocator, view);

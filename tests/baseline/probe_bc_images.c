@@ -1,5 +1,5 @@
 #include "probe.h"
-#include "bc_fixture.h"
+#include "bc_image_verify.h"
 #include "shaders/bc-sample.inc"
 
 static void image_barrier(PFN_vkCmdPipelineBarrier barrier, VkCommandBuffer command, VkImage image,
@@ -39,37 +39,6 @@ static void image_event(PFN_vkCmdSetEvent set, PFN_vkCmdWaitEvents wait,
         wait(command, 1, &event, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
             0, NULL, 0, NULL, 1, &barrier);
     }
-}
-static int sampled_matches(uint32_t actual, uint32_t expected, int srgb)
-{
-    /* Standard sRGB EOTF, rounded to eight-bit linear output. Generated from
-     * the transfer function, independently of the BC palettes/kernel. */
-    static const uint8_t linear[256] = {
-        0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3,
-        4, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7,
-        8, 8, 8, 8, 9, 9, 9, 10, 10, 10, 11, 11, 12, 12, 12, 13,
-        13, 13, 14, 14, 15, 15, 16, 16, 17, 17, 17, 18, 18, 19, 19, 20,
-        20, 21, 22, 22, 23, 23, 24, 24, 25, 25, 26, 27, 27, 28, 29, 29,
-        30, 30, 31, 32, 32, 33, 34, 35, 35, 36, 37, 37, 38, 39, 40, 41,
-        41, 42, 43, 44, 45, 45, 46, 47, 48, 49, 50, 51, 51, 52, 53, 54,
-        55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
-        71, 72, 73, 74, 76, 77, 78, 79, 80, 81, 82, 84, 85, 86, 87, 88,
-        90, 91, 92, 93, 95, 96, 97, 99, 100, 101, 103, 104, 105, 107, 108, 109,
-        111, 112, 114, 115, 116, 118, 119, 121, 122, 124, 125, 127, 128, 130, 131, 133,
-        134, 136, 138, 139, 141, 142, 144, 146, 147, 149, 151, 152, 154, 156, 157, 159,
-        161, 163, 164, 166, 168, 170, 171, 173, 175, 177, 179, 181, 183, 184, 186, 188,
-        190, 192, 194, 196, 198, 200, 202, 204, 206, 208, 210, 212, 214, 216, 218, 220,
-        222, 224, 226, 229, 231, 233, 235, 237, 239, 242, 244, 246, 248, 250, 253, 255,
-    };
-    for (unsigned component = 0; component < 4; ++component) {
-        int want = (expected >> (8 * component)) & 255;
-        if (srgb && component < 3) want = linear[want];
-        int got = (actual >> (8 * component)) & 255;
-        int tolerance = srgb && component < 3 ? 1 : 0;
-        if (got - want > tolerance || want - got > tolerance) return 0;
-    }
-    return 1;
 }
 int bc_images_probe(int validate, int route)
 {
@@ -143,7 +112,7 @@ int bc_images_probe(int validate, int route)
             continue;
         }
         if (result != VK_SUCCESS) return 2;
-        linear_filter[f] = f >= 8 && (format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+        linear_filter[f] = (f < 2 || f >= 8) && (format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
         const char *bc_policy = getenv("HYBRIS_BC_TEXTURES");
         if (bc_policy && !strcmp(bc_policy, "force")) {
             uint32_t sparse_count = 0;
@@ -319,7 +288,7 @@ int bc_images_probe(int validate, int route)
         .magFilter = VK_FILTER_NEAREST, .minFilter = VK_FILTER_NEAREST, .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .maxLod = 0};
-    VkSampler samplers[4];
+    VkSampler samplers[5];
     CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &samplers[0]));
     sampler_info.magFilter = sampler_info.minFilter = VK_FILTER_LINEAR;
     CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &samplers[1]));
@@ -328,6 +297,8 @@ int bc_images_probe(int validate, int route)
     CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &samplers[2]));
     sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
     CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &samplers[3]));
+    sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &samplers[4]));
     VkShaderModuleCreateInfo shader_info = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = sizeof(bc_sample_spv), .pCode = bc_sample_spv};
     VkShaderModule shader;
@@ -356,8 +327,9 @@ int bc_images_probe(int validate, int route)
             int use_sync2 = sync2 && (mip & 1);
             sync2_cases += use_sync2;
             unsigned mode = bc_mode(f);
-            unsigned sampler_choice = linear_filter[f] ? 1 + mip % 3 : 0;
-            uint32_t sample_words = f >= 8 ? 2 : 1;
+            unsigned sampler_choice = linear_filter[f] ? 1 + (f < 2 ? mip : mip % 3) : 0;
+            /* Legacy opaque-black sampling with nonidentity swizzles is undefined. */
+            unsigned view_swizzled = shape_index && sampler_choice != 4;
             uint32_t block_bytes = bc_block_bytes(mode);
             VkImage images[4]; VkDeviceMemory image_memory[4];
             for (unsigned i = 0; i < 4; ++i) {
@@ -414,12 +386,14 @@ int bc_images_probe(int validate, int route)
             VkImageViewCreateInfo view_info = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                 .image = images[1], .viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY, .format = bc_formats[f],
                 .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, mip, 1, 0, LAYERS}};
-            if (shape_index) view_info.components = (VkComponentMapping){
+            if (view_swizzled) view_info.components = (VkComponentMapping){
                 VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_A};
             VkImageView view;
             CHECK(p_vkCreateImageView(device, &view_info, NULL, &view));
             view_info.image = images[3];
             view_info.format = bc_reference_format(f);
+            /* BC1 RGB has no alpha component, including outside the image. */
+            if (f < 2 && sampler_choice != 4) view_info.components.a = VK_COMPONENT_SWIZZLE_ONE;
             view_info.subresourceRange.baseMipLevel = 0;
             VkImageView reference_view;
             CHECK(p_vkCreateImageView(device, &view_info, NULL, &reference_view));
@@ -594,79 +568,12 @@ int bc_images_probe(int validate, int route)
                 uint32_t pixels = width * height * LAYERS;
                 uint32_t columns = (width + 3) / 4, rows = (height + 3) / 4;
                 uint32_t raw_size = columns * rows * LAYERS * block_bytes;
-                unsigned bad = 0;
-                for (unsigned word = 0; word < BYTES / 4; ++word) {
-                    uint32_t expected = 0xcdcdcdcd;
-                    int matches;
-                    if (word >= dynamic_offset / 4 && word < dynamic_offset / 4 + sample_words * pixels) {
-                        expected = actual[word + sample_words * pixels];
-                        matches = actual[word] == expected;
-                    } else if (word >= dynamic_offset / 4 + sample_words * pixels && word < dynamic_offset / 4 + 2 * sample_words * pixels) {
-                        unsigned sample_word = word - dynamic_offset / 4 - sample_words * pixels;
-                        unsigned pixel = sample_word / sample_words;
-                        unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
-                        expected = bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
-                        if (patched && z == 1 && x >= 4 && x < 8 && y < 4) expected = f < 4 ? 0xff000000 : 0;
-                        if (f >= 8) {
-                            uint32_t red = expected & 65535, green = expected >> 16;
-                            uint32_t alpha = f & 1 ? 32767 : 65535;
-                            expected = sample_word & 1 ? ((shape_index ? red : 0) | (alpha << 16)) :
-                                ((shape_index ? 0 : red) | (green << 16));
-                            matches = actual[word] == expected;
-                        } else {
-                            if (shape_index) expected = (expected & 0xff00ff00) | ((expected & 255) << 16) | ((expected >> 16) & 255);
-                            matches = sampled_matches(actual[word], expected, f & 1);
-                        }
-                    } else if (linear_filter[f] && word >= dynamic_offset / 4 + 2 * sample_words * pixels &&
-                        word < dynamic_offset / 4 + 3 * sample_words * pixels) {
-                        expected = actual[word + sample_words * pixels];
-                        matches = actual[word] == expected;
-                    } else if (linear_filter[f] && word >= dynamic_offset / 4 + 3 * sample_words * pixels &&
-                        word < dynamic_offset / 4 + 4 * sample_words * pixels) {
-                        unsigned sample_word = word - dynamic_offset / 4 - 3 * sample_words * pixels;
-                        unsigned pixel = sample_word / sample_words;
-                        unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
-                        /* The chosen coordinates average four adjacent texels with
-                         * exact half weights. Check native RG16 filtering against
-                         * that average; the BC-to-native comparison above is exact. */
-                        int sums[4] = {0};
-                        for (unsigned dy = 0; dy < 2; ++dy) for (unsigned dx = 0; dx < 2; ++dx) {
-                            unsigned sx = x + dx < width ? x + dx : width - 1;
-                            unsigned sy = y + dy < height ? y + dy : height - 1;
-                            uint32_t packed = bc_reference_load(reference_pixels, f, (z * height + sy) * width + sx);
-                            if (sampler_choice >= 2 && (x + dx >= width || y + dy >= height)) {
-                                uint32_t maximum = f & 1 ? 32767 : 65535;
-                                packed = sampler_choice == 2 ? maximum | (mode >= 6 ? maximum << 16 : 0) : 0;
-                            }
-                            int red = f & 1 ? (int16_t)packed : (int)(packed & 65535);
-                            int green = f & 1 ? (int16_t)(packed >> 16) : (int)(packed >> 16);
-                            sums[shape_index ? 2 : 0] += red;
-                            sums[1] += green;
-                            sums[3] += f & 1 ? 32767 : 65535;
-                        }
-                        matches = 1; expected = 0;
-                        for (unsigned c = 0; c < 2; ++c) {
-                            unsigned component = 2 * (sample_word & 1) + c;
-                            int sum = sums[component];
-                            int want = sum < 0 ? -((-sum + 2) / 4) : (sum + 2) / 4;
-                            int got = f & 1 ? (int16_t)(actual[word] >> (16 * c)) :
-                                (int)((actual[word] >> (16 * c)) & 65535);
-                            int tolerance = component == 3 || component == (shape_index ? 0 : 2) ? 0 : 1;
-                            if (abs(got - want) > tolerance) matches = 0;
-                            expected |= (uint32_t)(uint16_t)want << (16 * c);
-                        }
-                    } else if (word >= RAW / 4 && word < (RAW + raw_size) / 4) {
-                        unsigned byte = (word - RAW / 4) * 4;
-                        unsigned block = byte / block_bytes, x = block % columns, y = block / columns % rows, z = block / (columns * rows);
-                        memcpy(&expected, mapped[0] + binding[0] + 16 + ((z * 9 + y) * 10 + x) * block_bytes + byte % block_bytes, 4);
-                        if (patched && z == 1 && x == 1 && y == 0) expected = 0;
-                        matches = actual[word] == expected;
-                    } else matches = actual[word] == expected;
-                    if (!matches) {
-                        if (bad < 3) printf("BC_IMAGES_MISMATCH word=%u actual=%08x expected=%08x srgb=%u\n", word, actual[word], expected, f & 1);
-                        ++bad;
-                    }
-                }
+                struct bc_image_readback check = {.actual = actual, .source = mapped[0] + binding[0],
+                    .region = fixture, .bytes = BYTES, .dynamic_offset = dynamic_offset,
+                    .raw_offset = RAW, .reference_offset = REFERENCE, .format = f, .round = round,
+                    .swizzle = view_swizzled, .patched = patched, .filtering = linear_filter[f],
+                    .sampler_choice = sampler_choice};
+                unsigned bad = bc_verify_image_readback(&check);
                 printf("BC_IMAGES_READBACK format=%u shape=%u mip=%u round=%u copy2=%u sync2=%u gpu_patch=%u linear_filter=%u border=%u pixels=%u raw_bytes=%u bad=%u\n",
                     bc_formats[f], shape_index, mip, round, use2, use_sync2, patched, linear_filter[f] != 0, sampler_choice >= 2 ? sampler_choice - 1 : 0, pixels, raw_size, bad);
                 failures += bad; ++readbacks;
@@ -692,7 +599,7 @@ int bc_images_probe(int validate, int route)
     p_vkDestroyFence(device, fence, NULL);
     p_vkDestroyCommandPool(device, pool, NULL);
     p_vkDestroyShaderModule(device, shader, NULL);
-    for (unsigned i = 0; i < 4; ++i) p_vkDestroySampler(device, samplers[i], NULL);
+    for (unsigned i = 0; i < 5; ++i) p_vkDestroySampler(device, samplers[i], NULL);
     p_vkDestroyDescriptorPool(device, descriptor_pool, NULL);
     p_vkDestroyDescriptorSetLayout(device, descriptor_layout, NULL);
     for (unsigned i = 0; i < 2; ++i) {

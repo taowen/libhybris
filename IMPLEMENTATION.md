@@ -282,7 +282,7 @@ it does not provide slot reclamation, IE first-touch or signal reentrancy.
 | G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Fixed headless widget capture/replay now matches all RGBA bytes. The ICD Wayland window probe now also passes Khronos VVL+SyncVal create/render/resize/retirement/destroy and GFXReconstruct virtual-swapchain copy dumps on OnePlus 8T and Mali; still need arbitrary application coverage. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
 | G06 | Partial | Associate an injected wrong binding with the first wrong draw and effective descriptor/resource generation. |
-| G07 | Open | Default-off BC1–BC5 image operations have independent native sampling/byte references, mip/layer/subregion and retirement probes. BC4/BC5 include UNORM16/SNORM16 sampling, filtering and border/default-channel checks. BC6–BC7 and complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
+| G07 | Open | Default-off BC1–BC5 image operations have independent native sampling/byte references, mip/layer/subregion and retirement probes. BC4/BC5 include UNORM16/SNORM16 sampling, filtering and border/default-channel checks. Native RGB8 fixes the tested Mali BC1 RGB border case; Redmi remains FAIL. BC6–BC7 and complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
 | G08 | Open | Fixed SPIR-V tooling, reflection/hash/specialization records, before/after semantic evidence for each transform. |
 | G09 | Open | Noncoherent/staging/reuse and queue ordering cases; validate emulation against completion and memory visibility. |
 | G10 | Open | Fixed Mesa/Zink revision and GL target-profile requirements; GL workload results with backend attribution. |
@@ -1008,3 +1008,17 @@ readbacks. Build hashes, all six run IDs and the initial stale-count failure
 are in [the image evidence](tests/baseline/bc-images.md#bc4bc5-extension-evidence-2026-09-08).
 BC1 RGB border semantics, BC6/BC7, remaining views/copies/aliasing, multi-queue,
 maximum limits, performance and CTS keep G07 open.
+
+## Native RGB8 for BC1 RGB borders (2026-09-08)
+
+The expanded probe reproduced a missing-alpha defect in the RGBA backing on
+both devices: transparent-black border filtering changed BC1 RGB alpha from
+one to 0.5/0.25. Native RGB8 UNORM/sRGB storage is now selected from physical
+format capabilities and used consistently for queries, images, views and
+GPU upload packing. Mali's five enabled image runs pass all 1,440 readbacks;
+Redmi lacks the required native format support and retains the same 306-word
+failure per execution. It is not skipped or reclassified as unsupported.
+The six independent decoder routes pass 1,344 readbacks, including RGB8 packing.
+Pixel verification was separated from Vulkan recording into `bc_image_verify.h`.
+[Evidence, hashes and limits](tests/baseline/bc-rgb8.md) retain the before/after
+results. The Redmi correction, remaining sampler semantics and G07 stay open.
