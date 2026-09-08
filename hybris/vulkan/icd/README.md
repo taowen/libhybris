@@ -5,9 +5,11 @@ Android Vulkan HAL through libhybris. It does not load Android libvulkan, modify
 dispatchable object headers, build a private layer chain or edit pNext lists.
 HAL objects already reserve the loader dispatch word; the glibc loader owns it.
 
-The frontend libvulkan remains the default delivery path. No system ICD manifest
-is installed. Baseline run.py can stage a private manifest with --icd-hal and
---vulkan-loader. The HAL override is ignored for secure execution; without an
+The Ardesk desktop path uses the standard glibc Vulkan loader with this ICD
+for Mali/vendor HALs, or Turnip WSI for supported Adreno devices. The replacement
+libvulkan frontend is a legacy regression path, not the desktop delivery path.
+No system ICD manifest is installed by this standalone library build. Baseline
+run.py stages a private manifest with --icd-hal and --vulkan-loader. The HAL override is ignored for secure execution; without an
 override the hardware module lookup selects the Vulkan HAL. The adapter and
 HAL remain resident. Full driver unloading is not implemented.
 
@@ -93,9 +95,9 @@ OUT_OF_DATE on acquire/present and can be replaced. Rejected presents still
 consume application waits. This remains an experimental X11 path; rootless,
 multiwindow and broader resize race coverage are not established.
 
-The [independent X11 developer tool](../../../tests/x11/README.md) builds a
-protocol-enabled Xwayland into the disposable anlabwc APK and runs selected
-checks through the unified `tests/wsi/run.py` entry. Both Adreno and Mali passed XCB/Xlib present, protocol rejection
+The [independent X11 developer tool](../../../tests/x11/README.md) builds only
+clients. Xwayland is built in Ardesk; `tests/wsi/run.py` attaches to the already
+running, installed `io.taowen.ardesk` compositor and its existing display/socket. Both Adreno and Mali passed XCB/Xlib present, protocol rejection
 and acquire timeout with VVL/SyncVal. No Mesa or anlabwc change was required.
 See that document for protocol provenance, exact runs and remaining G11 scope.
 

@@ -4,6 +4,16 @@
 范围：评估把本仓库扩展为同进程的 GLES / 桌面 OpenGL / Vulkan 兼容栈；借鉴 Vortek、Gladio 的能力，不照搬它们的命令 IPC。
 本文最初为调研建议，现作为持续实施的验收清单；阶段进度见 [实施状态](IMPLEMENTATION.md)。下文目标结构和完整兼容层尚未完成，两次 Blender 故障尚未重新复现。
 
+## 当前产品栈与统一状态（2026-09-08）
+
+现行 compositor 入口为已安装的 `io.taowen.ardesk`；Xwayland 由 Ardesk
+构建，libhybris 只构建客户端。后文 `io.taowen.hybriswsitest` 等名称属于
+注明日期的历史记录，不能作为当前夹具或验收步骤。
+产品 Mesa 已使用 `taowen/mesa` 的 WSI fork `980c6429`；下面的官方
+`c3b008c1` 是仍独立存在的 desktop-gl 离屏构建/证据，不是产品打包 pin。
+旧 desktop-gl 无验证错误声明已被独立日志复核更正，不能沿用作验证通过。
+已统一项与剩余分叉见[产品栈清单](docs/stack-consolidation.md)。
+
 ## 当前 Mesa 依赖（2026-09-07）
 
 按当前方案，Mesa 改为官方 `c3b008c1`，不再依赖 Mesa fork、Gallium Freedreno

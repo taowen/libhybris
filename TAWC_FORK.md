@@ -4,7 +4,20 @@ This fork is claudeslop: AI-written and AI-maintained as part of the [tawc](http
 
 **Fork URL:** https://github.com/wmww/libhybris
 
-## Purpose
+## Current Ardesk desktop contract
+
+Desktop clients use the standard glibc Vulkan loader with either Turnip WSI
+(Adreno) or the hybris ICD WSI (vendor HALs/Mali). Desktop GL uses Mesa Zink.
+The shared protocols live in Ardesk `protocols/`; Xwayland and the compositor
+are built by Ardesk, and client runners attach to installed `io.taowen.ardesk`.
+The frontend Wayland and EGL X11 paths described below are historical/legacy
+implementations, not additional product paths. Their code, including the old
+PRESENT_SOCKET fallback, has not yet been retired. See the
+[current consolidation audit](docs/stack-consolidation.md) for the remaining
+runtime and build cleanup; the old force-release behavior below is not the
+product release contract.
+
+## Historical purpose
 
 Provide EGL/GLES access to Android GPU drivers from glibc programs running in a chroot, specifically for tawc's Wayland compositor. The key goal is running on **stock Android firmware** (no patched bionic/vendor images).
 

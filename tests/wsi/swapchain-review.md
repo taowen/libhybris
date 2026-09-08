@@ -1,5 +1,12 @@
 # ICD swapchain review, 2026-09-07
 
+Current entry: `tests/wsi/run.py` attaches to installed, already running
+`io.taowen.ardesk`; Xwayland is built only by Ardesk. References below to
+`io.taowen.hybriswsitest` describe historical runs and are not current launch
+instructions. This review covers the hybris ICD probe, not the Turnip product
+window or teapot/scene validation gate. See the
+[consolidation audit](../../docs/stack-consolidation.md).
+
 The user's implementation is preserved in commit `5a2e72d`. The corrective
 change retains its real FIFO swapchain path and fixes ownership, synchronization
 and capability errors. This is an experimental subset, not full Vulkan WSI

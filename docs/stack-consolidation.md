@@ -1,0 +1,49 @@
+# 产品栈统一清单（2026-09-08）
+
+本次对照 Ardesk `7281fd2`、libhybris `1cf9d8d` 和 Mesa
+`980c6429e6cb83cb0c394ecad558211f63eab6db` 的现树检查。
+“已统一”只指相应实现/入口已经归并，不表示整个 WSI 或应用验收通过。
+
+## 已统一
+
+| 项 | 现行实现 |
+| --- | --- |
+| 协议定义 | Ardesk `protocols/` 的 `ardesk-wsi-protocols` 包，包含 TAWC-DRI 0.3 和 `android_wlegl`；hybris 不再自带 XML |
+| Xwayland | 只由 Ardesk `third_party/xwayland` 构建；hybris 构建独立客户端，runner 默认附着到已安装、运行中的 `io.taowen.ardesk` |
+| 合成器入口 | Ardesk anlabwc scene 消费 AHB；客户端工具不再构建旧测试 APK 或私有 Xwayland |
+| 产品 Mesa 源码 | `taowen/mesa` 的 `ardesk-wsi`，固定 `980c6429`，构建时不 apply WSI patch |
+| 工具补丁归属 | SPIRV-Tools、GFXReconstruct 的自有修改在各自 fork 中提交；构建器使用完整 commit，记录源码和产物哈希 |
+
+## 仍分开，且应保留两套后端
+
+| 项 | 现状与剩余验收 |
+| --- | --- |
+| 产品 GPU 后端 | 标准 loader → Turnip WSI（Adreno）；标准 loader → hybris ICD WSI（Mali/vendor HAL）。不需要合成一个 DSO |
+| 导入 | Turnip 使用 DMA-BUF 导入/复制路径，ICD 使用 AHB/HAL 查询；都应先验证目标导入路径再广告，不能以普通图像能力代替导入能力 |
+| FIFO/release | 两条产品路径都有 FIFO 和实际 release 驱动的复用；跨后端相同负例、断连、延迟 release 和销毁竞态尚无一套完整对照门 |
+| usage/alpha/extent | Turnip `wsi_common_ardesk.c` 广告 opaque alpha 和固定 usage 集；ICD `wsi.c` 广告 inherit alpha，并按 HAL 导入查询计算 usage/extent。不能把这些不同值机械改成相同；需以 compositor 实际消费语义和每条导入路径逐项验收 |
+
+## 仍需归并或退役
+
+| 项 | 已确认的剩余分叉 |
+| --- | --- |
+| frontend Vulkan 窗口 | `tests/wsi/run.py` 不带 `--icd-hal` 时仍能进入 Wayland frontend 分支；`vulkan/ws.c` 默认选择 Wayland。这是仍可执行的遗留路径，尚未删除或封死 |
+| frontend EGL 窗口 | EGL Wayland/X11 插件仍可构建和加载；X11 仍含 PRESENT_SOCKET 和 500ms force-free 路径。它们不属于两条产品后端，不能拿旧超时释放作为产品契约 |
+| 窗口验证/捕获 | hybris ICD 窗口探针有自己的标准 layer/capture 门；desktop-gl 有离屏 Zink 门。Ardesk teapot/scene 与 Turnip 产品窗口尚未接到同一套门，不能把离屏结果称作 Turnip 窗口验证 |
+| Mesa 探针构建 | 产品构建是 `tools/build/mesa.sh` 的 WSI fork；`tests/desktop-gl/build.sh` 仍单独要求官方 `c3b008c1`。后者会拒绝当前产品 checkout，需要共用产品构建/明确来源，而非再维护两套 pin |
+| 历史文档 | 本批给 ICD README、TAWC_FORK、两份 WSI review 和 gaps 加入现行入口/历史范围说明。保留旧运行的真实 APK 名称，不把历史证据改写成使用当前 APK |
+| submodule 指针 | 检查时 Ardesk 记录 `b5a6ab3`，工作区 libhybris 为 `1cf9d8d`。指针更新须引用已推送且验过的 libhybris 提交；它不能代替重新打包/安装产品 |
+
+## 构建边界与 Mali quirk
+
+独立 libhybris checkout 通过 `ARDESK_WSI_PROTOCOL_DIR` 指向共享协议包；
+嵌入 Ardesk 时构建器默认查找 `../../protocols`。产品打包/安装通过
+`HYBRIS_LIB_DIR` 选择已构建的 hybris 安装产物，不能再复制一份协议 XML。
+
+MMUD 是 HAL 初始化兼容处理，既不是协议字段，也不是 WSI 能力。
+当前构建启用 `--enable-mali-quirks` 后，对
+`libGLES_mali.so` build-id `5ac4efe8d6175298b273dbaeb8f9d28e5e508e72`
+自动启用进程内 hook；`HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK=0` 可关闭，
+`1` 显式启用。其他 build-id 和 secure execution 不走此 hook。
+因此应区分“构建选择启用 Mali quirks”和“运行时默认自动匹配”，不能再
+把当前行为写成运行时纯 opt-in。详见[初始化证据](mali-mmud.md)。

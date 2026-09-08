@@ -1,5 +1,12 @@
 # Window validation/capture review, 2026-09-07
 
+Current entry: `tests/wsi/run.py` attaches to installed, already running
+`io.taowen.ardesk`; Xwayland is built only by Ardesk. References below to
+`io.taowen.hybriswsitest` describe historical runs and are not current launch
+instructions. This review covers the hybris ICD probe, not the Turnip product
+window or teapot/scene validation gate. See the
+[consolidation audit](../../docs/stack-consolidation.md).
+
 The user's changes are preserved in `57cb045`. This review corrects the test
 verdict and evidence handling; it does not change the production ICD or vendor
 libraries. Validation and capture are separate workloads with the pinned tools.
