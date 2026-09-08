@@ -121,7 +121,10 @@ static VkResult decode(struct hybris_bc_transfer *t, VkCommandBuffer command,
     VkDeviceSize row_bytes = ((extent.width + UINT64_C(3)) / 4) * image->block_bytes;
     VkDeviceSize alignment = t->limits->minStorageBufferOffsetAlignment;
     if (!alignment) alignment = 1;
-    uint32_t max_width = (uint32_t)(t->scratch_size / 64) * 4;
+    uint32_t texel_bytes = image->decoded_format == VK_FORMAT_R16G16B16_SFLOAT ? 6 :
+        image->decoded_format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+    uint32_t max_width = (uint32_t)(t->scratch_size / (16 * texel_bytes)) * 4;
+    if (!max_width) return VK_ERROR_FORMAT_NOT_SUPPORTED;
     for (uint32_t layer = 0; layer < region->imageSubresource.layerCount; ++layer) {
         for (uint32_t y = 0; y < region->imageExtent.height; y += 4) {
             uint32_t height = region->imageExtent.height - y;
@@ -145,7 +148,7 @@ static VkResult decode(struct hybris_bc_transfer *t, VkCommandBuffer command,
                 if (result != VK_SUCCESS) return result;
                 VkDescriptorBufferInfo buffers[2] = {
                     {.buffer = image->blocks, .offset = base, .range = range},
-                    {.buffer = t->scratch, .range = (VkDeviceSize)width * height * 4}};
+                    {.buffer = t->scratch, .range = ((VkDeviceSize)width * height * texel_bytes + 3) & ~UINT64_C(3)}};
                 VkWriteDescriptorSet writes[2] = {0};
                 for (uint32_t i = 0; i < 2; ++i) {
                     writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -161,6 +164,7 @@ static VkResult decode(struct hybris_bc_transfer *t, VkCommandBuffer command,
                 buffer_barrier(t, command, t->scratch, VK_PIPELINE_STAGE_TRANSFER_BIT,
                     VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
                 struct hybris_bc_region decoding = {.format = image->format,
+                    .rgb16 = image->decoded_format == VK_FORMAT_R16G16B16_SFLOAT,
                     .rgb8 = image->decoded_format == VK_FORMAT_R8G8B8_UNORM || image->decoded_format == VK_FORMAT_R8G8B8_SRGB,
                     .width = width, .height = height, .layers = 1,
                     .source_offset = source - base, .source_range = range,

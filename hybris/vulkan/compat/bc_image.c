@@ -5,17 +5,17 @@
 
 #define PROC(name) PFN_vk##name name = (PFN_vk##name)image->resolver(image->device, "vk" #name)
 
-VkFormat hybris_bc_image_format(VkFormat format, unsigned rgb8_mask)
+VkFormat hybris_bc_image_format(VkFormat format, unsigned rgb_mask)
 {
     switch (format) {
     case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
-        return rgb8_mask & 1 ? VK_FORMAT_R8G8B8_UNORM : VK_FORMAT_R8G8B8A8_UNORM;
+        return rgb_mask & 1 ? VK_FORMAT_R8G8B8_UNORM : VK_FORMAT_R8G8B8A8_UNORM;
     case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
     case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC3_UNORM_BLOCK:
     case VK_FORMAT_BC7_UNORM_BLOCK:
         return VK_FORMAT_R8G8B8A8_UNORM;
     case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
-        return rgb8_mask & 2 ? VK_FORMAT_R8G8B8_SRGB : VK_FORMAT_R8G8B8A8_SRGB;
+        return rgb_mask & 2 ? VK_FORMAT_R8G8B8_SRGB : VK_FORMAT_R8G8B8A8_SRGB;
     case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
     case VK_FORMAT_BC2_SRGB_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK:
     case VK_FORMAT_BC7_SRGB_BLOCK:
@@ -28,6 +28,8 @@ VkFormat hybris_bc_image_format(VkFormat format, unsigned rgb8_mask)
         return VK_FORMAT_R16G16_UNORM;
     case VK_FORMAT_BC5_SNORM_BLOCK:
         return VK_FORMAT_R16G16_SNORM;
+    case VK_FORMAT_BC6H_UFLOAT_BLOCK: case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+        return rgb_mask & 4 ? VK_FORMAT_R16G16B16_SFLOAT : VK_FORMAT_R16G16B16A16_SFLOAT;
     default: return VK_FORMAT_UNDEFINED;
     }
 }
@@ -127,7 +129,7 @@ void hybris_bc_image_backing_info(const struct hybris_bc_image *image,
 
 VkResult hybris_bc_image_create(VkDevice device, PFN_vkGetDeviceProcAddr resolver,
     const VkPhysicalDeviceMemoryProperties *memory, const VkImageCreateInfo *info,
-    unsigned rgb8_mask, const VkAllocationCallbacks *allocator, struct hybris_bc_image *image)
+    unsigned rgb_mask, const VkAllocationCallbacks *allocator, struct hybris_bc_image *image)
 {
     if (!image || !device || !resolver || !memory || !info)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -148,7 +150,7 @@ VkResult hybris_bc_image_create(VkDevice device, PFN_vkGetDeviceProcAddr resolve
     }
     VkImageCreateInfo decoded = *info;
     decoded.pNext = NULL;
-    image->decoded_format = hybris_bc_image_format(info->format, rgb8_mask);
+    image->decoded_format = hybris_bc_image_format(info->format, rgb_mask);
     decoded.format = image->decoded_format;
     decoded.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     result = CreateImage(device, &decoded, allocator, &image->image);

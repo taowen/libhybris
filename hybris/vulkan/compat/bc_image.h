@@ -16,13 +16,13 @@ struct hybris_bc_image {
     uint32_t mip_levels, layers, block_bytes;
     VkDeviceSize mip_offset[32], block_size;
 };
-VkFormat hybris_bc_image_format(VkFormat format, unsigned rgb8_mask);
+VkFormat hybris_bc_image_format(VkFormat format, unsigned rgb_mask);
 VkResult hybris_bc_image_describe(const VkImageCreateInfo *info, struct hybris_bc_image *image);
 void hybris_bc_image_backing_info(const struct hybris_bc_image *image,
     const VkImageCreateInfo *info, VkBufferCreateInfo *backing);
 VkResult hybris_bc_image_create(VkDevice device, PFN_vkGetDeviceProcAddr resolver,
     const VkPhysicalDeviceMemoryProperties *memory, const VkImageCreateInfo *info,
-    unsigned rgb8_mask, const VkAllocationCallbacks *allocator, struct hybris_bc_image *image);
+    unsigned rgb_mask, const VkAllocationCallbacks *allocator, struct hybris_bc_image *image);
 void hybris_bc_image_destroy(struct hybris_bc_image *image,
     const VkAllocationCallbacks *allocator);
 VkResult hybris_bc_image_bind(const struct hybris_bc_image *image,

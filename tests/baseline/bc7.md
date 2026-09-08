@@ -2,7 +2,7 @@
 
 The default-off BC fallback now includes BC7 UNORM and sRGB. It decodes on
 GPU into native RGBA8 images and uses the existing image/view/copy and command
-state preservation paths. BC6H remains unimplemented. `textureCompressionBC`
+state preservation paths. BC6H was subsequently added; see [BC6H evidence](bc6h.md). `textureCompressionBC`
 remains false, and G07 remains open. This is not complete Vulkan BC conformance.
 
 ## Independent reference and source provenance
@@ -73,7 +73,7 @@ The cause and conformance significance of the native-reference discrepancy
 remain unresolved. This evidence does not establish full BC7 sRGB filtering
 precision on Redmi, even when emulated/native samples agree.
 
-BC6H, BC1 RGB borders on Redmi, mutable/alias/external/sparse resources,
+BC1 RGB borders on Redmi, mutable/alias/external/sparse resources,
 cross-queue ownership, maximum resource sizes, performance and CTS remain
 outside the established coverage. The fallback stays opt-in with restricted
 queries and creation. Historical BC1–BC5 evidence in the related documents

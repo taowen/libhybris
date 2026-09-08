@@ -873,3 +873,10 @@ android_wlegl 仍归 anlabwc。运行器只附着已运行 APK 并保持其运�
 当前设备 :0 没有可连接的外部 X 服务，XCB/Xlib 均真实 FAIL，未启动私有服务器
 代替，也未沿用历史 X11 PASS 充当新流程证据。详见
 [归属与验证记录](tests/wsi/external-service-review.md)，G11 继续开放。
+
+2026-09-08 BC6H：新增 UFLOAT/SFLOAT GPU 解码及 RGB16/RGBA16 图像接入，
+952 块独立 Mesa half-bit golden 覆盖十四种有效模式。双机最近点采样、原始块与
+sentinel 检查通过；Mali 标准 validation 路径 384 次图像回读全部通过。Redmi
+保留 BC6H 原生过滤参考与 BC/native 边框差异，以及已有 BC1/BC7 失败，未放宽
+门槛。十六种 BC 格式已有受限 fallback，但 textureCompressionBC 仍为 false，
+G07 继续开放；详见 [BC6H 证据与限制](tests/baseline/bc6h.md)。

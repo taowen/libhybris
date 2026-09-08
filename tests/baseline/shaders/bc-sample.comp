@@ -6,10 +6,35 @@ layout(set = 0, binding = 1, std430) buffer Output { uint pixels[]; } output_dat
 layout(push_constant) uniform Shape {
     uint width; uint height; uint layers; uint encoding; uint filtering;
 } shape;
+// Some drivers flush binary16 subnormals in packHalf2x16 even though
+// texelFetch preserves them. Use integer nearest-even conversion in that range.
+uint pack_half_component(float value)
+{
+    uint bits = floatBitsToUint(value);
+    uint magnitude = bits & 0x7fffffffu;
+    if (magnitude >= 0x38800000u) return packHalf2x16(vec2(value, 0.0)) & 65535u;
+    uint sign = (bits >> 16) & 32768u;
+    uint exponent = magnitude >> 23;
+    if (exponent < 102u) return sign;
+    uint shift = 126u - exponent;
+    uint significand = (magnitude & 0x7fffffu) | 0x800000u;
+    uint rounded = significand >> shift;
+    uint remainder = significand & ((1u << shift) - 1u);
+    uint halfway = 1u << (shift - 1u);
+    if (remainder > halfway || (remainder == halfway && (rounded & 1u) != 0u)) ++rounded;
+    return sign | rounded;
+}
+uint pack_half_pair(vec2 value)
+{
+    return pack_half_component(value.x) | (pack_half_component(value.y) << 16);
+}
 void store_sample(uint at, vec4 value)
 {
     if (shape.encoding == 0) output_data.pixels[at] = packUnorm4x8(value);
-    else {
+    else if (shape.encoding == 3) {
+        output_data.pixels[at] = pack_half_pair(value.rg);
+        output_data.pixels[at + 1] = pack_half_pair(value.ba);
+    } else {
         output_data.pixels[at] = shape.encoding == 2 ? packSnorm2x16(value.rg) : packUnorm2x16(value.rg);
         output_data.pixels[at + 1] = shape.encoding == 2 ? packSnorm2x16(value.ba) : packUnorm2x16(value.ba);
     }
@@ -25,6 +50,11 @@ void main()
     uint stride = words * count;
     store_sample(words * index, texelFetch(source_image, position, 0));
     store_sample(stride + words * index, texelFetch(reference_image, position, 0));
+    if (shape.encoding == 3) {
+        uvec4 bits = floatBitsToUint(texelFetch(reference_image, position, 0));
+        for (uint c = 0; c < 4; ++c)
+            output_data.pixels[4 * stride + 4 * index + c] = bits[c];
+    }
     if (shape.filtering != 0) {
         vec3 coordinate = vec3((vec2(position.xy) + 1.0) / vec2(shape.width, shape.height), position.z);
         store_sample(2 * stride + words * index, textureLod(source_image, coordinate, 0));

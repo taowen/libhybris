@@ -73,7 +73,7 @@ int bc_decode_probe(int validate)
     p_vkGetDeviceQueue(device, family, 0, &queue);
     struct hybris_bc_decoder decoder;
     CHECK(hybris_bc_decoder_create(device, p_vkGetDeviceProcAddr, NULL, &decoder));
-    enum { BYTES = 65536 };
+    enum { BYTES = 131072 };
     VkBuffer buffers[4];
     VkDeviceMemory memory[4];
     VkDeviceSize binding[4];
@@ -125,17 +125,19 @@ int bc_decode_probe(int validate)
     VkFence fence;
     CHECK(p_vkCreateFence(device, &fi, NULL, &fence));
     unsigned failures = 0, readbacks = 0;
-    for (unsigned variant = 0; variant < BC_FORMAT_COUNT + 2; ++variant) {
-        unsigned format = variant < BC_FORMAT_COUNT ? variant : variant - BC_FORMAT_COUNT;
-        unsigned rgb8 = variant >= BC_FORMAT_COUNT;
+    for (unsigned variant = 0; variant < BC_FORMAT_COUNT + 4; ++variant) {
+        unsigned format = variant < BC_FORMAT_COUNT ? variant : variant < BC_FORMAT_COUNT + 2 ? variant - BC_FORMAT_COUNT : 14 + variant - BC_FORMAT_COUNT - 2;
+        unsigned rgb16 = variant >= BC_FORMAT_COUNT + 2;
+        unsigned rgb8 = variant >= BC_FORMAT_COUNT && !rgb16;
         unsigned mode = bc_mode(format);
-        for (unsigned shape = 0; shape < (mode == 9 ? 5u : 4u); ++shape) {
+        for (unsigned shape = 0; shape < (mode >= 9 ? 5u : 4u); ++shape) {
             const uint32_t shapes[5][5] = {{4, 4, 1, 0, 0}, {9, 7, 3, 16, 12},
                                          {1, 1, 2, 0, 0}, {129, 5, 2, 144, 12}, {128, 64, 1, 0, 0}};
-            struct hybris_bc_region region = {.format = bc_formats[format], .rgb8 = rgb8,
+            struct hybris_bc_region region = {.format = bc_formats[format], .rgb8 = rgb8, .rgb16 = rgb16,
                 .width = shapes[shape][0], .height = shapes[shape][1], .layers = shapes[shape][2],
                 .row_length = shapes[shape][3], .image_height = shapes[shape][4],
                 .source_offset = 12, .destination_offset = 20, .source_range = BYTES, .destination_range = BYTES};
+            if (shape == 4 && mode >= 10) region.height = 120;
             VkPhysicalDeviceLimits limits = properties.limits;
             /* Exercise splitting with modest buffers, without overstating the
              * amount of device memory or actual workgroup-limit coverage. */
@@ -174,8 +176,8 @@ int bc_decode_probe(int validate)
                             VkPhysicalDeviceLimits invalid_limits = limits;
                             VkResult wanted = VK_ERROR_INITIALIZATION_FAILED;
                             switch (rejection) {
-                            case 0: invalid.format = VK_FORMAT_BC6H_UFLOAT_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
-                            case 1: invalid.format = VK_FORMAT_BC6H_SFLOAT_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
+                            case 0: invalid.format = VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
+                            case 1: invalid.format = VK_FORMAT_ASTC_4x4_UNORM_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
                             case 2: invalid.source_range = invalid.source_offset + 7; break;
                             case 3: invalid.destination_range = invalid.destination_offset + 63; break;
                             case 4: invalid.source_offset = UINT64_MAX; break;
@@ -196,6 +198,19 @@ int bc_decode_probe(int validate)
                         VkResult rejected = hybris_bc_decode_record(&decoder, command, descriptors, &invalid, &limits);
                         printf("BC_REJECT_RGB8_FORMAT result=%d expected=%d\n", rejected, VK_ERROR_INITIALIZATION_FAILED);
                         if (rejected != VK_ERROR_INITIALIZATION_FAILED) return 2;
+                    }
+                    if (variant == BC_FORMAT_COUNT + 2 && shape == 0 && round == 0) {
+                        for (unsigned rejection = 0; rejection < 3; ++rejection) {
+                            struct hybris_bc_region invalid = region;
+                            if (rejection == 0) invalid.format = VK_FORMAT_BC7_UNORM_BLOCK;
+                            else {
+                                invalid.rgb16 = rejection == 1;
+                                invalid.destination_range = invalid.destination_offset + (invalid.rgb16 ? 95 : 127);
+                            }
+                            VkResult rejected = hybris_bc_decode_record(&decoder, command, descriptors, &invalid, &limits);
+                            printf("BC_REJECT_HALF case=%u result=%d expected=%d\n", rejection, rejected, VK_ERROR_INITIALIZATION_FAILED);
+                            if (rejected != VK_ERROR_INITIALIZATION_FAILED) return 2;
+                        }
                     }
                     CHECK(hybris_bc_decode_record(&decoder, command, descriptors, &region, &limits));
                     VkMemoryBarrier decoded = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -226,10 +241,27 @@ int bc_decode_probe(int validate)
                 for (unsigned word = 0; word < BYTES / 4; ++word) {
                     uint32_t expected = 0xcdcdcdcd;
                     unsigned packed = mode == 4 || mode == 5;
-                    unsigned words = rgb8 ? (pixels * 3 + 3) / 4 : packed ? (pixels + 1) / 2 : pixels;
+                    unsigned words = rgb16 ? (pixels * 6 + 3) / 4 : rgb8 ? (pixels * 3 + 3) / 4 : packed ? (pixels + 1) / 2 : pixels * (mode >= 10 ? 2 : 1);
                     if (word >= 5 && word < 5 + words) {
                         expected = 0;
-                        if (rgb8) {
+                        if (rgb16) {
+                            for (unsigned half = 0; half < 2; ++half) {
+                                unsigned index = (word - 5) * 2 + half, pixel = index / 3, component = index % 3;
+                                if (pixel >= pixels) break;
+                                unsigned x = pixel % region.width, y = pixel / region.width % region.height;
+                                unsigned z = pixel / (region.width * region.height);
+                                unsigned variant = bc_variant(mode, x / 4, y / 4, z, round);
+                                uint32_t rgba = gpu_write ? 0 : bc6h_vectors[variant].rgba[mode - 10][2 * ((y & 3) * 4 + (x & 3)) + component / 2];
+                                expected |= ((rgba >> (16 * (component & 1))) & 65535u) << (16 * half);
+                            }
+                        } else if (mode >= 10) {
+                            unsigned pixel = (word - 5) / 2, part = (word - 5) & 1;
+                            unsigned x = pixel % region.width, y = pixel / region.width % region.height;
+                            unsigned z = pixel / (region.width * region.height);
+                            unsigned variant = bc_variant(mode, x / 4, y / 4, z, round);
+                            expected = gpu_write ? (part ? 0x3c000000u : 0u) :
+                                bc6h_vectors[variant].rgba[mode - 10][2 * ((y & 3) * 4 + (x & 3)) + part];
+                        } else if (rgb8) {
                             for (unsigned part = 0; part < 4; ++part) {
                                 unsigned byte = (word - 5) * 4 + part, pixel = byte / 3;
                                 if (pixel >= pixels) break;
@@ -255,8 +287,8 @@ int bc_decode_probe(int validate)
                         ++bad;
                     }
                 }
-                printf("BC_DECODE format=%u rgb8=%u shape=%u round=%u gpu_write=%d pixels=%u bad=%u\n",
-                    bc_formats[format], rgb8, shape, round, gpu_write, pixels, bad);
+                printf("BC_DECODE format=%u rgb8=%u rgb16=%u shape=%u round=%u gpu_write=%d pixels=%u bad=%u\n",
+                    bc_formats[format], rgb8, rgb16, shape, round, gpu_write, pixels, bad);
                 failures += bad;
                 ++readbacks;
                 CHECK(p_vkResetFences(device, 1, &fence));
@@ -276,7 +308,7 @@ int bc_decode_probe(int validate)
     if (destroy_messenger) destroy_messenger(instance, messenger, NULL);
     p_vkDestroyInstance(instance, NULL);
     dlclose(h);
-    printf("BC_DECODE_SUMMARY formats=14 encodings=16 corpus_blocks=512 readbacks=%u failures=%u validation_errors=%u image_interception=0\n",
+    printf("BC_DECODE_SUMMARY formats=16 encodings=20 bc7_corpus_blocks=512 bc6h_corpus_blocks=952 readbacks=%u failures=%u validation_errors=%u image_interception=0\n",
         readbacks, failures, validation.errors);
-    return failures || validation.errors || readbacks != ((BC_FORMAT_COUNT + 2) * 4 + 2) * 4 ? 2 : 0;
+    return failures || validation.errors || readbacks != ((BC_FORMAT_COUNT + 4) * 4 + 6) * 4 ? 2 : 0;
 }

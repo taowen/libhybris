@@ -25,16 +25,16 @@ int hybris_bc_enabled(void)
 /* Preserve three-channel border replacement when the native image format
  * supports the full sampled/transfer domain. Selection is per physical device;
  * no vendor name or assumed hardware format support is used. */
-static unsigned physical_rgb8_mask(VkPhysicalDevice physical)
+static unsigned physical_rgb_mask(VkPhysicalDevice physical)
 {
     struct hybris_icd_physical context;
     if (!hybris_icd_lookup_physical(physical, &context)) return 0;
     PHYSICAL_PROC(GetPhysicalDeviceFormatProperties);
-    const VkFormat formats[2] = {VK_FORMAT_R8G8B8_UNORM, VK_FORMAT_R8G8B8_SRGB};
+    const VkFormat formats[3] = {VK_FORMAT_R8G8B8_UNORM, VK_FORMAT_R8G8B8_SRGB, VK_FORMAT_R16G16B16_SFLOAT};
     VkFormatFeatureFlags required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
         VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
     unsigned mask = 0;
-    for (unsigned i = 0; i < 2; ++i) {
+    for (unsigned i = 0; i < 3; ++i) {
         VkFormatProperties properties;
         GetPhysicalDeviceFormatProperties(physical, formats[i], &properties);
         if ((properties.optimalTilingFeatures & required) == required) mask |= 1u << i;
@@ -71,7 +71,7 @@ unsigned hybris_bc_physical_mask(VkPhysicalDevice physical)
     unsigned mask = 0;
     for (unsigned i = 0; i < 16; ++i) {
         VkFormat format = VK_FORMAT_BC1_RGB_UNORM_BLOCK + i;
-        VkFormat backing = hybris_bc_image_format(format, physical_rgb8_mask(physical));
+        VkFormat backing = hybris_bc_image_format(format, physical_rgb_mask(physical));
         if (backing == VK_FORMAT_UNDEFINED) continue;
         VkFormatProperties native, decoded;
         GetPhysicalDeviceFormatProperties(physical, format, &native);
@@ -95,7 +95,7 @@ int hybris_bc_format_properties(VkPhysicalDevice physical, VkFormat format, VkFo
     if (!hybris_icd_lookup_physical(physical, &context)) return 0;
     PHYSICAL_PROC(GetPhysicalDeviceFormatProperties);
     VkFormatProperties decoded;
-    GetPhysicalDeviceFormatProperties(physical, hybris_bc_image_format(format, physical_rgb8_mask(physical)), &decoded);
+    GetPhysicalDeviceFormatProperties(physical, hybris_bc_image_format(format, physical_rgb_mask(physical)), &decoded);
     *properties = (VkFormatProperties){.optimalTilingFeatures = decoded.optimalTilingFeatures &
         (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
          VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT)};
@@ -169,7 +169,7 @@ VkResult hybris_bc_attach_device(VkDevice device, VkPhysicalDevice physical,
     VkPhysicalDeviceMemoryProperties memory;
     GetPhysicalDeviceProperties(physical, &properties);
     GetPhysicalDeviceMemoryProperties(physical, &memory);
-    return hybris_bc_device_add(device, resolver, &memory, &properties, hybris_bc_physical_mask(physical), physical_rgb8_mask(physical), allocator);
+    return hybris_bc_device_add(device, resolver, &memory, &properties, hybris_bc_physical_mask(physical), physical_rgb_mask(physical), allocator);
 }
 static void VKAPI_CALL queue_properties(VkPhysicalDevice physical, uint32_t *count,
     VkQueueFamilyProperties *out)
@@ -265,7 +265,7 @@ static VkResult VKAPI_CALL image_properties(VkPhysicalDevice physical, VkFormat 
     PHYSICAL_PROC(GetPhysicalDeviceImageFormatProperties);
     if (emulates(physical, format)) {
         if (!image_supported(type, tiling, usage, flags)) { *out = (VkImageFormatProperties){0}; return VK_ERROR_FORMAT_NOT_SUPPORTED; }
-        VkResult result = GetPhysicalDeviceImageFormatProperties(physical, hybris_bc_image_format(format, physical_rgb8_mask(physical)), type,
+        VkResult result = GetPhysicalDeviceImageFormatProperties(physical, hybris_bc_image_format(format, physical_rgb_mask(physical)), type,
             tiling, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT, flags, out);
         if (result == VK_SUCCESS) out->sampleCounts &= VK_SAMPLE_COUNT_1_BIT;
         return result;
@@ -295,7 +295,7 @@ static VkResult image_properties2(VkPhysicalDevice physical, const VkPhysicalDev
     }
     VkPhysicalDeviceImageFormatInfo2 translated = *info;
     translated.pNext = NULL;
-    translated.format = hybris_bc_image_format(info->format, physical_rgb8_mask(physical));
+    translated.format = hybris_bc_image_format(info->format, physical_rgb_mask(physical));
     translated.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     VkResult result = query(physical, &translated, out);
     if (result != VK_SUCCESS) return result;

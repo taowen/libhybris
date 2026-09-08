@@ -28,7 +28,7 @@ struct hybris_bc_device {
     VkPhysicalDeviceProperties properties;
     struct hybris_bc_decoder decoder;
     struct hybris_bc_layouts layouts;
-    unsigned format_mask, rgb8_mask;
+    unsigned format_mask, rgb_mask;
     VkAllocationCallbacks allocator;
     int custom_allocator;
     pthread_mutex_t guard;
@@ -38,7 +38,7 @@ struct hybris_bc_device {
 };
 VkResult hybris_bc_device_add(VkDevice handle, PFN_vkGetDeviceProcAddr resolver,
     const VkPhysicalDeviceMemoryProperties *memory, const VkPhysicalDeviceProperties *properties,
-    unsigned format_mask, unsigned rgb8_mask, const VkAllocationCallbacks *allocator);
+    unsigned format_mask, unsigned rgb_mask, const VkAllocationCallbacks *allocator);
 void hybris_bc_device_remove(VkDevice handle);
 struct hybris_bc_device *hybris_bc_device_find(VkDevice handle);
 struct hybris_bc_command *hybris_bc_command_find(VkCommandBuffer handle, struct hybris_bc_device **owner);

@@ -27,7 +27,7 @@ static VkResult VKAPI_CALL create_image(VkDevice handle, const VkImageCreateInfo
     VkResult result;
     if (emulates(device, info->format)) {
         result = hybris_bc_image_create(handle, device->resolver, &device->memory, info,
-            device->rgb8_mask, allocator, &resource->emulated);
+            device->rgb_mask, allocator, &resource->emulated);
         if (result == VK_SUCCESS) *out = resource->emulated.image;
     } else {
         result = CreateImage(handle, info, allocator, out);

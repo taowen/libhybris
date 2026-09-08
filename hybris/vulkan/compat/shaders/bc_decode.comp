@@ -2,11 +2,12 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #include "bc7.glsl"
+#include "bc6h.glsl"
 layout(local_size_x = 64) in;
 layout(set = 0, binding = 0, std430) readonly buffer Source { uint data[]; } src;
 layout(set = 0, binding = 1, std430) writeonly buffer Destination { uint data[]; } dst;
 layout(push_constant) uniform Region {
-    uint mode; // 0..3: BC1 RGB/RGBA, BC2, BC3; 4..7: BC4/5 U/S; 8: packed RGB8; 9: BC7
+    uint mode; // 0..3: BC1 RGB/RGBA, BC2, BC3; 4..7: BC4/5 U/S; 8: packed RGB8; 9: BC7; 10/11: BC6H RGBA16F U/S; 12/13: packed RGB16F U/S
     uint source_word;
     uint row_blocks;
     uint layer_blocks;
@@ -107,12 +108,34 @@ uint channel16(uint word, uint pixel, bool snorm)
     return uint(numerator < 0 ? -magnitude : magnitude) & 65535;
 }
 
+uvec2 bc6_texel(uint pixel)
+{
+    uint x = pixel % r.width, y = (pixel / r.width) % r.height;
+    uint layer = pixel / (r.width * r.height);
+    uint block = layer * r.layer_blocks + (y / 4) * r.row_blocks + x / 4;
+    uint word = r.source_word + block * 4;
+    return bc6_rgba16(uvec4(src.data[word], src.data[word + 1], src.data[word + 2], src.data[word + 3]),
+                      (y & 3) * 4 + (x & 3), (r.mode & 1) != 0);
+}
 void main()
 {
     uint local_pixel = gl_GlobalInvocationID.x;
     if (local_pixel >= r.chunk_pixels) return;
     uint pixel = r.first_pixel + local_pixel;
     if (pixel >= r.pixels) return;
+    if (r.mode >= 12) {
+        // Two RGB16F texels occupy three words. One invocation owns the pair,
+        // including across row/layer boundaries; the last halfword is padded.
+        if ((pixel & 1) != 0) return;
+        uvec2 a = bc6_texel(pixel), b = uvec2(0);
+        bool second = pixel + 1 < r.pixels;
+        if (second) b = bc6_texel(pixel + 1);
+        uint at = r.destination_word + (pixel / 2) * 3;
+        dst.data[at] = a.x;
+        dst.data[at + 1] = (a.y & 65535u) | (b.x << 16);
+        if (second) dst.data[at + 2] = (b.x >> 16) | (b.y << 16);
+        return;
+    }
     if (r.mode == 8) {
         // Four RGB texels occupy three storage words. Only their first
         // invocation writes, so odd rows/layers never race at byte boundaries.
@@ -132,6 +155,13 @@ void main()
     uint block = layer * r.layer_blocks + (y / 4) * r.row_blocks + x / 4;
     uint word = r.source_word + block * (r.mode < 2 || r.mode == 4 || r.mode == 5 ? 2 : 4);
     uint within = (y & 3) * 4 + (x & 3);
+    if (r.mode >= 10) {
+        uvec2 decoded = bc6_rgba16(
+            uvec4(src.data[word], src.data[word + 1], src.data[word + 2], src.data[word + 3]), within, r.mode == 11);
+        dst.data[r.destination_word + 2 * pixel] = decoded.x;
+        dst.data[r.destination_word + 2 * pixel + 1] = decoded.y;
+        return;
+    }
     if (r.mode == 9) {
         dst.data[r.destination_word + pixel] = bc7_rgba(
             uvec4(src.data[word], src.data[word + 1], src.data[word + 2], src.data[word + 3]), within);

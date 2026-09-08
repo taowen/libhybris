@@ -22,10 +22,10 @@ void hybris_bc_free(struct hybris_bc_device *device, void *memory)
 }
 VkResult hybris_bc_device_add(VkDevice handle, PFN_vkGetDeviceProcAddr resolver,
     const VkPhysicalDeviceMemoryProperties *memory, const VkPhysicalDeviceProperties *properties,
-    unsigned format_mask, unsigned rgb8_mask, const VkAllocationCallbacks *allocator)
+    unsigned format_mask, unsigned rgb_mask, const VkAllocationCallbacks *allocator)
 {
     struct hybris_bc_device initial = {.handle = handle, .resolver = resolver,
-        .memory = *memory, .properties = *properties, .format_mask = format_mask, .rgb8_mask = rgb8_mask,
+        .memory = *memory, .properties = *properties, .format_mask = format_mask, .rgb_mask = rgb_mask,
         .custom_allocator = allocator != NULL};
     if (allocator) initial.allocator = *allocator;
     struct hybris_bc_device *device = hybris_bc_alloc(&initial, sizeof(*device));

@@ -1,0 +1,8 @@
+{
+  "repository": "https://gitlab.freedesktop.org/mesa/mesa",
+  "revision": "c3b008c1ba01d455351b762253ef44c3ca19653f",
+  "path": "src/util/format/texcompress_bptc_tmp.h",
+  "sha256": "a384213f0a3b40694103b59a990af73116f02fafc8c2385754ba60b8158134cb",
+  "license": "MIT notice in source",
+  "use": "Offline independent BC6H half-float golden only; never linked into ICD or probe."
+}

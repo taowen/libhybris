@@ -28,10 +28,10 @@ BUNDLE="$(cd "$BUNDLE" && pwd)"
 PROBE_SRC="$BUNDLE/src"
 rm -rf "$PROBE_SRC"
 mkdir -p "$PROBE_SRC/shaders" "$PROBE_SRC/compat/shaders" "$PROBE_SRC/reference"
-cp -r reference/bc7 "$PROBE_SRC/reference/"
+cp -r reference/bc7 reference/bc6h "$PROBE_SRC/reference/"
 cp "$ROOT/hybris/vulkan/compat/"bc_decode.{c,h} "$PROBE_SRC/compat/"
-cp "$ROOT/hybris/vulkan/compat/shaders/"bc7.glsl "$ROOT/hybris/vulkan/compat/shaders/"LICENSE.bcdec "$ROOT/hybris/vulkan/compat/shaders/"bc_decode.{comp,inc} "$ROOT/hybris/vulkan/compat/shaders/generate-bc.py" "$PROBE_SRC/compat/shaders/"
-cp bc7_fixture.inc widget_pipeline.h bc_image_verify.h bc_fixture.h native_buffer_render.h native_buffer_fixture.h scaled_divisor.h scaled_fixture.h allocation_fixture.h render_path.h tls_fixture.cpp sync_fixture.h stdio_fixture.h widget_fixture.h "$PROBE_SRC/"
+cp "$ROOT/hybris/vulkan/compat/shaders/"bc7.glsl "$ROOT/hybris/vulkan/compat/shaders/"bc6h.glsl "$ROOT/hybris/vulkan/compat/shaders/"LICENSE.bcdec "$ROOT/hybris/vulkan/compat/shaders/"bc_decode.{comp,inc} "$ROOT/hybris/vulkan/compat/shaders/generate-bc.py" "$PROBE_SRC/compat/shaders/"
+cp bc_half_verify.h bc6h_fixture.inc bc7_fixture.inc widget_pipeline.h bc_image_verify.h bc_fixture.h native_buffer_render.h native_buffer_fixture.h scaled_divisor.h scaled_fixture.h allocation_fixture.h render_path.h tls_fixture.cpp sync_fixture.h stdio_fixture.h widget_fixture.h "$PROBE_SRC/"
 for source in "${SOURCES[@]}"; do
     [[ "$source" == compat/* ]] || cp "$source" "$PROBE_SRC/"
 done

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "bc_fixture.h"
+#include "bc_half_verify.h"
 
 struct bc_image_readback {
     const uint32_t *actual;
@@ -56,7 +57,7 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
     unsigned shape_index = check->swizzle, patched = check->patched, sampler_choice = check->sampler_choice;
     uint32_t width = check->region.width, height = check->region.height;
     uint32_t pixels = width * height * check->region.layers;
-    uint32_t sample_words = f >= 8 && f < 12 ? 2 : 1, block_bytes = bc_block_bytes(mode);
+    uint32_t sample_words = ((f >= 8 && f < 12) || f >= 14) ? 2 : 1, block_bytes = bc_block_bytes(mode);
     uint32_t columns = (width + 3) / 4, rows = (height + 3) / 4;
     uint32_t raw_size = columns * rows * check->region.layers * block_bytes;
     uint32_t source_columns = ((check->region.row_length ?: width) + 3) / 4;
@@ -64,6 +65,7 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
     uint32_t BYTES = check->bytes, RAW = check->raw_offset, dynamic_offset = check->dynamic_offset;
     const uint32_t *actual = check->actual;
     const uint32_t *reference_pixels = (const uint32_t *)(check->source + check->reference_offset);
+    unsigned float_bad = 0;
     unsigned bad = 0, native_bad = 0, nearest_bad = 0, filtered_bad = 0, raw_bad = 0, sentinel_bad = 0;
     for (unsigned word = 0; word < BYTES / 4; ++word) {
         uint32_t expected = 0xcdcdcdcd;
@@ -78,17 +80,29 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
             unsigned sample_word = word - dynamic_offset / 4 - sample_words * pixels;
             unsigned pixel = sample_word / sample_words;
             unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
-            expected = bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
-            if (patched && z == 1 && x >= 4 && x < 8 && y < 4) expected = bc_fill_golden(mode, (y & 3) * 4 + (x & 3));
-            if (f >= 8 && f < 12) {
-                uint32_t red = expected & 65535, green = expected >> 16;
-                uint32_t alpha = f & 1 ? 32767 : 65535;
-                expected = sample_word & 1 ? ((shape_index ? red : 0) | (alpha << 16)) :
-                    ((shape_index ? 0 : red) | (green << 16));
+            if (f >= 14) {
+                unsigned variant = bc_variant(mode, x / 4, y / 4, z, round);
+                unsigned at = 2 * ((y & 3) * 4 + (x & 3));
+                uint64_t rgba = bc6h_vectors[variant].rgba[mode - 10][at] |
+                    ((uint64_t)bc6h_vectors[variant].rgba[mode - 10][at + 1] << 32);
+                if (patched && z == 1 && x >= 4 && x < 8 && y < 4) rgba = UINT64_C(0x3c00000000000000);
+                if (shape_index) rgba = (rgba & UINT64_C(0xffff0000ffff0000)) |
+                    ((rgba & 65535) << 32) | ((rgba >> 32) & 65535);
+                expected = (uint32_t)(rgba >> (32 * (sample_word & 1)));
                 matches = actual[word] == expected;
             } else {
-                if (shape_index) expected = (expected & 0xff00ff00) | ((expected & 255) << 16) | ((expected >> 16) & 255);
-                matches = sampled_matches(actual[word], expected, f & 1);
+                expected = bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
+                if (patched && z == 1 && x >= 4 && x < 8 && y < 4) expected = bc_fill_golden(mode, (y & 3) * 4 + (x & 3));
+                if (f >= 8 && f < 12) {
+                    uint32_t red = expected & 65535, green = expected >> 16;
+                    uint32_t alpha = f & 1 ? 32767 : 65535;
+                    expected = sample_word & 1 ? ((shape_index ? red : 0) | (alpha << 16)) :
+                        ((shape_index ? 0 : red) | (green << 16));
+                    matches = actual[word] == expected;
+                } else {
+                    if (shape_index) expected = (expected & 0xff00ff00) | ((expected & 255) << 16) | ((expected >> 16) & 255);
+                    matches = sampled_matches(actual[word], expected, f & 1);
+                }
             }
         } else if (check->filtering && word >= dynamic_offset / 4 + 2 * sample_words * pixels &&
             word < dynamic_offset / 4 + 3 * sample_words * pixels) {
@@ -107,6 +121,31 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                  * component, including transparent-black borders. */
                 expected = (actual[word] & 0x00ffffff) | 0xff000000;
                 matches = actual[word] == expected;
+            } else if (f >= 14) {
+                int64_t sums[4] = {0}, maximum[4] = {0};
+                for (unsigned dy = 0; dy < 2; ++dy) for (unsigned dx = 0; dx < 2; ++dx) {
+                    unsigned sx = x + dx < width ? x + dx : width - 1;
+                    unsigned sy = y + dy < height ? y + dy : height - 1;
+                    unsigned at = 2 * ((z * height + sy) * width + sx);
+                    uint64_t rgba = reference_pixels[at] | ((uint64_t)reference_pixels[at + 1] << 32);
+                    if (sampler_choice >= 2 && (x + dx >= width || y + dy >= height))
+                        rgba = sampler_choice == 2 ? UINT64_C(0x3c003c003c003c00) : UINT64_C(0x3c00000000000000);
+                    for (unsigned c = 0; c < 4; ++c) {
+                        unsigned channel = shape_index && c != 1 && c != 3 ? 2 - c : c;
+                        int64_t value = bc_half_units((uint16_t)(rgba >> (16 * channel)));
+                        sums[c] += value;
+                        int64_t magnitude = value < 0 ? -value : value;
+                        if (magnitude > maximum[c]) maximum[c] = magnitude;
+                    }
+                }
+                matches = 1; expected = 0;
+                for (unsigned c = 0; c < 2; ++c) {
+                    unsigned channel = 2 * (sample_word & 1) + c;
+                    uint16_t got = (uint16_t)(actual[word] >> (16 * c));
+                    uint16_t want = channel == 3 ? 0x3c00 : bc_half_average(sums[channel]);
+                    if (channel == 3 ? got != want : !bc_half_filtered_matches(got, sums[channel], maximum[channel])) matches = 0;
+                    expected |= (uint32_t)want << (16 * c);
+                }
             } else if (f >= 12) {
                 /* Independent four-texel average of the uploaded BC7 golden.
                  * Convert sRGB before filtering. The byte EOTF lookup adds
@@ -169,6 +208,18 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                     expected |= (uint32_t)(uint16_t)want << (16 * c);
                 }
             }
+        } else if (f >= 14 && word >= dynamic_offset / 4 + 8 * pixels &&
+            word < dynamic_offset / 4 + 12 * pixels) {
+            comparison = "native-golden-nearest-float";
+            unsigned at = word - dynamic_offset / 4 - 8 * pixels;
+            unsigned pixel = at / 4, component = at % 4;
+            if (shape_index && (component == 0 || component == 2)) component = 2 - component;
+            uint16_t half = reference_pixels[2 * pixel + component / 2] >> (16 * (component % 2));
+            expected = bc_half_float_bits(half);
+            matches = actual[word] == expected;
+            if (!matches && float_bad < 3)
+                printf("BC_IMAGES_FLOAT_MISMATCH pixel=%u component=%u actual=%08x expected=%08x\n",
+                    pixel, at % 4, actual[word], expected);
         } else if (word >= RAW / 4 && word < (RAW + raw_size) / 4) {
             comparison = "raw-blocks";
             unsigned byte = (word - RAW / 4) * 4;
@@ -178,17 +229,18 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
             matches = actual[word] == expected;
         } else matches = actual[word] == expected;
         if (!matches) {
-            if (bad < 3) printf("BC_IMAGES_MISMATCH word=%u actual=%08x expected=%08x srgb=%u comparison=%s\n", word, actual[word], expected, f & 1, comparison);
+            if (bad < 3) printf("BC_IMAGES_MISMATCH word=%u actual=%08x expected=%08x srgb=%u comparison=%s\n", word, actual[word], expected, (f < 8 || (f >= 12 && f < 14)) && (f & 1), comparison);
             if (!strcmp(comparison, "bc-native")) ++native_bad;
             else if (!strcmp(comparison, "native-golden-nearest")) ++nearest_bad;
             else if (!strcmp(comparison, "native-golden-filtered")) ++filtered_bad;
+            else if (!strcmp(comparison, "native-golden-nearest-float")) ++float_bad;
             else if (!strcmp(comparison, "raw-blocks")) ++raw_bad;
             else ++sentinel_bad;
             ++bad;
         }
     }
-    if (bad) printf("BC_IMAGES_FAILURES format=%u bc_native=%u nearest=%u filtered=%u raw=%u sentinel=%u\n",
-        bc_formats[f], native_bad, nearest_bad, filtered_bad, raw_bad, sentinel_bad);
+    if (bad) printf("BC_IMAGES_FAILURES format=%u bc_native=%u nearest=%u filtered=%u raw=%u sentinel=%u float_nearest=%u\n",
+        bc_formats[f], native_bad, nearest_bad, filtered_bad, raw_bad, sentinel_bad, float_bad);
     return bad;
 }
 #endif

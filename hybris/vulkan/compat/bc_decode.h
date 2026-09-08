@@ -22,6 +22,7 @@ struct hybris_bc_decoder {
 };
 struct hybris_bc_region {
     VkFormat format;
+    VkBool32 rgb16; /* BC6H only: packed RGB16F instead of RGBA16F output */
     VkBool32 rgb8; /* BC1 RGB only: packed RGB8 instead of RGBA8 output */
     uint32_t width, height, layers;
     uint32_t row_length, image_height; /* zero means tightly packed */
@@ -37,7 +38,8 @@ VkResult hybris_bc_decoder_create(VkDevice device, PFN_vkGetDeviceProcAddr resol
 void hybris_bc_decoder_destroy(struct hybris_bc_decoder *decoder,
     const VkAllocationCallbacks *allocator);
 /* Checks all arithmetic, range and dispatch bounds before recording anything.
- * BC6H returns FORMAT_NOT_SUPPORTED. Invalid internal regions return
+ * Formats outside BC1–BC7 return FORMAT_NOT_SUPPORTED. BC6H outputs RGBA16F
+ * bit patterns. Invalid internal regions return
  * INITIALIZATION_FAILED. This API does not validate application Vulkan usage. */
 VkResult hybris_bc_prepare(const struct hybris_bc_region *region,
     const VkPhysicalDeviceLimits *limits, struct hybris_bc_push *push);

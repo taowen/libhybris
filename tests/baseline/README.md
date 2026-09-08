@@ -5,13 +5,13 @@ run on the same Android device.
 No APK, root, rootfs, compositor, X server, or CTS download is needed at runtime.
 This is a smoke test, not conformance certification or application compatibility coverage.
 
-The internal [BC1–BC5/BC7 GPU decoder probe](bc-decode.md) checks block bytes and
+The internal [BC1–BC7 GPU decoder probe](bc-decode.md) checks block bytes and
 execution-time uploads. The separate, default-off [BC image fallback and probe](bc-images.md)
 cover application images, queries, views, copies, sampling and command-state
 retirement. BC1 RGB uses native RGB8 where supported; its expanded border
 case passes on Mali and still fails on Redmi, as recorded in the
-[RGB8 scope](bc-rgb8.md). This remains a restricted G07 subset, with BC6H unimplemented and Redmi BC7 sRGB filtering precision unresolved;
-see [BC7 evidence](bc7.md).
+[RGB8 scope](bc-rgb8.md). This remains a restricted G07 subset, with Redmi BC6H/BC7 filtering and RGB border failures unresolved;
+see [BC7 evidence](bc7.md) and [BC6H evidence](bc6h.md).
 
 The [multi-descriptor widget fixture](widget-multi.md) adds four dynamic UBOs
 across two sets and an array, with exact full-image readback and per-descriptor

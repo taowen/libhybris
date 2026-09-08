@@ -1,0 +1,29 @@
+{
+  "blocks": 952,
+  "modes": 14,
+  "partitions_per_two_subset_mode": 32,
+  "random_configurations_per_mode": 64,
+  "fixed_payloads_per_mode": 4,
+  "source": {
+    "repository": "https://gitlab.freedesktop.org/mesa/mesa",
+    "revision": "c3b008c1ba01d455351b762253ef44c3ca19653f",
+    "path": "src/util/format/texcompress_bptc_tmp.h",
+    "sha256": "a384213f0a3b40694103b59a990af73116f02fafc8c2385754ba60b8158134cb",
+    "license": "MIT notice in source",
+    "use": "Offline independent BC6H half-float golden only; never linked into ICD or probe."
+  },
+  "source_blocks_sha256": "6d1e64834601d454226624b9fbaa9574d428470be536ee8b165c213137902cd2",
+  "output_sha256": [
+    "85fe9e90969eb964f4cf88a82fb966ead4e26cced80070efb3f7fe7954ac4487",
+    "edf5e8a65955c86da8a44023540dfa45f4ec22845dfd694faea0b48f72073ea6"
+  ],
+  "fixture_sha256": "56476def8b5d52a593c32197d09dd9043562433061e50d3c0debf0111567667e",
+  "generator_sha256": "41673fb4a374c3e28274c5b41d6eba78da292f0615b86b0ced5515b50ac0671e",
+  "adapter_sha256": "7c2e2091d606462c3767dcc3de9c2d08a1e885545b5db0952c60f08f19bdc05f",
+  "compiler": "cc (GCC) 15.2.1 20260123 (Red Hat 15.2.1-7)",
+  "optimization_variants": [
+    "-O1",
+    "-O2"
+  ],
+  "limitation": "Not exhaustive endpoint/index coverage; reserved mode prefixes excluded."
+}

@@ -1,8 +1,8 @@
-# Experimental BC1–BC5/BC7 image fallback
+# Experimental BC1–BC7 image fallback
 
 The standard-loader ICD now intercepts application BC image creation, memory
 queries/binding, views, transfers and synchronization. This is a partial G07
-implementation; it does not provide BC6H or full Vulkan format conformance.
+implementation; BC6H was subsequently added as described in [BC6H evidence](bc6h.md). This is not full Vulkan format conformance.
 BC7 image sampling passes on Mali; Redmi retains a native sRGB filtering
 reference failure. See [BC7 evidence and remaining failures](bc7.md).
 The separate [decoder probe](bc-decode.md) still tests only the internal kernel.
@@ -275,7 +275,7 @@ Final SHA256 values:
 
 ## Remaining scope
 
-BC6H, unresolved BC7 sRGB reference precision on Redmi, mutable views, general external/sparse/host-copy
+Unresolved BC6H/BC7 reference precision and RGB borders on Redmi, mutable views, general external/sparse/host-copy
 resources, excluded state extensions, multi-device groups, all queue-ownership
 and aliasing combinations, cube sampling, allocation-failure stress, maximum
 resource limits, performance and CTS coverage remain open. The 32×32 case

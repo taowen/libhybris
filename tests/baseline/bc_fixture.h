@@ -4,6 +4,7 @@
 #define HYBRIS_BC_FIXTURE_H
 #include "compat/bc_decode.h"
 #include "bc7_fixture.inc"
+#include "bc6h_fixture.inc"
 
 static const VkFormat bc_formats[] = {
     VK_FORMAT_BC1_RGB_UNORM_BLOCK, VK_FORMAT_BC1_RGB_SRGB_BLOCK,
@@ -12,14 +13,16 @@ static const VkFormat bc_formats[] = {
     VK_FORMAT_BC3_UNORM_BLOCK, VK_FORMAT_BC3_SRGB_BLOCK,
     VK_FORMAT_BC4_UNORM_BLOCK, VK_FORMAT_BC4_SNORM_BLOCK,
     VK_FORMAT_BC5_UNORM_BLOCK, VK_FORMAT_BC5_SNORM_BLOCK,
-    VK_FORMAT_BC7_UNORM_BLOCK, VK_FORMAT_BC7_SRGB_BLOCK};
+    VK_FORMAT_BC7_UNORM_BLOCK, VK_FORMAT_BC7_SRGB_BLOCK,
+    VK_FORMAT_BC6H_UFLOAT_BLOCK, VK_FORMAT_BC6H_SFLOAT_BLOCK};
 #define BC_FORMAT_COUNT (sizeof(bc_formats) / sizeof(bc_formats[0]))
 static unsigned bc_mode(unsigned format_index)
-{ return format_index >= 12 ? 9 : format_index < 8 ? format_index / 2 : format_index - 4; }
+{ return format_index >= 14 ? format_index - 4 : format_index >= 12 ? 9 : format_index < 8 ? format_index / 2 : format_index - 4; }
 static unsigned bc_block_bytes(unsigned mode)
 { return mode < 2 || mode == 4 || mode == 5 ? 8 : 16; }
 static inline VkFormat bc_reference_format(unsigned f)
 {
+    if (f >= 14) return VK_FORMAT_R16G16B16A16_SFLOAT;
     if (f == 8 || f == 9) return f & 1 ? VK_FORMAT_R16_SNORM : VK_FORMAT_R16_UNORM;
     if (f >= 8 && f < 12) return f & 1 ? VK_FORMAT_R16G16_SNORM : VK_FORMAT_R16G16_UNORM;
     return f & 1 ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
@@ -27,6 +30,7 @@ static inline VkFormat bc_reference_format(unsigned f)
 
 static unsigned bc_variant(unsigned mode, unsigned bx, unsigned by, unsigned layer, unsigned round)
 {
+    if (mode >= 10) return (bx + 32 * by + 137 * layer + 73 * round) % BC6H_VECTOR_COUNT;
     if (mode == 9) return (bx + 32 * by + 137 * layer + 73 * round) % BC7_VECTOR_COUNT;
     return (bx + 3 * by + 5 * layer + round) % (mode >= 4 ? 8 : 4);
 }
@@ -109,6 +113,7 @@ static uint32_t bc_golden(unsigned mode, unsigned variant, unsigned pixel, unsig
 }
 static void bc_pack(uint8_t *destination, unsigned mode, unsigned variant, unsigned round)
 {
+    if (mode >= 10) { memcpy(destination, bc6h_vectors[variant].block, 16); return; }
     if (mode == 9) { memcpy(destination, bc7_vectors[variant].block, 16); return; }
     if (mode >= 4) {
         bc_pack_channel(destination, mode & 1, variant, round);

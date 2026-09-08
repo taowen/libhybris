@@ -1,5 +1,6 @@
 #include "probe.h"
 #include "bc_image_verify.h"
+#define BC_IMAGE_FORMAT_COUNT BC_FORMAT_COUNT
 #include "shaders/bc-sample.inc"
 
 static void image_barrier(PFN_vkCmdPipelineBarrier barrier, VkCommandBuffer command, VkImage image,
@@ -94,9 +95,9 @@ int bc_images_probe(int validate, int route)
     }
     free(queues);
     if (family == UINT32_MAX) return 3;
-    VkBool32 linear_filter[BC_FORMAT_COUNT] = {0};
+    VkBool32 linear_filter[BC_IMAGE_FORMAT_COUNT] = {0};
     unsigned unsupported_formats = 0;
-    for (unsigned f = 0; f < BC_FORMAT_COUNT; ++f) {
+    for (unsigned f = 0; f < BC_IMAGE_FORMAT_COUNT; ++f) {
         VkFormatProperties format;
         p_vkGetPhysicalDeviceFormatProperties(physical, bc_formats[f], &format);
         VkFormatProperties2 format2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
@@ -131,14 +132,6 @@ int bc_images_probe(int validate, int route)
         VkImageFormatProperties2 image2 = {.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2};
         CHECK(p_vkGetPhysicalDeviceImageFormatProperties2(physical, &query, &image2));
         if (memcmp(&image, &image2.imageFormatProperties, sizeof(image))) return 2;
-    }
-    /* Record native behavior for the unimplemented formats as well, including
-     * when an earlier format is unsupported. Do not hide partial BC support. */
-    for (VkFormat format = VK_FORMAT_BC6H_UFLOAT_BLOCK; format <= VK_FORMAT_BC6H_SFLOAT_BLOCK; ++format) {
-        VkFormatProperties properties;
-        p_vkGetPhysicalDeviceFormatProperties(physical, format, &properties);
-        printf("BC_IMAGES_UNIMPLEMENTED format=%u linear=%u optimal=%u buffer=%u\n",
-            format, properties.linearTilingFeatures, properties.optimalTilingFeatures, properties.bufferFeatures);
     }
     if (unsupported_formats) {
         p_vkDestroyInstance(instance, NULL); dlclose(h);
@@ -246,7 +239,7 @@ int bc_images_probe(int validate, int route)
     CHECK(p_vkCreateEvent(device, &event_info, NULL, &event));
     VkQueue queue;
     p_vkGetDeviceQueue(device, family, 0, &queue);
-    enum { BYTES = 262144, RAW = 196608, REFERENCE = 65536, OUTPUT = 131072, LAYERS = 3 };
+    enum { BYTES = 524288, RAW = 393216, REFERENCE = 65536, OUTPUT = 262144, LAYERS = 3 };
     VkBuffer buffers[2]; VkDeviceMemory buffer_memory[2]; VkDeviceSize binding[2]; uint8_t *mapped[2];
     for (unsigned i = 0; i < 2; ++i) {
         VkBufferCreateInfo bi = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = BYTES,
@@ -315,7 +308,7 @@ int bc_images_probe(int validate, int route)
     VkFence fence;
     CHECK(p_vkCreateFence(device, &fence_info, NULL, &fence));
     unsigned failures = 0, readbacks = 0, copies2_cases = 0, sync2_cases = 0;
-    for (unsigned f = 0; f < BC_FORMAT_COUNT; ++f) {
+    for (unsigned f = 0; f < BC_IMAGE_FORMAT_COUNT; ++f) {
         for (unsigned shape_index = 0; shape_index < 2; ++shape_index) {
         uint32_t base_width = shape_index ? 32 : 9, base_height = shape_index ? 32 : 7;
         for (uint32_t mip = 0; mip < 4; ++mip) {
@@ -392,8 +385,8 @@ int bc_images_probe(int validate, int route)
             CHECK(p_vkCreateImageView(device, &view_info, NULL, &view));
             view_info.image = images[3];
             view_info.format = bc_reference_format(f);
-            /* BC1 RGB has no alpha component, including outside the image. */
-            if (f < 2 && sampler_choice != 4) view_info.components.a = VK_COMPONENT_SWIZZLE_ONE;
+            /* BC1 RGB and BC6H have no alpha, including outside the image. */
+            if ((f < 2 || f >= 14) && sampler_choice != 4) view_info.components.a = VK_COMPONENT_SWIZZLE_ONE;
             view_info.subresourceRange.baseMipLevel = 0;
             VkImageView reference_view;
             CHECK(p_vkCreateImageView(device, &view_info, NULL, &reference_view));
@@ -422,7 +415,7 @@ int bc_images_probe(int validate, int route)
             CHECK(p_vkBeginCommandBuffer(command, &begin));
             p_vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
             p_vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &descriptors, 1, &dynamic_offset);
-            uint32_t shape[] = {width, height, LAYERS, f >= 8 && f < 12 ? 1 + (f & 1) : 0, linear_filter[f] != 0};
+            uint32_t shape[] = {width, height, LAYERS, f >= 14 ? 3 : f >= 8 && f < 12 ? 1 + (f & 1) : 0, linear_filter[f] != 0};
             p_vkCmdPushConstants(command, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(shape), shape);
             VkMemoryBarrier before = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                 .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
@@ -549,6 +542,17 @@ int bc_images_probe(int validate, int route)
                 uint32_t *reference_pixels = (uint32_t *)(mapped[0] + binding[0] + REFERENCE);
                 for (uint32_t pixel = 0; pixel < width * height * LAYERS; ++pixel) {
                     unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
+                    if (f >= 14) {
+                        unsigned variant = bc_variant(mode, x / 4, y / 4, z, round);
+                        unsigned at = 2 * ((y & 3) * 4 + (x & 3));
+                        reference_pixels[2 * pixel] = bc6h_vectors[variant].rgba[mode - 10][at];
+                        reference_pixels[2 * pixel + 1] = bc6h_vectors[variant].rgba[mode - 10][at + 1];
+                        if (patched && z == 1 && x >= 4 && x < 8 && y < 4) {
+                            reference_pixels[2 * pixel] = 0;
+                            reference_pixels[2 * pixel + 1] = 0x3c000000;
+                        }
+                        continue;
+                    }
                     uint32_t reference_pixel = bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round),
                         (y & 3) * 4 + (x & 3), round);
                     if (patched && z == 1 && x >= 4 && x < 8 && y < 4) reference_pixel = bc_fill_golden(mode, (y & 3) * 4 + (x & 3));
@@ -610,7 +614,7 @@ int bc_images_probe(int validate, int route)
     p_vkDestroyDevice(device, NULL);
     if (destroy_messenger) destroy_messenger(instance, messenger, NULL);
     p_vkDestroyInstance(instance, NULL); dlclose(h);
-    printf("BC_IMAGES_SUMMARY formats=14 shapes=2 readbacks=%u copy2_cases=%u sync2_cases=%u maintenance4=%u format_list=%u failures=%u validation_errors=%u route=%d\n",
+    printf("BC_IMAGES_SUMMARY formats=16 shapes=2 readbacks=%u copy2_cases=%u sync2_cases=%u maintenance4=%u format_list=%u failures=%u validation_errors=%u route=%d\n",
         readbacks, copies2_cases, sync2_cases, maintenance4, format_list, failures, validation.errors, route);
-    return failures || validation.errors || readbacks != BC_FORMAT_COUNT * 2 * 4 * 3 ? 2 : 0;
+    return failures || validation.errors || readbacks != BC_IMAGE_FORMAT_COUNT * 2 * 4 * 3 ? 2 : 0;
 }
