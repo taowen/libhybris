@@ -863,3 +863,13 @@ missing 图像均通过，Redmi 保留 BC1 RGB 的 306 个差异与 BC7 sRGB 原
 与 guard 比较无差异；仍不能据此宣告 Redmi BC7 sRGB 全部验收。
 完整构建、缺失模式 scaled 和 multi-UBO 回归、默认关闭能力对照已执行，
 详见 [BC7 来源、结果与限制](tests/baseline/bc7.md)。BC6H 和整项 G07 继续开放。
+
+
+2026-09-08 窗口测试归属修正：libhybris 不再构建、打补丁、打包或启动 Xwayland，
+移除 compositor APK 构建夹具及 vendored TAWC 补丁。XCB/Xlib 客户端连接外部
+compositor/desktop 提供的本地 DISPLAY，TAWC-DRI 0.3 客户端仍归 ICD；
+android_wlegl 仍归 anlabwc。运行器只附着已运行 APK 并保持其运行。
+客户端实际构建通过；Redmi 外部 APK 的 Wayland 24 帧/六截图回归通过，
+当前设备 :0 没有可连接的外部 X 服务，XCB/Xlib 均真实 FAIL，未启动私有服务器
+代替，也未沿用历史 X11 PASS 充当新流程证据。详见
+[归属与验证记录](tests/wsi/external-service-review.md)，G11 继续开放。

@@ -6,7 +6,7 @@ import shlex
 import shutil
 import subprocess
 from manifest import sha256_file
-from host import PACKAGE, stage_runtime
+from host import stage_runtime
 from screen_evidence import verify_screen
 from diagnostics import Diagnostics
 from capture import preserve_capture, stage_tools, verify_window_capture

@@ -1,39 +1,28 @@
 # Window integration tests
 
-One entry point runs Wayland, XCB and Xlib against the disposable
-`io.taowen.hybriswsitest` APK. The APK contains **anlabwc, TAWC-DRI Xwayland,
-their Android libraries and xkb assets**. The runner starts that APK, deploys
-the selected glibc probe and libhybris, checks the results, then stops it.
-It never launches the Ardesk desktop or accepts an arbitrary application UID.
+One entry point runs Wayland, XCB and Xlib clients against an installed,
+already running debuggable compositor APK. Xwayland and its TAWC-DRI patches
+belong to Ardesk or the external APK; android_wlegl belongs to anlabwc.
+libhybris builds and deploys only its bridge libraries and probe clients.
+The runner does not install, start, restart or stop the compositor or X server.
 
-## Build and install
-
-Build the client libraries and both platform probes, then build the test APK:
+## Build clients and prepare the external service
 
 ```sh
 tools/build-aarch64.sh
 tests/wsi/build.sh
-python3 tests/x11/build.py \
-  --xwayland-source /path/to/ardesk/third_party/xwayland \
-  --ndk-prefix /path/to/ardesk/build/ndk-prefix
-python3 tests/wsi/compositor/build.py \
-  --backend-apk /path/to/ardesk-debug.apk \
-  --backend-library /path/to/libanlabwc.so \
-  --x11-build tests/x11/build
-/path/to/ardesk/tools/install-apk.sh --serial SERIAL \
-  tests/wsi/build/compositor/hybris-wsi-test.apk
+python3 tests/x11/build.py
 ```
 
-`--backend-library` is optional: otherwise libanlabwc is taken from the supplied
-APK. This APK is a build input for native dependencies/assets; it is not run or
-installed by the test. The builder records its hash, selected backend hash,
-transitive libraries and the included Xwayland build manifest. See
-[APK build details](compositor/README.md) and [Xwayland inputs/protocol](../x11/README.md).
-
-Rebuild the test APK only when changing its native server bundle or host.
-Rebuilding libhybris or a glibc probe does not require reinstalling the APK.
-Host tools include adb, Python 3, Pillow/LittleCMS, the pinned cross-builder,
-Meson/Ninja, patchelf and Android SDK/NDK.
+Install/start the compositor with its owning project's tooling. See the
+[external service contract](compositor/README.md). The default package is
+`io.taowen.hybriswsitest`; `--package` selects another installed debuggable
+compositor package. The expected Wayland socket is `files/runtime/wayland-0`.
+The compositor/desktop must supply an existing local X display for X11 tests;
+`--display :0` is the default, and `--xauthority` supplies an optional device
+path to its authentication file. Missing services are errors, with no private
+server fallback. Host tools are adb, Python 3, Pillow/LittleCMS, the pinned
+cross-builder and the Android NDK for the client watchdog.
 
 ## Run one selected check
 
@@ -57,7 +46,7 @@ libvulkan frontend for Wayland. XCB/Xlib Vulkan checks require the standard ICD.
 | XCB/Xlib | `present` | Eight GPU readbacks, two physical screenshots, TAWC-DRI release before reuse |
 | XCB/Xlib | `resize` | 24 readbacks, three sizes, six screenshots, acquire/present out-of-date, semaphore reuse and swapchain replacement |
 | XCB/Xlib | `acquire-timeout` | Zero/finite acquire timeout with unchanged index and unsignaled fence |
-| XCB/Xlib | `missing-protocol` | Support false and eight surface rejections; requires explicit `--server-binary /path/to/unextended/Xwayland` |
+| XCB/Xlib | `missing-protocol` | Support false and eight surface rejections; requires an existing externally managed display without TAWC-DRI |
 | XCB/Xlib | `control` | XCB create/map/clear/GetImage environment check; no Vulkan or GPU claim |
 
 `--repeat N` runs sequential clients under the same compositor identity and
@@ -78,13 +67,14 @@ always collected with a per-owner bound.
 ## Evidence and implementation
 
 Every invocation writes `build/results/<run>/result.json` plus `isolation.json`.
-Each client directory contains its result, input manifests, logs, mappings,
-Android library hashes, readbacks and screenshots. The runner records APK identity; X11 runs also verify the actual extracted
-Xwayland/dependency hashes. It holds a per-device lock, checks
-PID plus process start time, and reports cleanup failures. The default Xwayland
-is executed from APK assets extracted into its private directory. An explicit
-`--server-binary` override is hashed; its dependencies still come from the APK.
-There is no implicit fallback to a host-built server.
+Each client directory contains its result, client input manifests, logs,
+mappings, Android library hashes, readbacks and screenshots. APK identity and
+compositor PID/start time are recorded and checked; X11 records the selected
+external display and obtains protocol evidence from the connected server.
+The runner holds a per-device lock and cleans up only its own deployed clients.
+It neither inspects a prescribed server asset layout nor deploys server ELFs.
+Existing display placement must satisfy the screenshot checks; historical
+private-server screenshots are not evidence for this workflow.
 
 Both probes keep screenshot frames still for two seconds. The shared collector
 waits 0.6 seconds after the marker before sampling the physical screen. It
@@ -99,7 +89,7 @@ and FIFO checks now execute in the actual Wayland presentation probe.
 
 [Historical evidence](history.md), [swapchain review](swapchain-review.md),
 [validation/capture review](validation-capture-review.md) and
-[current consolidation results](integration-review.md) preserve the distinction
-between old and current test paths. Rootless/multiwindow X11, minimize,
+[previous consolidation results](integration-review.md) preserve historical results. See [external-service validation](external-service-review.md)
+for the current boundary and its remaining coverage. Rootless/multiwindow X11, minimize,
 disconnect recovery, long-running FD accounting, X11 capture and CTS remain
 open. Headless baseline and desktop-GL application tests are separate suites.

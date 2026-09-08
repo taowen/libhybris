@@ -6,12 +6,14 @@ refactors. A probe passing does not close an entire gap.
 
 ## Unified window integration tests (2026-09-08)
 
-One `tests/wsi/run.py --platform wayland|xcb|xlib` entry now owns the disposable
-anlabwc/Xwayland APK lifecycle. Xwayland and its native dependencies are bundled
-in the APK; glibc probes and libhybris remain independently deployable. Duplicate
-runners and the obsolete surface-only executable are removed; its unique checks
-are folded into the live presentation probe. The shared code retains identity,
-FD snapshots, validation, capture/replay, diagnostics and cleanup.
+One `tests/wsi/run.py --platform wayland|xcb|xlib` entry attaches to an
+installed, already running compositor APK. It builds/deploys only clients and
+libhybris. Xwayland, TAWC-DRI patches and APK packaging/lifecycle belong to the
+external compositor/desktop project; their former builders and private-server
+launcher have been removed from this repository. The runner leaves the service
+running and retains identity, FD snapshots and client cleanup. See the
+[ownership change and validation](tests/wsi/external-service-review.md).
+The following unified-fixture results predate this ownership change.
 
 X11 resize now marks stale chains out of date, preserves failed-acquire outputs
 and consumes waits even when presentation is rejected. Redmi and Mali passed
@@ -25,8 +27,10 @@ failures and state the remaining race, multiwindow and lifetime gaps.
 The standard ICD now provides experimental XCB/Xlib WSI using TAWC-DRI 0.3.
 Separate native-window owners share the existing swapchain implementation;
 X11 buffer reuse follows protocol release events. The independent `tests/x11`
-tool builds its own Xwayland and selects control, present, missing-protocol or
-acquire-timeout checks. Adreno and Mali passed all twelve final XCB/Xlib cases
+tool now builds only clients and selects control, present, missing-protocol or
+acquire-timeout checks against an externally managed local display. Server
+building, APK packaging and server lifecycle are outside libhybris. The
+following device results used the previous private-server fixture. Adreno and Mali passed all twelve final XCB/Xlib cases
 with VVL/SyncVal; the same production build passed Wayland swapchain review and
 headless regressions on both. No Mesa or anlabwc modification was needed.
 [Reproduction, provenance and evidence](tests/x11/README.md) document the

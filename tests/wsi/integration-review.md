@@ -1,5 +1,12 @@
 # WSI test consolidation and X11 resize review, 2026-09-08
 
+> Historical fixture evidence. The APK/server builder and private Xwayland
+> lifecycle described below have been removed. Current tests attach to an
+> installed, already running compositor and its external display; see
+> [current instructions](README.md). These historical runs do not validate
+> the new external-service connection workflow.
+
+
 ## One supported test environment
 
 The active window entry points were `tests/wsi/run.py` (arbitrary existing app),

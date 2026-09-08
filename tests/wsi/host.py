@@ -1,4 +1,4 @@
-"""Shared device lifecycle and transport for the disposable window-test APK."""
+"""Client transport and observation of an already running compositor APK."""
 import fcntl
 import json
 import os
@@ -15,11 +15,12 @@ from manifest import sha256_file, verify_manifest
 PACKAGE = 'io.taowen.hybriswsitest'
 
 class Host:
-    def __init__(self, serial, out):
+    def __init__(self, serial, out, package=PACKAGE):
+        self.package = package
         self.adb = [os.environ.get('ADB', 'adb'), '-s', serial]
         self.out = out
-        self.files = '/data/user/0/' + PACKAGE + '/files'
-        self.record = {'serial': serial, 'package': PACKAGE, 'runs': [],
+        self.files = '/data/user/0/' + self.package + '/files'
+        self.record = {'serial': serial, 'package': package, 'runs': [],
                        'host_sha256': sha256_file(Path(__file__)), 'screen_settle_seconds': .6}
         locks = Path(__file__).resolve().parent / 'build/locks'
         locks.mkdir(parents=True, exist_ok=True)
@@ -31,22 +32,20 @@ class Host:
         return subprocess.run(self.adb + ['shell', command], **kwargs)
 
     def app(self, command, **kwargs):
-        return self.shell('run-as ' + PACKAGE + ' sh -c ' + shlex.quote(command), **kwargs)
+        return self.shell('run-as ' + self.package + ' sh -c ' + shlex.quote(command), **kwargs)
 
     def prop(self, name):
         return self.shell('getprop ' + shlex.quote(name), capture_output=True, text=True, check=True).stdout.strip()
 
     def identity(self):
-        values = self.shell('pidof ' + PACKAGE, capture_output=True, text=True).stdout.split()
+        values = self.shell('pidof ' + self.package, capture_output=True, text=True).stdout.split()
         if len(values) != 1 or not values[0].isdigit(): return None
         stat = self.app('cat /proc/' + values[0] + '/stat', capture_output=True, text=True)
         return {'pid': values[0], 'starttime': stat.stdout.rsplit(')', 1)[1].split()[19]} if stat.returncode == 0 else None
 
-    def start(self):
-        self.record['previous_pid'] = self.shell('pidof ' + PACKAGE, capture_output=True, text=True).stdout.strip()
-        self.shell('am force-stop ' + PACKAGE, check=True, capture_output=True)
-        self.app('rm -f files/runtime/wayland-0 files/runtime/wayland-0.lock', check=True)
-        self.shell('am start -n ' + PACKAGE + '/.CompositorActivity', check=True, capture_output=True)
+    def attach(self):
+        # The compositor owns its sockets and server processes. Attach only;
+        # never install, restart, unlink sockets, or stop the external service.
         deadline = time.monotonic() + 20
         previous = None; since = time.monotonic()
         while True:
@@ -54,25 +53,12 @@ class Host:
             current = self.identity() if ready else None
             if current and current == previous and time.monotonic() - since >= .3: break
             if current != previous: previous = current; since = time.monotonic()
-            if time.monotonic() >= deadline: raise RuntimeError('test compositor did not reach one stable process')
+            if time.monotonic() >= deadline: raise RuntimeError('installed compositor is not running with a stable Wayland socket; start it through its owning APK')
             time.sleep(.1)
         self.record['identity'] = current
-        apk = self.shell('pm path ' + PACKAGE, capture_output=True, text=True, check=True).stdout.strip().removeprefix('package:')
+        apk = self.shell('pm path ' + self.package, capture_output=True, text=True, check=True).stdout.strip().removeprefix('package:')
         self.record['apk_sha256'] = self.shell('sha256sum ' + shlex.quote(apk), capture_output=True, text=True, check=True).stdout.split()[0]
         self.record['fd_before'] = self.fd_snapshot('compositor-fd-before.txt')
-
-    def x11_server(self):
-        """Verify the server extracted from this installed APK, not a host cache."""
-        manifest = self.app('cat files/x11/manifest.json', capture_output=True, text=True, check=True)
-        server = json.loads(manifest.stdout)
-        files = server['files']
-        if 'Xwayland' not in files or any(not re.fullmatch(r'[A-Za-z0-9_.+-]+', name) for name in files):
-            raise ValueError('invalid APK Xwayland manifest')
-        paths = [self.files + '/x11/' + name for name in files]
-        output = self.app('sha256sum ' + shlex.join(paths), capture_output=True, text=True, check=True).stdout
-        actual = {Path(line.split(maxsplit=1)[1]).name: line.split()[0] for line in output.splitlines()}
-        if actual != files: raise ValueError('installed APK Xwayland/dependency hash mismatch')
-        return {'source': 'apk', 'files': files, 'build': server['build']}
 
     def check_identity(self):
         current = self.identity()
@@ -90,12 +76,7 @@ class Host:
         try:
             if 'identity' in self.record: self.check_identity()
         except (OSError, RuntimeError, subprocess.SubprocessError) as error: errors.append(str(error))
-        try:
-            self.shell('am force-stop ' + PACKAGE, check=True, capture_output=True)
-            remaining = self.shell('pidof ' + PACKAGE, capture_output=True, text=True).stdout.strip()
-            self.record['remaining_pid'] = remaining
-            if remaining: errors.append('test package remained after stop')
-        except (OSError, subprocess.SubprocessError) as error: errors.append(str(error))
+        self.record['service_lifecycle'] = 'external; left running'
         self.record['cleanup_errors'] = errors
         if errors: self.record['status'] = 'FAIL'
         (self.out / 'isolation.json').write_text(json.dumps(self.record, indent=2) + '\n')
@@ -121,7 +102,7 @@ class Host:
 
     def execute(self, command, remote, out, timeout, diagnostics=None):
         launch = 'cd ' + shlex.quote(remote) + ' && echo $$ > runner.pid && exec env ' + command
-        process = subprocess.Popen(self.adb + ['shell', 'run-as ' + PACKAGE + ' sh -c ' + shlex.quote(launch)],
+        process = subprocess.Popen(self.adb + ['shell', 'run-as ' + self.package + ' sh -c ' + shlex.quote(launch)],
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         selector = selectors.DefaultSelector(); selector.register(process.stdout, selectors.EVENT_READ)
         deadline = time.monotonic() + timeout; last_output = time.monotonic(); pending = b''; screens = set()

@@ -7,14 +7,14 @@ import shutil
 import subprocess
 import time
 from manifest import sha256_file
-from host import PACKAGE, stage_runtime
+from host import stage_runtime
 from screen_evidence import verify_epoch
 
 ROOT = Path(__file__).resolve().parents[2]
 
 def run(a, host, out):
     started = time.monotonic()
-    package = PACKAGE
+    package = a.package
     shell, app, prop = host.shell, host.app, host.prop
     probe = json.loads((a.probe / 'manifest.json').read_text())
     for name in ('probe-xcb', 'x11-session'):
@@ -25,18 +25,13 @@ def run(a, host, out):
     files = host.files
     remote = files + '/hybris-wsi-' + out.parent.name + '-' + out.name
     libraries = './standard:./hybris:./glibc'
-    env = {'XDG_RUNTIME_DIR': files + '/runtime', 'WAYLAND_DISPLAY': 'wayland-0',
-           'XKB_CONFIG_ROOT': files + '/xkb', 'LD_LIBRARY_PATH': files + '/x11',
-           'HYBRIS_X11_SERVER': files + '/x11/Xwayland',
+    env = {'DISPLAY': a.display,
            'HYBRIS_X11_TRACE': '1', 'HYBRIS_ANDROID_SDK_VERSION': prop('ro.build.version.sdk'),
            'HYBRIS_LINKER_DIR': remote + '/hybris/libhybris/linker',
            'HYBRIS_EGLPLATFORM_DIR': remote + '/hybris/libhybris',
            'HYBRIS_VULKANPLATFORM_DIR': remote + '/hybris/libhybris'}
-    server = host.x11_server()
-    if a.server_binary:
-        shutil.copy2(a.server_binary, stage / 'Xwayland')
-        env['HYBRIS_X11_SERVER'] = remote + '/Xwayland'
-        server['override_sha256'] = sha256_file(a.server_binary)
+    if a.xauthority: env['XAUTHORITY'] = a.xauthority
+    server = {'source': 'external-service', 'display': a.display, 'xauthority': a.xauthority}
     if a.validation_layer:
         (stage / 'layers').mkdir()
         shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
@@ -82,7 +77,7 @@ def run(a, host, out):
             try: return action()
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 cleanup_errors.append(str(error)); code = 2
-        evidence = ['xwayland.log', 'maps.txt'] + [f'image-{epoch}-{frame}.rgba' for epoch in range(3 if a.case == 'resize' else 1) for frame in (0, 7)]
+        evidence = ['maps.txt'] + [f'image-{epoch}-{frame}.rgba' for epoch in range(3 if a.case == 'resize' else 1) for frame in (0, 7)]
         for name in evidence:
             copied = cleanup(lambda: app('cat ' + shlex.quote(remote + '/' + name), capture_output=True, timeout=10))
             if copied is not None and not copied.returncode: (out / name).write_bytes(copied.stdout)

@@ -93,17 +93,18 @@ int main(int argc, char **argv) {
     Display *display = NULL;
     xcb_connection_t *c;
     if (getenv("HYBRIS_X11_XLIB")) {
-        display = XOpenDisplay(NULL); if (!display) return 2;
+        display = XOpenDisplay(NULL);
+        if (!display) { fprintf(stderr, "X11_CONNECT failed display=%s api=xlib\n", getenv("DISPLAY") ?: "(unset)"); return 2; }
         XSetEventQueueOwner(display, XCBOwnsEventQueue);
         c = XGetXCBConnection(display);
     } else {
-        int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-        struct sockaddr_un address = {.sun_family = AF_UNIX};
-        strcpy(address.sun_path, "x11.sock");
-        if (fd < 0 || connect(fd, (struct sockaddr *)&address, sizeof(address))) return 2;
-        c = xcb_connect_to_fd(fd, NULL);
+        c = xcb_connect(NULL, NULL);
     }
-    if (!c || xcb_connection_has_error(c)) { if (c) xcb_disconnect(c); return 2; }
+    if (!c || xcb_connection_has_error(c)) {
+        fprintf(stderr, "X11_CONNECT failed display=%s api=xcb error=%d\n", getenv("DISPLAY") ?: "(unset)", c ? xcb_connection_has_error(c) : -1);
+        if (c) xcb_disconnect(c);
+        return 2;
+    }
     xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
     if (!screen) { xcb_disconnect(c); return 2; }
     const char *extension = "TAWC-DRI";

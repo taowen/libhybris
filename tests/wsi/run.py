@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Wayland, XCB or Xlib probes in the disposable anlabwc/Xwayland APK."""
+"""Run client probes against an installed, already running compositor APK."""
 import argparse
 import json
 import re
@@ -16,6 +16,9 @@ from host import Host, PACKAGE
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--serial', required=True)
+    p.add_argument('--package', default=PACKAGE, help='installed debuggable compositor package; must already be running')
+    p.add_argument('--display', default=':0', help='existing local X display supplied by the compositor')
+    p.add_argument('--xauthority', help='device-side Xauthority path accessible to the compositor UID')
     p.add_argument('--platform', choices=('wayland', 'xcb', 'xlib'), default='wayland')
     p.add_argument('--case', choices=('present', 'swapchain-review', 'control', 'resize', 'missing-protocol', 'acquire-timeout'), default='present')
     p.add_argument('--repeat', type=int, default=1, help='1–100 sequential clients sharing one compositor process')
@@ -30,7 +33,6 @@ def main():
     p.add_argument('--validation-layer', type=Path)
     p.add_argument('--validation-manifest', type=Path)
     p.add_argument('--capture-tools', type=Path)
-    p.add_argument('--server-binary', type=Path, help='explicit Xwayland override; dependencies still come from the APK')
     a = p.parse_args()
     wayland = a.platform == 'wayland'
     if a.case not in (('present', 'swapchain-review') if wayland else ('present', 'control', 'resize', 'missing-protocol', 'acquire-timeout')):
@@ -42,21 +44,21 @@ def main():
         p.error('selected operation requires --icd-hal and --vulkan-loader')
     if a.capture_tools and (not wayland or a.validation_layer or a.case == 'swapchain-review'):
         p.error('capture requires a separate Wayland present run: pinned capture tooling cannot combine validation or allocator-failure review')
-    if wayland and a.server_binary: p.error('--server-binary applies only to XCB/Xlib')
-    if a.case == 'missing-protocol' and not a.server_binary: p.error('missing-protocol requires an explicit unextended --server-binary')
+    if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+', a.package): p.error('invalid Android package name')
+    if not re.fullmatch(r':\d+(?:\.0)?', a.display): p.error('--display must select a local X display, for example :0')
     if a.trace and not wayland: p.error('--trace is the Wayland native-window trace; X11 protocol trace is always collected')
     if a.probe is None: a.probe = ROOT / ('tests/wsi/build' if wayland else 'tests/x11/build')
     if a.timeout is None: a.timeout = (180 if a.validation_layer or a.capture_tools else 65) if wayland else 35
     if not 5 <= a.timeout <= 300: p.error('--timeout must be between 5 and 300 seconds')
-    a.package, a.wayland, a.api = PACKAGE, 'wayland-0', a.platform
+    a.wayland, a.api = 'wayland-0', a.platform
     a.swapchain_review = a.case == 'swapchain-review'
     out = a.out / (time.strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8])
     out.mkdir(parents=True)
-    host = Host(a.serial, out)
+    host = Host(a.serial, out, a.package)
     host.record.update(platform=a.platform, case=a.case, requested_runs=a.repeat, status='FAIL')
     started = time.monotonic()
     try:
-        host.start()
+        host.attach()
         if wayland:
             from wayland import run
         else:
