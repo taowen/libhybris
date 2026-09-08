@@ -4,7 +4,7 @@ layout(local_size_x = 64) in;
 layout(set = 0, binding = 0, std430) readonly buffer Source { uint data[]; } src;
 layout(set = 0, binding = 1, std430) writeonly buffer Destination { uint data[]; } dst;
 layout(push_constant) uniform Region {
-    uint mode; // 0: BC1 RGB, 1: BC1 RGBA, 2: BC2, 3: BC3
+    uint mode; // 0..3: BC1 RGB/RGBA, BC2, BC3; 4..7: BC4 U/S, BC5 U/S
     uint source_word;
     uint row_blocks;
     uint layer_blocks;
@@ -22,10 +22,9 @@ uvec3 rgb565(uint value)
     return (c << uvec3(3, 2, 3)) | (c >> uvec3(2, 4, 2));
 }
 
-uint alpha3(uint word, uint pixel)
+uint index3(uint word, uint pixel)
 {
     uint lo = src.data[word], hi = src.data[word + 1];
-    uint a = lo & 255, b = (lo >> 8) & 255;
     uint bit = 16 + pixel * 3;
     uint index;
     if (bit < 32) {
@@ -33,13 +32,50 @@ uint alpha3(uint word, uint pixel)
         // Only pixel 5 straddles words; never shift a 32-bit value by 32.
         if (bit == 31) index |= hi << 1;
     } else index = hi >> (bit - 32);
-    index &= 7;
+    return index & 7;
+}
+
+uint alpha3(uint word, uint pixel)
+{
+    uint lo = src.data[word];
+    uint a = lo & 255, b = (lo >> 8) & 255;
+    uint index = index3(word, pixel);
     if (index == 0) return a;
     if (index == 1) return b;
     if (a > b) return ((8 - index) * a + (index - 1) * b) / 7;
     if (index == 6) return 0;
     if (index == 7) return 255;
     return ((6 - index) * a + (index - 1) * b) / 5;
+}
+
+uint channel16(uint word, uint pixel, bool snorm)
+{
+    uint endpoints = src.data[word];
+    int a = int(endpoints & 255), b = int((endpoints >> 8) & 255);
+    int denominator = snorm ? 127 : 255;
+    int scale = snorm ? 32767 : 65535;
+    if (snorm) {
+        a = max(a >= 128 ? a - 256 : a, -127);
+        b = max(b >= 128 ? b - 256 : b, -127);
+    }
+    int index = int(index3(word, pixel));
+    int numerator;
+    if (index == 0) numerator = a;
+    else if (index == 1) numerator = b;
+    else if (a > b) {
+        numerator = (8 - index) * a + (index - 1) * b;
+        denominator *= 7;
+    } else if (index == 6) return snorm ? uint(-32767) & 65535 : 0;
+    else if (index == 7) return uint(scale);
+    else {
+        numerator = (6 - index) * a + (index - 1) * b;
+        denominator *= 5;
+    }
+    // Quantize only once, after interpolation, to nearest UNORM16/SNORM16.
+    // Signed -127/-128 endpoint ordering is implementation-defined; saturate
+    // both before comparison. All arithmetic fits a signed 32-bit integer.
+    int magnitude = (abs(numerator) * scale + denominator / 2) / denominator;
+    return uint(numerator < 0 ? -magnitude : magnitude) & 65535;
 }
 
 void main()
@@ -52,8 +88,28 @@ void main()
     uint y = (pixel / r.width) % r.height;
     uint layer = pixel / (r.width * r.height);
     uint block = layer * r.layer_blocks + (y / 4) * r.row_blocks + x / 4;
-    uint word = r.source_word + block * (r.mode < 2 ? 2 : 4);
+    uint word = r.source_word + block * (r.mode < 2 || r.mode == 4 || r.mode == 5 ? 2 : 4);
     uint within = (y & 3) * 4 + (x & 3);
+    if (r.mode >= 4) {
+        bool snorm = (r.mode & 1) != 0;
+        // BC4 is a single-component R16 image. Pack two texels per storage
+        // word, including across row/layer boundaries; never race halfword
+        // writes. Dispatch chunks start at multiples of 64 pixels.
+        if (r.mode < 6 && (pixel & 1) != 0) return;
+        uint red = channel16(word, within, snorm);
+        uint other = 0;
+        if (r.mode >= 6) other = channel16(word + 2, within, snorm);
+        else if (pixel + 1 < r.pixels) {
+            uint next = pixel + 1;
+            uint nx = next % r.width, ny = (next / r.width) % r.height;
+            uint nl = next / (r.width * r.height);
+            uint nb = nl * r.layer_blocks + (ny / 4) * r.row_blocks + nx / 4;
+            other = channel16(r.source_word + nb * 2, (ny & 3) * 4 + (nx & 3), snorm);
+        }
+        uint destination = r.mode < 6 ? pixel / 2 : pixel;
+        dst.data[r.destination_word + destination] = red | (other << 16);
+        return;
+    }
     uint color_word = word + (r.mode < 2 ? 0 : 2);
     uint endpoints = src.data[color_word];
     uint c0 = endpoints & 65535, c1 = endpoints >> 16;

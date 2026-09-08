@@ -8,12 +8,71 @@ static const VkFormat bc_formats[] = {
     VK_FORMAT_BC1_RGB_UNORM_BLOCK, VK_FORMAT_BC1_RGB_SRGB_BLOCK,
     VK_FORMAT_BC1_RGBA_UNORM_BLOCK, VK_FORMAT_BC1_RGBA_SRGB_BLOCK,
     VK_FORMAT_BC2_UNORM_BLOCK, VK_FORMAT_BC2_SRGB_BLOCK,
-    VK_FORMAT_BC3_UNORM_BLOCK, VK_FORMAT_BC3_SRGB_BLOCK};
+    VK_FORMAT_BC3_UNORM_BLOCK, VK_FORMAT_BC3_SRGB_BLOCK,
+    VK_FORMAT_BC4_UNORM_BLOCK, VK_FORMAT_BC4_SNORM_BLOCK,
+    VK_FORMAT_BC5_UNORM_BLOCK, VK_FORMAT_BC5_SNORM_BLOCK};
+#define BC_FORMAT_COUNT (sizeof(bc_formats) / sizeof(bc_formats[0]))
+static unsigned bc_mode(unsigned format_index)
+{ return format_index < 8 ? format_index / 2 : format_index - 4; }
+static unsigned bc_block_bytes(unsigned mode)
+{ return mode < 2 || mode == 4 || mode == 5 ? 8 : 16; }
+static inline VkFormat bc_reference_format(unsigned f)
+{
+    if (f == 8 || f == 9) return f & 1 ? VK_FORMAT_R16_SNORM : VK_FORMAT_R16_UNORM;
+    if (f >= 8) return f & 1 ? VK_FORMAT_R16G16_SNORM : VK_FORMAT_R16G16_UNORM;
+    return f & 1 ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+}
 
-static unsigned bc_variant(unsigned bx, unsigned by, unsigned layer, unsigned round)
-{ return (bx + 3 * by + 5 * layer + round) % 4; }
+static unsigned bc_variant(unsigned mode, unsigned bx, unsigned by, unsigned layer, unsigned round)
+{ return (bx + 3 * by + 5 * layer + round) % (mode >= 4 ? 8 : 4); }
+/* BC4/5 fixed RGTC palettes, rounded once to normalized 16-bit values.
+ * Unsigned endpoints: 210/0, 0/200, 100/100, 203/13, 1/0, 254/255,
+ * 255/255, 0/0. Signed: 100/-110, -100/100, -128/-128, 103/-13,
+ * -1/0, 127/-128, -128/-127, -127/-127. The undefined -127/-128
+ * ordering is deliberately excluded from the portable golden fixture. */
+static uint16_t bc_channel_golden(unsigned snorm, unsigned variant, unsigned index)
+{
+    static const int32_t palette[2][8][8] = {
+    {
+        {53970, 0, 46260, 38550, 30840, 23130, 15420, 7710},
+        {0, 51400, 10280, 20560, 30840, 41120, 0, 65535},
+        {25700, 25700, 25700, 25700, 25700, 25700, 0, 65535},
+        {52171, 3341, 45195, 38220, 31244, 24268, 17292, 10317},
+        {257, 0, 220, 184, 147, 110, 73, 37},
+        {65278, 65535, 65329, 65381, 65432, 65484, 0, 65535},
+        {65535, 65535, 65535, 65535, 65535, 65535, 0, 65535},
+        {0, 0, 0, 0, 0, 0, 0, 65535}},
+    {
+        {25801, -28381, 18061, 10320, 2580, -5160, -12900, -20641},
+        {-25801, 25801, -15480, -5160, 5160, 15480, -32767, 32767},
+        {-32767, -32767, -32767, -32767, -32767, -32767, -32767, 32767},
+        {26575, -3354, 22299, 18024, 13748, 9473, 5197, 921},
+        {-258, 0, -206, -155, -103, -52, -32767, 32767},
+        {32767, -32767, 23405, 14043, 4681, -4681, -14043, -23405},
+        {-32767, -32767, -32767, -32767, -32767, -32767, -32767, 32767},
+        {-32767, -32767, -32767, -32767, -32767, -32767, -32767, 32767}}};
+    return (uint16_t)palette[snorm][variant][index];
+}
+static void bc_pack_channel(uint8_t *destination, unsigned snorm, unsigned variant, unsigned round)
+{
+    static const int16_t endpoints[2][8][2] = {
+        {{210,0},{0,200},{100,100},{203,13},{1,0},{254,255},{255,255},{0,0}},
+        {{100,-110},{-100,100},{-128,-128},{103,-13},{-1,0},{127,-128},{-128,-127},{-127,-127}}};
+    uint64_t bits = (uint8_t)endpoints[snorm][variant][0] |
+        ((uint64_t)(uint8_t)endpoints[snorm][variant][1] << 8);
+    for (unsigned pixel = 0; pixel < 16; ++pixel)
+        bits |= (uint64_t)((pixel + variant + round) & 7) << (16 + pixel * 3);
+    memcpy(destination, &bits, 8);
+}
 static uint32_t bc_golden(unsigned mode, unsigned variant, unsigned pixel, unsigned round)
 {
+    if (mode >= 4) {
+        uint32_t red = bc_channel_golden(mode & 1, variant, (pixel + variant + round) & 7);
+        unsigned green_variant = (variant + 3) & 7;
+        uint32_t green = mode >= 6 ? bc_channel_golden(mode & 1, green_variant,
+            (pixel + green_variant + round + 2) & 7) : 0;
+        return red | (green << 16);
+    }
     /* RGB565 red/green; black/white with c0 <= c1; equal mixed endpoints.
      * Mixed endpoint = (11 << 11) | (29 << 5) | 21 = 0x5bb5. */
     static const uint32_t palettes[4][4] = {
@@ -40,6 +99,11 @@ static uint32_t bc_golden(unsigned mode, unsigned variant, unsigned pixel, unsig
 }
 static void bc_pack(uint8_t *destination, unsigned mode, unsigned variant, unsigned round)
 {
+    if (mode >= 4) {
+        bc_pack_channel(destination, mode & 1, variant, round);
+        if (mode >= 6) bc_pack_channel(destination + 8, mode & 1, (variant + 3) & 7, round + 2);
+        return;
+    }
     static const uint16_t endpoints[4][2] = {{0xf800, 0x07e0}, {0x0000, 0xffff}, {0x5bb5, 0x5bb5}, {0x5bb5, 0x23c7}};
     uint32_t words[4] = {0};
     unsigned color = mode < 2 ? 0 : 2;
@@ -62,12 +126,25 @@ static void bc_fill_fixture(uint8_t *bytes, const struct hybris_bc_region *r,
 {
     unsigned row = ((r->row_length ?: r->width) + 3) / 4;
     unsigned rows = ((r->image_height ?: r->height) + 3) / 4;
-    unsigned block_size = mode < 2 ? 8 : 16;
+    unsigned block_size = bc_block_bytes(mode);
     memset(bytes, 0xa5, (size_t)r->source_range);
     for (unsigned z = 0; z < r->layers; ++z)
         for (unsigned y = 0; y < (r->height + 3) / 4; ++y)
             for (unsigned x = 0; x < (r->width + 3) / 4; ++x)
                 bc_pack(bytes + r->source_offset + ((z * rows + y) * row + x) * block_size,
-                    mode, bc_variant(x, y, z, round), round);
+                    mode, bc_variant(mode, x, y, z, round), round);
+}
+
+/* Native reference storage preserves the original channel count, including
+ * border replacement before missing-component substitution. */
+static inline void bc_reference_store(void *data, unsigned f, unsigned pixel, uint32_t value)
+{
+    if (f == 8 || f == 9) ((uint16_t *)data)[pixel] = (uint16_t)value;
+    else ((uint32_t *)data)[pixel] = value;
+}
+static inline uint32_t bc_reference_load(const void *data, unsigned f, unsigned pixel)
+{
+    if (f == 8 || f == 9) return ((const uint16_t *)data)[pixel];
+    return ((const uint32_t *)data)[pixel];
 }
 #endif

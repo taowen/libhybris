@@ -1,18 +1,21 @@
-# Internal BC1–BC3 GPU decoder
+# Internal BC1–BC5 GPU decoder
 
 `hybris/vulkan/compat/bc_decode.c` provides a Vulkan 1.0 compute kernel for the
-8 BC1 RGB/RGBA, BC2 and BC3 UNORM/sRGB formats. The output is tightly packed
-RGBA8. sRGB output retains encoded RGB bytes; a future sRGB image performs the
-sampling conversion. BC4–BC7 are rejected. The block interpretation follows
+12 BC1 RGB/RGBA, BC2/BC3 UNORM/sRGB and BC4/BC5 UNORM/SNORM formats.
+BC1–BC3 output is tightly packed RGBA8. BC4 writes packed R16 pairs (zero
+padding after an odd final texel); BC5 writes RG16. sRGB output retains encoded
+RGB bytes and the image performs the sampling conversion. BC6–BC7 are rejected. The block interpretation follows
 the [Vulkan compressed-format mapping](https://docs.vulkan.org/spec/latest/appendices/compressedtex.html)
-and the S3TC chapter of the Khronos Data Format Specification linked there.
+and the S3TC/RGTC chapters of the Khronos Data Format Specification linked there.
 The kernel expands RGB565 endpoints by bit replication and uses integer
-interpolation with truncation. The fixtures establish the listed byte results,
+interpolation with truncation for BC1–BC3. BC4/BC5 interpolate normalized
+endpoints with integer rational arithmetic and round once to UNORM16/SNORM16.
+Signed -128 endpoints saturate to -127 before comparison. The fixtures establish the listed byte results,
 not comprehensive format precision conformance.
 
 This is an internal kernel. The separate, default-off [BC image fallback](bc-images.md)
-now connects it to ICD image operations. The decoder evidence below predates
-that integration and does not establish image support.
+now connects it to ICD image operations. The kernel evidence is recorded separately below; it does not by itself
+establish image support.
 The probe explicitly creates and records the decoder from the same production
 C source, snapshotted into its build bundle. Its Vulkan calls run through the
 native, frontend and standard ICD routes. `image_interception=0` is part of the
@@ -32,8 +35,8 @@ kernel helper.
 ## Existing baseline case
 
 `bc-decode` and `bc-decode-validation` use the existing executable and runner;
-there is no separate test harness. Each execution checks 128 readbacks:
-8 formats × 4 region shapes × 4 submissions. Shapes are 4×4×1, 9×7×3 with
+there is no separate test harness. Each execution checks 192 readbacks:
+12 formats × 4 region shapes × 4 submissions. Shapes are 4×4×1, 9×7×3 with
 16-texel rows/12-texel layer height, 1×1×2, and 129×5×2 with 144/12 strides.
 The last shape reduces the caller's dispatch limit to one workgroup to exercise
 splitting without allocating a device-limit-sized buffer.
@@ -42,7 +45,10 @@ Fixed palettes cover both BC1 endpoint orders, equal endpoints, RGB versus
 RGBA black/transparent selection, BC2's forced four-color mode and all explicit
 alpha values, both BC3 interpolation branches, equal alpha endpoints, all
 alpha indices including the cross-word index, and non-integral interpolation.
-Every output word is compared, including prefix/suffix sentinels.
+BC4/BC5 add eight independent palettes each for UNORM/SNORM, both endpoint
+orders, equal and saturated negative endpoints, fractional interpolation and
+distinct R/G values. Every output word is compared, including odd-texel padding
+and prefix/suffix sentinels.
 
 The upload buffer has transfer usage only. A recorded transfer copies it into
 storage-buffer scratch before compute. Host data is first populated **after
@@ -50,7 +56,7 @@ recording**, then changed between three submissions of the same command
 buffer. The fourth submission records a GPU fill of the upload buffer and
 checks the resulting zero block. Buffers have nonzero memory binding offsets;
 mapped allocations are flushed/invalidated in full. Ten live-recording
-rejection controls cover BC4/BC7, short ranges, offset/dimension overflow,
+rejection controls cover BC6/BC7, short ranges, offset/dimension overflow,
 invalid strides and unavailable dispatch/range limits. SyncVal is enabled in
 the validation case.
 
@@ -71,7 +77,7 @@ For Mali use serial `10AFA31610002QH`, HAL `/vendor/lib64/hw/vulkan.mali.so`
 and the explicit `--icd-mali-loader-quirk` flag. The loader/layer paths above
 are existing local build products, with their hashes retained by the runner.
 
-## Recorded evidence, 2026-09-08
+## Earlier BC1–BC3 evidence, 2026-09-08
 
 A clean AArch64 library build and glibc/linked/bionic probe builds succeeded.
 The final runs retain manifests, snapshots, binaries, device details and logs
@@ -97,8 +103,22 @@ with glslang 16.2.0 and SPIRV-Tools 2026.1 reproduced the asset byte-for-byte:
 This records the actual host generator versions, not a pinned shader-generator
 build. The library/probe manifests separately fingerprint their source inputs.
 
-Image creation/binding/views, actual mip/array image subresources, image copy
-and compressed readback, sRGB sampling/filtering, application compute-state
-restoration, cross-family execution, BC4–BC7, allocation failure injection,
-maximum-range stress, performance and applications remain unverified or
-unimplemented. G07 remains open.
+Image creation, views, transfers, sampling and application compute-state
+restoration have separate, bounded [image-path evidence](bc-images.md).
+Cross-family execution, BC6–BC7, allocation failure injection, maximum-range
+stress, performance and applications remain unverified or unimplemented.
+G07 remains open.
+
+## BC4/BC5 kernel evidence, 2026-09-08
+
+The current shader and fixture cover all twelve formats. Default-off final
+runs Redmi `20260908T110906-e040de4e` and Mali `20260908T110907-97f8cbea`
+each pass native, frontend and ICD-validation decoder execution. Each route
+checks 192 complete buffers; the six executions total 1,152 readbacks, of which
+384 are BC4/BC5, with zero mismatches. ICD execution has zero VVL/SyncVal
+errors. This includes BC4's cross-row/layer pairs, odd final halfword padding,
+dispatch splitting and GPU-filled input. Library/probe hashes, initial stale
+counter failures and separate application-image results are recorded in the
+[BC4/BC5 image evidence](bc-images.md#bc4bc5-extension-evidence-2026-09-08).
+The current generated decoder include SHA256 is
+`2a5cfc7a7314b75134eb7a5d01d7253c72bb86af2c264cd07739c02a650002d9`.

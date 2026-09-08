@@ -72,6 +72,10 @@ VkResult hybris_bc_prepare(const struct hybris_bc_region *r,
     case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: mode = 1; break;
     case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC2_SRGB_BLOCK: mode = 2; break;
     case VK_FORMAT_BC3_UNORM_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK: mode = 3; break;
+    case VK_FORMAT_BC4_UNORM_BLOCK: mode = 4; break;
+    case VK_FORMAT_BC4_SNORM_BLOCK: mode = 5; break;
+    case VK_FORMAT_BC5_UNORM_BLOCK: mode = 6; break;
+    case VK_FORMAT_BC5_SNORM_BLOCK: mode = 7; break;
     default: return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
     if (!r->width || !r->height || !r->layers || (r->source_offset & 3) ||
@@ -96,8 +100,8 @@ VkResult hybris_bc_prepare(const struct hybris_bc_region *r,
     if (pixels > UINT32_MAX || last_layer > UINT32_MAX)
         return VK_ERROR_INITIALIZATION_FAILED;
     uint64_t blocks = last_layer + ((r->height - 1) / 4) * row_blocks + (r->width + UINT64_C(3)) / 4;
-    uint64_t source_bytes = blocks * (mode < 2 ? 8 : 16);
-    uint64_t destination_bytes = pixels * 4;
+    uint64_t source_bytes = blocks * (mode < 2 || mode == 4 || mode == 5 ? 8 : 16);
+    uint64_t destination_bytes = mode == 4 || mode == 5 ? ((pixels + 1) / 2) * 4 : pixels * 4;
     if (r->source_offset > r->source_range || source_bytes > r->source_range - r->source_offset ||
         r->destination_offset > r->destination_range || destination_bytes > r->destination_range - r->destination_offset)
         return VK_ERROR_INITIALIZATION_FAILED;

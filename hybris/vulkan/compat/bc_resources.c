@@ -7,7 +7,7 @@
 #define PROC(name) PFN_vk##name name = (PFN_vk##name)device->resolver(device->handle, "vk" #name)
 static int emulates(struct hybris_bc_device *device, VkFormat format)
 {
-    return format >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && format <= VK_FORMAT_BC3_SRGB_BLOCK &&
+    return format >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && format <= VK_FORMAT_BC5_SNORM_BLOCK &&
         (device->format_mask & (1u << (format - VK_FORMAT_BC1_RGB_UNORM_BLOCK)));
 }
 static VkResult VKAPI_CALL create_image(VkDevice handle, const VkImageCreateInfo *info,

@@ -125,7 +125,9 @@ int bc_images_probe(int validate, int route)
     }
     free(queues);
     if (family == UINT32_MAX) return 3;
-    for (unsigned f = 0; f < 8; ++f) {
+    VkBool32 linear_filter[BC_FORMAT_COUNT] = {0};
+    unsigned unsupported_formats = 0;
+    for (unsigned f = 0; f < BC_FORMAT_COUNT; ++f) {
         VkFormatProperties format;
         p_vkGetPhysicalDeviceFormatProperties(physical, bc_formats[f], &format);
         VkFormatProperties2 format2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
@@ -137,10 +139,11 @@ int bc_images_probe(int validate, int route)
             VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &image);
         printf("BC_IMAGES_FORMAT format=%u optimal=%u image_result=%d\n", bc_formats[f], format.optimalTilingFeatures, result);
         if (result == VK_ERROR_FORMAT_NOT_SUPPORTED || !(format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) {
-            p_vkDestroyInstance(instance, NULL); dlclose(h);
-            printf("UNSUPPORTED bc-images format=%u\n", bc_formats[f]); return 3;
+            ++unsupported_formats;
+            continue;
         }
         if (result != VK_SUCCESS) return 2;
+        linear_filter[f] = f >= 8 && (format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
         const char *bc_policy = getenv("HYBRIS_BC_TEXTURES");
         if (bc_policy && !strcmp(bc_policy, "force")) {
             uint32_t sparse_count = 0;
@@ -159,6 +162,19 @@ int bc_images_probe(int validate, int route)
         VkImageFormatProperties2 image2 = {.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2};
         CHECK(p_vkGetPhysicalDeviceImageFormatProperties2(physical, &query, &image2));
         if (memcmp(&image, &image2.imageFormatProperties, sizeof(image))) return 2;
+    }
+    /* Record native behavior for the unimplemented formats as well, including
+     * when an earlier format is unsupported. Do not hide partial BC support. */
+    for (VkFormat format = VK_FORMAT_BC6H_UFLOAT_BLOCK; format <= VK_FORMAT_BC7_SRGB_BLOCK; ++format) {
+        VkFormatProperties properties;
+        p_vkGetPhysicalDeviceFormatProperties(physical, format, &properties);
+        printf("BC_IMAGES_UNIMPLEMENTED format=%u linear=%u optimal=%u buffer=%u\n",
+            format, properties.linearTilingFeatures, properties.optimalTilingFeatures, properties.bufferFeatures);
+    }
+    if (unsupported_formats) {
+        p_vkDestroyInstance(instance, NULL); dlclose(h);
+        printf("UNSUPPORTED bc-images missing_formats=%u\n", unsupported_formats);
+        return 3;
     }
     uint32_t extension_count = 0;
     CHECK(p_vkEnumerateDeviceExtensionProperties(physical, NULL, &extension_count, NULL));
@@ -261,7 +277,7 @@ int bc_images_probe(int validate, int route)
     CHECK(p_vkCreateEvent(device, &event_info, NULL, &event));
     VkQueue queue;
     p_vkGetDeviceQueue(device, family, 0, &queue);
-    enum { BYTES = 131072, RAW = 65536, LAYERS = 3 };
+    enum { BYTES = 262144, RAW = 196608, REFERENCE = 65536, OUTPUT = 131072, LAYERS = 3 };
     VkBuffer buffers[2]; VkDeviceMemory buffer_memory[2]; VkDeviceSize binding[2]; uint8_t *mapped[2];
     for (unsigned i = 0; i < 2; ++i) {
         VkBufferCreateInfo bi = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = BYTES,
@@ -281,7 +297,7 @@ int bc_images_probe(int validate, int route)
     }
     uint32_t dynamic_offset = properties.limits.minStorageBufferOffsetAlignment;
     if (dynamic_offset < 256) dynamic_offset = 256;
-    if (dynamic_offset + 8192 > RAW) return 3;
+    if (dynamic_offset + OUTPUT > RAW) return 3;
     VkDescriptorSetLayoutBinding bindings[3] = {
         {.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
         {.binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
@@ -303,8 +319,15 @@ int bc_images_probe(int validate, int route)
         .magFilter = VK_FILTER_NEAREST, .minFilter = VK_FILTER_NEAREST, .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .maxLod = 0};
-    VkSampler sampler;
-    CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &sampler));
+    VkSampler samplers[4];
+    CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &samplers[0]));
+    sampler_info.magFilter = sampler_info.minFilter = VK_FILTER_LINEAR;
+    CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &samplers[1]));
+    sampler_info.addressModeU = sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &samplers[2]));
+    sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+    CHECK(p_vkCreateSampler(device, &sampler_info, NULL, &samplers[3]));
     VkShaderModuleCreateInfo shader_info = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = sizeof(bc_sample_spv), .pCode = bc_sample_spv};
     VkShaderModule shader;
@@ -321,9 +344,9 @@ int bc_images_probe(int validate, int route)
     VkFence fence;
     CHECK(p_vkCreateFence(device, &fence_info, NULL, &fence));
     unsigned failures = 0, readbacks = 0, copies2_cases = 0, sync2_cases = 0;
-    for (unsigned f = 0; f < 8; ++f) {
+    for (unsigned f = 0; f < BC_FORMAT_COUNT; ++f) {
         for (unsigned shape_index = 0; shape_index < 2; ++shape_index) {
-        uint32_t base_width = shape_index ? 16 : 9, base_height = shape_index ? 16 : 7;
+        uint32_t base_width = shape_index ? 32 : 9, base_height = shape_index ? 32 : 7;
         for (uint32_t mip = 0; mip < 4; ++mip) {
             uint32_t width = base_width >> mip, height = base_height >> mip;
             if (!width) width = 1;
@@ -332,13 +355,16 @@ int bc_images_probe(int validate, int route)
             copies2_cases += use2;
             int use_sync2 = sync2 && (mip & 1);
             sync2_cases += use_sync2;
-            uint32_t block_bytes = f < 4 ? 8 : 16;
+            unsigned mode = bc_mode(f);
+            unsigned sampler_choice = linear_filter[f] ? 1 + mip % 3 : 0;
+            uint32_t sample_words = f >= 8 ? 2 : 1;
+            uint32_t block_bytes = bc_block_bytes(mode);
             VkImage images[4]; VkDeviceMemory image_memory[4];
             for (unsigned i = 0; i < 4; ++i) {
                 VkImageCreateInfo image_info = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                     .imageType = i == 2 && shape_index ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D, .format = i == 2 ?
                         (block_bytes == 8 ? VK_FORMAT_R32G32_UINT : VK_FORMAT_R32G32B32A32_UINT) :
-                        i == 3 ? (f & 1 ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM) : bc_formats[f],
+                        i == 3 ? bc_reference_format(f) : bc_formats[f],
                     .extent = i == 2 ? (VkExtent3D){(width + 3) / 4, (height + 3) / 4, shape_index ? LAYERS : 1} :
                         i == 3 ? (VkExtent3D){width, height, 1} : (VkExtent3D){base_width, base_height, 1},
                     .mipLevels = i >= 2 ? 1 : 4, .arrayLayers = i == 2 && shape_index ? 1 : LAYERS, .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -393,13 +419,13 @@ int bc_images_probe(int validate, int route)
             VkImageView view;
             CHECK(p_vkCreateImageView(device, &view_info, NULL, &view));
             view_info.image = images[3];
-            view_info.format = f & 1 ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+            view_info.format = bc_reference_format(f);
             view_info.subresourceRange.baseMipLevel = 0;
             VkImageView reference_view;
             CHECK(p_vkCreateImageView(device, &view_info, NULL, &reference_view));
-            VkDescriptorImageInfo reference = {.sampler = sampler, .imageView = reference_view, .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkDescriptorImageInfo sampled = {.sampler = sampler, .imageView = view, .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkDescriptorBufferInfo output = {.buffer = buffers[1], .range = 8192};
+            VkDescriptorImageInfo reference = {.sampler = samplers[sampler_choice], .imageView = reference_view, .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkDescriptorImageInfo sampled = {.sampler = samplers[sampler_choice], .imageView = view, .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkDescriptorBufferInfo output = {.buffer = buffers[1], .range = OUTPUT};
             VkWriteDescriptorSet writes[3] = {
                 {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = descriptors, .dstBinding = 0, .descriptorCount = 1,
                     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &sampled},
@@ -408,7 +434,7 @@ int bc_images_probe(int validate, int route)
                 {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = descriptors, .dstBinding = 2, .descriptorCount = 1,
                     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &reference}};
             p_vkUpdateDescriptorSets(device, 3, writes, 0, NULL);
-            VkPushConstantRange push_range = {VK_SHADER_STAGE_COMPUTE_BIT, 0, 12};
+            VkPushConstantRange push_range = {VK_SHADER_STAGE_COMPUTE_BIT, 0, 20};
             VkPipelineLayoutCreateInfo pipeline_layout_info = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
                 .setLayoutCount = 1, .pSetLayouts = &descriptor_layout, .pushConstantRangeCount = 1, .pPushConstantRanges = &push_range};
             VkPipelineLayout pipeline_layout;
@@ -422,7 +448,7 @@ int bc_images_probe(int validate, int route)
             CHECK(p_vkBeginCommandBuffer(command, &begin));
             p_vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
             p_vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &descriptors, 1, &dynamic_offset);
-            uint32_t shape[] = {width, height, LAYERS};
+            uint32_t shape[] = {width, height, LAYERS, f >= 8 ? 1 + (f & 1) : 0, linear_filter[f] != 0};
             p_vkCmdPushConstants(command, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(shape), shape);
             VkMemoryBarrier before = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                 .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
@@ -438,13 +464,13 @@ int bc_images_probe(int validate, int route)
                 image_barrier(p_vkCmdPipelineBarrier, command, images[i], i >= 2 ? 0 : mip, i == 2 && shape_index ? 1 : LAYERS,
                     VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
                     VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
-            VkBufferImageCopy reference_upload = {.bufferOffset = 16384,
+            VkBufferImageCopy reference_upload = {.bufferOffset = REFERENCE,
                 .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, LAYERS}, .imageExtent = {width, height, 1}};
             p_vkCmdCopyBufferToImage(command, buffers[0], images[3], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &reference_upload);
             image_barrier(p_vkCmdPipelineBarrier, command, images[3], 0, LAYERS,
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-            VkBufferImageCopy upload = {.bufferOffset = 16, .bufferRowLength = 32, .bufferImageHeight = 20,
+            VkBufferImageCopy upload = {.bufferOffset = 16, .bufferRowLength = 40, .bufferImageHeight = 36,
                 .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, 0, LAYERS}, .imageExtent = {width, height, 1}};
             if (use2) {
                 VkBufferImageCopy2 region = {.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
@@ -544,14 +570,15 @@ int bc_images_probe(int validate, int route)
             p_vkDestroyPipelineLayout(device, pipeline_layout, NULL);
             for (unsigned round = 0; round < 3; ++round) {
                 struct hybris_bc_region fixture = {.width = width, .height = height, .layers = LAYERS,
-                    .row_length = 32, .image_height = 20, .source_offset = 16, .source_range = BYTES};
-                bc_fill_fixture(mapped[0] + binding[0], &fixture, f / 2, round);
-                uint32_t *reference_pixels = (uint32_t *)(mapped[0] + binding[0] + 16384);
+                    .row_length = 40, .image_height = 36, .source_offset = 16, .source_range = BYTES};
+                bc_fill_fixture(mapped[0] + binding[0], &fixture, mode, round);
+                uint32_t *reference_pixels = (uint32_t *)(mapped[0] + binding[0] + REFERENCE);
                 for (uint32_t pixel = 0; pixel < width * height * LAYERS; ++pixel) {
                     unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
-                    reference_pixels[pixel] = bc_golden(f / 2, bc_variant(x / 4, y / 4, z, round),
+                    uint32_t reference_pixel = bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round),
                         (y & 3) * 4 + (x & 3), round);
-                    if (patched && z == 1 && x >= 4 && x < 8 && y < 4) reference_pixels[pixel] = f < 4 ? 0xff000000 : 0;
+                    if (patched && z == 1 && x >= 4 && x < 8 && y < 4) reference_pixel = f < 4 ? 0xff000000 : 0;
+                    bc_reference_store(reference_pixels, f, pixel, reference_pixel);
                 }
                 VkMappedMemoryRange upload_range = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                     .memory = buffer_memory[0], .size = VK_WHOLE_SIZE};
@@ -571,20 +598,67 @@ int bc_images_probe(int validate, int route)
                 for (unsigned word = 0; word < BYTES / 4; ++word) {
                     uint32_t expected = 0xcdcdcdcd;
                     int matches;
-                    if (word >= dynamic_offset / 4 && word < dynamic_offset / 4 + pixels) {
-                        expected = actual[word + pixels];
+                    if (word >= dynamic_offset / 4 && word < dynamic_offset / 4 + sample_words * pixels) {
+                        expected = actual[word + sample_words * pixels];
                         matches = actual[word] == expected;
-                    } else if (word >= dynamic_offset / 4 + pixels && word < dynamic_offset / 4 + 2 * pixels) {
-                        unsigned pixel = word - dynamic_offset / 4 - pixels;
+                    } else if (word >= dynamic_offset / 4 + sample_words * pixels && word < dynamic_offset / 4 + 2 * sample_words * pixels) {
+                        unsigned sample_word = word - dynamic_offset / 4 - sample_words * pixels;
+                        unsigned pixel = sample_word / sample_words;
                         unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
-                        expected = bc_golden(f / 2, bc_variant(x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
+                        expected = bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
                         if (patched && z == 1 && x >= 4 && x < 8 && y < 4) expected = f < 4 ? 0xff000000 : 0;
-                        if (shape_index) expected = (expected & 0xff00ff00) | ((expected & 255) << 16) | ((expected >> 16) & 255);
-                        matches = sampled_matches(actual[word], expected, f & 1);
+                        if (f >= 8) {
+                            uint32_t red = expected & 65535, green = expected >> 16;
+                            uint32_t alpha = f & 1 ? 32767 : 65535;
+                            expected = sample_word & 1 ? ((shape_index ? red : 0) | (alpha << 16)) :
+                                ((shape_index ? 0 : red) | (green << 16));
+                            matches = actual[word] == expected;
+                        } else {
+                            if (shape_index) expected = (expected & 0xff00ff00) | ((expected & 255) << 16) | ((expected >> 16) & 255);
+                            matches = sampled_matches(actual[word], expected, f & 1);
+                        }
+                    } else if (linear_filter[f] && word >= dynamic_offset / 4 + 2 * sample_words * pixels &&
+                        word < dynamic_offset / 4 + 3 * sample_words * pixels) {
+                        expected = actual[word + sample_words * pixels];
+                        matches = actual[word] == expected;
+                    } else if (linear_filter[f] && word >= dynamic_offset / 4 + 3 * sample_words * pixels &&
+                        word < dynamic_offset / 4 + 4 * sample_words * pixels) {
+                        unsigned sample_word = word - dynamic_offset / 4 - 3 * sample_words * pixels;
+                        unsigned pixel = sample_word / sample_words;
+                        unsigned x = pixel % width, y = pixel / width % height, z = pixel / (width * height);
+                        /* The chosen coordinates average four adjacent texels with
+                         * exact half weights. Check native RG16 filtering against
+                         * that average; the BC-to-native comparison above is exact. */
+                        int sums[4] = {0};
+                        for (unsigned dy = 0; dy < 2; ++dy) for (unsigned dx = 0; dx < 2; ++dx) {
+                            unsigned sx = x + dx < width ? x + dx : width - 1;
+                            unsigned sy = y + dy < height ? y + dy : height - 1;
+                            uint32_t packed = bc_reference_load(reference_pixels, f, (z * height + sy) * width + sx);
+                            if (sampler_choice >= 2 && (x + dx >= width || y + dy >= height)) {
+                                uint32_t maximum = f & 1 ? 32767 : 65535;
+                                packed = sampler_choice == 2 ? maximum | (mode >= 6 ? maximum << 16 : 0) : 0;
+                            }
+                            int red = f & 1 ? (int16_t)packed : (int)(packed & 65535);
+                            int green = f & 1 ? (int16_t)(packed >> 16) : (int)(packed >> 16);
+                            sums[shape_index ? 2 : 0] += red;
+                            sums[1] += green;
+                            sums[3] += f & 1 ? 32767 : 65535;
+                        }
+                        matches = 1; expected = 0;
+                        for (unsigned c = 0; c < 2; ++c) {
+                            unsigned component = 2 * (sample_word & 1) + c;
+                            int sum = sums[component];
+                            int want = sum < 0 ? -((-sum + 2) / 4) : (sum + 2) / 4;
+                            int got = f & 1 ? (int16_t)(actual[word] >> (16 * c)) :
+                                (int)((actual[word] >> (16 * c)) & 65535);
+                            int tolerance = component == 3 || component == (shape_index ? 0 : 2) ? 0 : 1;
+                            if (abs(got - want) > tolerance) matches = 0;
+                            expected |= (uint32_t)(uint16_t)want << (16 * c);
+                        }
                     } else if (word >= RAW / 4 && word < (RAW + raw_size) / 4) {
                         unsigned byte = (word - RAW / 4) * 4;
                         unsigned block = byte / block_bytes, x = block % columns, y = block / columns % rows, z = block / (columns * rows);
-                        memcpy(&expected, mapped[0] + binding[0] + 16 + ((z * 5 + y) * 8 + x) * block_bytes + byte % block_bytes, 4);
+                        memcpy(&expected, mapped[0] + binding[0] + 16 + ((z * 9 + y) * 10 + x) * block_bytes + byte % block_bytes, 4);
                         if (patched && z == 1 && x == 1 && y == 0) expected = 0;
                         matches = actual[word] == expected;
                     } else matches = actual[word] == expected;
@@ -593,8 +667,8 @@ int bc_images_probe(int validate, int route)
                         ++bad;
                     }
                 }
-                printf("BC_IMAGES_READBACK format=%u shape=%u mip=%u round=%u copy2=%u sync2=%u gpu_patch=%u pixels=%u raw_bytes=%u bad=%u\n",
-                    bc_formats[f], shape_index, mip, round, use2, use_sync2, patched, pixels, raw_size, bad);
+                printf("BC_IMAGES_READBACK format=%u shape=%u mip=%u round=%u copy2=%u sync2=%u gpu_patch=%u linear_filter=%u border=%u pixels=%u raw_bytes=%u bad=%u\n",
+                    bc_formats[f], shape_index, mip, round, use2, use_sync2, patched, linear_filter[f] != 0, sampler_choice >= 2 ? sampler_choice - 1 : 0, pixels, raw_size, bad);
                 failures += bad; ++readbacks;
                 CHECK(p_vkResetFences(device, 1, &fence));
             }
@@ -618,7 +692,7 @@ int bc_images_probe(int validate, int route)
     p_vkDestroyFence(device, fence, NULL);
     p_vkDestroyCommandPool(device, pool, NULL);
     p_vkDestroyShaderModule(device, shader, NULL);
-    p_vkDestroySampler(device, sampler, NULL);
+    for (unsigned i = 0; i < 4; ++i) p_vkDestroySampler(device, samplers[i], NULL);
     p_vkDestroyDescriptorPool(device, descriptor_pool, NULL);
     p_vkDestroyDescriptorSetLayout(device, descriptor_layout, NULL);
     for (unsigned i = 0; i < 2; ++i) {
@@ -629,7 +703,7 @@ int bc_images_probe(int validate, int route)
     p_vkDestroyDevice(device, NULL);
     if (destroy_messenger) destroy_messenger(instance, messenger, NULL);
     p_vkDestroyInstance(instance, NULL); dlclose(h);
-    printf("BC_IMAGES_SUMMARY formats=8 shapes=2 readbacks=%u copy2_cases=%u sync2_cases=%u maintenance4=%u format_list=%u failures=%u validation_errors=%u route=%d\n",
+    printf("BC_IMAGES_SUMMARY formats=12 shapes=2 readbacks=%u copy2_cases=%u sync2_cases=%u maintenance4=%u format_list=%u failures=%u validation_errors=%u route=%d\n",
         readbacks, copies2_cases, sync2_cases, maintenance4, format_list, failures, validation.errors, route);
-    return failures || validation.errors || readbacks != 192 ? 2 : 0;
+    return failures || validation.errors || readbacks != BC_FORMAT_COUNT * 2 * 4 * 3 ? 2 : 0;
 }

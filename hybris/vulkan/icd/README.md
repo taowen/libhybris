@@ -291,9 +291,9 @@ pipeline variants and same-process cache serialization/restoration. See the
 baseline README for exact device results and remaining limits. Specialization
 map behavior follows the [Vulkan specialization constants rules](https://docs.vulkan.org/spec/latest/chapters/pipelines.html#pipelines-specialization-constants).
 
-The default-off `HYBRIS_BC_TEXTURES=missing|force` path intercepts selected BC1–BC3
+The default-off `HYBRIS_BC_TEXTURES=missing|force` path intercepts selected BC1–BC5
 image operations and uses the internal `compat/bc_decode.c` compute kernel.
 Format queries and device restrictions follow the same opt-in policy;
 `textureCompressionBC` is not raised. See the [image fallback scope and probes](../../../tests/baseline/bc-images.md)
 and the separate [internal decoder evidence](../../../tests/baseline/bc-decode.md).
-BC4–BC7 and full G07 acceptance remain open.
+BC6–BC7 and full G07 acceptance remain open.

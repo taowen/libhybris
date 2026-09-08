@@ -1,15 +1,15 @@
-# Experimental BC1–BC3 image fallback
+# Experimental BC1–BC5 image fallback
 
 The standard-loader ICD now intercepts application BC image creation, memory
 queries/binding, views, transfers and synchronization. This is a partial G07
-implementation; it does not provide BC4–BC7 or full Vulkan format conformance.
+implementation; it does not provide BC6–BC7 or full Vulkan format conformance.
 The separate [decoder probe](bc-decode.md) still tests only the internal kernel.
 
 ## Policy and supported domain
 
 The default is off. `HYBRIS_BC_TEXTURES=missing` selects BC1 RGB/RGBA, BC2 and
-BC3 UNORM/sRGB formats lacking native optimal sampled-image support. `force`
-selects the same eight formats for development comparisons. Environment options
+BC3 UNORM/sRGB and BC4/BC5 UNORM/SNORM formats lacking native optimal
+sampled-image support. `force` selects the same twelve formats for development comparisons. Environment options
 are ignored in secure execution and read once per process.
 
 The initial fallback requires an application requesting Vulkan 1.1 or newer,
@@ -23,7 +23,7 @@ layers and cube-compatible creation, with sampled/transfer usage. Linear,
 sparse, mutable, storage, attachment, external-memory and host-copy images
 are not advertised. Sparse format and maintenance4 sparse-memory queries return
 no requirements for selected emulated formats. The image-format queries use the corresponding native
-RGBA8 format's limits and restrict sample counts and usages consistently.
+RGBA8, R16 or RG16 format's limits and restrict sample counts and usages consistently.
 Format properties expose only sampled, linear-filter and transfer support.
 `textureCompressionBC` remains false: that feature promises the complete BC
 family, including capabilities this fallback does not implement. Individual
@@ -43,7 +43,7 @@ apply only to the opt-in device with selected emulated formats.
 ## Implementation and resource ownership
 
 Each selected image has a compressed storage/transfer buffer and a native
-RGBA8 image. The compressed backing is bound to the application's allocation;
+decoded image: RGBA8 for BC1–BC3, R16 for BC4, RG16 for BC5. The compressed backing is bound to the application's allocation;
 the decoded image has an internal allocation. Dedicated requirements are
 queried independently. Image memory requirements, dedicated allocation chains,
 BindImageMemory2 device-group indices, and maintenance4's allocation-free memory
@@ -51,9 +51,17 @@ queries are translated to the compressed buffer. Application pNext memory is
 not modified. Multi-physical-device groups remain unsupported in this mode.
 
 Uploads copy compressed bytes on the GPU, then decode bounded tiles into a
-command-buffer scratch buffer and copy those pixels into the RGBA image. sRGB
+command-buffer scratch buffer and copy those pixels into the decoded image. sRGB
 uses an sRGB RGBA image, so sampling performs the native transfer-function
-conversion. Image-to-buffer copies return compressed bytes. Image-to-image
+conversion. BC4/BC5 use integer rational interpolation followed by one rounding
+step to 16-bit UNORM/SNORM; the conversion error is at most half a normalized
+16-bit step. Signed endpoints are saturated from -128 to -127 before comparison.
+The -127/-128 endpoint pair has implementation-dependent ordering in the
+[RGTC specification](https://github.com/KhronosGroup/DataFormat/blob/main/rgtc.txt);
+this implementation selects the saturated, equal-endpoint branch. BC4 packs
+two texels per storage word, zero-padding an odd last texel, then copies into
+an R16 image. Preserving the native channel count is necessary for border
+replacement and missing-component defaults. Image-to-buffer copies return compressed bytes. Image-to-image
 copies transfer those bytes and decode the destination as needed, including
 size-compatible native color formats and 2D-array/3D slice copies. The fallback
 records commands without submitting queues, mapping upload data or waiting for
@@ -77,12 +85,14 @@ The existing scaled-vertex implementation retains its own shader/pipeline hooks.
 `bc-images` uses the existing baseline executable and runner. The application
 creates two BC images plus a size-compatible native UINT image, uploads data,
 copies BC-to-BC and through the native image, samples into an SSBO, and reads
-compressed bytes back. A fourth, native RGBA8 image receives the independent
+compressed bytes back. A fourth, native RGBA8/R16/RG16 image receives the independent
 golden palette pixels and supplies a bit-exact sampling reference. Views cover
-identity components and an R/B swizzle. The fixture has eight formats, 9×7 and 16×16 base
+identity components and an R/B swizzle. The fixture has twelve formats, 9×7 and 32×32 base
 images, four mip levels and three layers. Native-to-BC copies cover only whole
 blocks that fit the destination; partial compressed edge blocks are exercised
-by BC-to-BC copies. The aligned shape also exercises native 3D slices.
+by BC-to-BC copies. The aligned shape also exercises native 3D slices. Its base-level recording
+requires 73 decoder sets across uploads/copies and crosses the 64-set pool
+boundary; it is still far below device image-size or memory limits.
 
 Each case submits the same recording three times with changed host data first
 written after recording. Eligible regions additionally receive a GPU-produced
@@ -97,11 +107,19 @@ Explicit command-buffer reset, pool reset and free/reallocation alternate with
 implicit reset. Classic events are used on both devices; copy2 and
 synchronization2 are conditional on queried/enabled extensions.
 
-All 192 readbacks check sampling, compressed bytes and surrounding sentinels.
-BC sampling must match the native RGBA8 reference bit for bit. The reference
-also matches the fixed UNORM palette exactly; only its sRGB RGB conversion
+All 288 readbacks check sampling, compressed bytes and surrounding sentinels
+across the complete 256 KiB output buffer. BC sampling must match the native
+reference bit for bit. BC4/BC5 sample all four components at 16-bit precision,
+including negative values, default zero/one components and swizzles. The
+reference also matches the fixed nearest-texel palette exactly; only its sRGB RGB conversion
 check allows one 8-bit step against the mathematical transfer function.
-Compressed bytes, alpha, UNORM values and untouched sentinels are exact. Validation modes
+Compressed bytes, alpha, nearest UNORM/SNORM values and untouched sentinels
+are exact. When linear filtering is advertised, BC4/BC5 also sample halfway
+between texel centers, using clamp-to-edge, opaque-white and transparent-black
+borders. These BC/native filtered samples must match bit for bit. The native
+result is separately checked against the four-texel arithmetic average; only
+its interpolated R/G values permit one 16-bit step for filtering/packing
+rounding. Default components remain exact. Validation modes
 cover GIPA/GDPA and the standard loader's exported core ELF/link entry points.
 KHR aliases use GIPA/GDPA because the standard loader does not export those
 aliases as ELF symbols. These modes enable synchronization validation at the
@@ -126,7 +144,7 @@ For Mali use serial `10AFA31610002QH`, HAL `/vendor/lib64/hw/vulkan.mali.so`
 and the explicit `--icd-mali-loader-quirk` flag. Omit `--bc-textures` for the
 native-behavior control; use `missing` for the normal opt-in selection policy.
 
-## Evidence and remaining work
+## Earlier BC1–BC3 evidence
 
 The initial application-path run (`20260908T085934-5ae46145`, Redmi;
 `20260908T085934-e192caea`, Mali) had correct sampled/compressed readbacks but
@@ -143,7 +161,7 @@ symbols. The linked process failed to load, and Mali's dlsym route stopped at
 a missing copy2 alias. The probe now uses the required proc lookup for those
 extension commands. These failed runs remain recorded.
 
-Final build and device results, 2026-09-08:
+BC1–BC3 batch build and device results, 2026-09-08:
 
 | Mode | Redmi 29854870 | Mali 10AFA31610002QH |
 | --- | --- | --- |
@@ -183,9 +201,65 @@ Raw logs, mappings, source snapshots and manifests remain under the listed
 `build/results/` run directories. The evidence is headless, not a window or
 application-rendering acceptance result.
 
-BC4–BC7, signed/float formats, mutable views, general external/sparse/host-copy
+## BC4/BC5 extension evidence, 2026-09-08
+
+The initial extension runs, Redmi `20260908T105656-ea03b016` and Mali
+`20260908T105656-3e95fb9d`, are retained as FAIL: all 288 image and 192 kernel
+readbacks matched with zero validation errors, but the executable's final
+checks still required the old 192/128 counts. The checks now derive their
+expected counts from the format array. That initial implementation also used
+RG16 for BC4; code/specification review identified the channel-count issue
+before adding the border fixture, and BC4 now uses R16. These initial results
+are not evidence for the final packing or border behavior.
+
+The final library clean build took 53.426 seconds, staged 17 runtime ELFs and
+checked 58 installed ELF paths. Both shader assets were regenerated and passed
+SPIR-V validation for Vulkan 1.0. The final glibc/linked/bionic probes use the
+existing glibc builder and NDK 27.3.13750724. All 72 Vulkan C/C++/header/include/
+build-rule inputs and all 84 probe source assets match the current worktree;
+the following six runs retain identical final library and probe manifests.
+
+| Mode | Redmi 29854870 | Mali 10AFA31610002QH |
+| --- | --- | --- |
+| `force`, four BC validation routes plus regressions | `20260908T110839-aba01798`: 8 PASS, 1 UNSUPPORTED | `20260908T110839-e34478ab`: 9 PASS |
+| `missing`, GIPA image validation plus version | `20260908T110900-862debb3`: 2 PASS | `20260908T110901-bf0feccc`: 2 PASS |
+| Default off, native/frontend/ICD controls and kernel regressions | `20260908T110906-e040de4e`: 5 PASS, 3 UNSUPPORTED | `20260908T110907-97f8cbea`: 5 PASS, 3 UNSUPPORTED |
+
+The ten enabled image executions complete 2,880 full-buffer readbacks with
+zero mismatches or validation errors. This includes 960 BC4/BC5 readbacks,
+all also checking linear filtering: 480 use clamp-to-edge, 240 opaque-white
+border, and 240 transparent-black border. There are 1,440 GPU-written
+subregion updates across all twelve formats. The 32×32 base mip crosses the
+internal descriptor-pool boundary in all ten image executions. Mali covers
+48 copy2 and 48 synchronization2 cases per image execution plus maintenance4
+requirements; Redmi does not expose those extensions. Both cover format lists.
+
+The force matrix also enables scaled vertex conversion; its validation case,
+device lifecycle and concurrent initialization regressions pass on both.
+Non-coherent memory-range validation passes on Mali and remains UNSUPPORTED
+on Redmi because no matching host-visible memory type exists. In default-off
+mode, each native/frontend/ICD image probe queries all twelve formats before
+returning UNSUPPORTED; all twelve have zero optimal features and image-query
+FORMAT_NOT_SUPPORTED on these devices. BC6/BC7 format queries remain identical
+and unsupported in every enabled and disabled route. The BC feature flag is
+not raised. The three internal kernel routes per device separately complete
+1,152 readbacks (384 BC4/BC5), with the ICD route under VVL/SyncVal; these are
+kernel evidence, not additional application-image executions.
+
+Final SHA256 values:
+
+- ICD: `435193d74c843adf8ea9ceaa4e7515b4f4fff6c2097f1137b6dbd3097d4ad675`
+- probe-glibc: `6796fe48bf27c92d7dbbb72230820b004d9e0a84040bf22873275da5af3f2df8`
+- probe-glibc-linked: `5d5ccaa4f61420632760e6d84aeac197c1fad061b6512016205725b250196596`
+- probe-bionic: `7620a28088ad4a4e15c7c832eb799861265491205c018380c6a6028ab9efb6d8`
+
+## Remaining scope
+
+BC6–BC7, float compressed formats, mutable views, general external/sparse/host-copy
 resources, excluded state extensions, multi-device groups, all queue-ownership
-and aliasing combinations, cube sampling, allocation-failure stress, large
-resource limits, performance and CTS coverage remain open. Creation support
-or the listed probes must not be read as completion of these requirements or
-of G07 as a whole.
+and aliasing combinations, cube sampling, allocation-failure stress, maximum
+resource limits, performance and CTS coverage remain open. The 32×32 case
+covers descriptor-pool rollover, not general large-image limits. BC1 RGB's
+RGBA backing also still requires work for border/default-alpha semantics;
+the new single/two-channel border checks cover only BC4/BC5. Creation support
+or these probes must not be read as completion of G07 as a whole.

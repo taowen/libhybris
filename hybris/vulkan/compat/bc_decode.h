@@ -4,6 +4,8 @@
 #include <vulkan/vulkan.h>
 
 /* Internal GPU kernel, not an advertisement of Vulkan compressed-image support.
+ * Output is RGBA8 for BC1-3, R16 UNORM/SNORM for BC4, RG16 for BC5.
+ * BC4 writes pairs of texels per uint32; an odd final texel has zero padding.
  * Source/destination are non-overlapping storage-buffer descriptor ranges.
  * Offsets below are relative to those ranges, not to bound device memory.
  * The caller owns buffers/descriptors and their synchronization/lifetime.
@@ -33,7 +35,7 @@ VkResult hybris_bc_decoder_create(VkDevice device, PFN_vkGetDeviceProcAddr resol
 void hybris_bc_decoder_destroy(struct hybris_bc_decoder *decoder,
     const VkAllocationCallbacks *allocator);
 /* Checks all arithmetic, range and dispatch bounds before recording anything.
- * BC4-7 return FORMAT_NOT_SUPPORTED. Invalid internal regions return
+ * BC6-7 return FORMAT_NOT_SUPPORTED. Invalid internal regions return
  * INITIALIZATION_FAILED. This API does not validate application Vulkan usage. */
 VkResult hybris_bc_prepare(const struct hybris_bc_region *region,
     const VkPhysicalDeviceLimits *limits, struct hybris_bc_push *push);

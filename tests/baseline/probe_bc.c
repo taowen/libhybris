@@ -125,8 +125,8 @@ int bc_decode_probe(int validate)
     VkFence fence;
     CHECK(p_vkCreateFence(device, &fi, NULL, &fence));
     unsigned failures = 0, readbacks = 0;
-    for (unsigned format = 0; format < 8; ++format) {
-        unsigned mode = format / 2;
+    for (unsigned format = 0; format < BC_FORMAT_COUNT; ++format) {
+        unsigned mode = bc_mode(format);
         for (unsigned shape = 0; shape < 4; ++shape) {
             const uint32_t shapes[4][5] = {{4, 4, 1, 0, 0}, {9, 7, 3, 16, 12},
                                          {1, 1, 2, 0, 0}, {129, 5, 2, 144, 12}};
@@ -172,7 +172,7 @@ int bc_decode_probe(int validate)
                             VkPhysicalDeviceLimits invalid_limits = limits;
                             VkResult wanted = VK_ERROR_INITIALIZATION_FAILED;
                             switch (rejection) {
-                            case 0: invalid.format = VK_FORMAT_BC4_UNORM_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
+                            case 0: invalid.format = VK_FORMAT_BC6H_UFLOAT_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
                             case 1: invalid.format = VK_FORMAT_BC7_UNORM_BLOCK; wanted = VK_ERROR_FORMAT_NOT_SUPPORTED; break;
                             case 2: invalid.source_range = invalid.source_offset + 7; break;
                             case 3: invalid.destination_range = invalid.destination_offset + 63; break;
@@ -216,12 +216,20 @@ int bc_decode_probe(int validate)
                 unsigned pixels = region.width * region.height * region.layers, bad = 0;
                 for (unsigned word = 0; word < BYTES / 4; ++word) {
                     uint32_t expected = 0xcdcdcdcd;
-                    if (word >= 5 && word < 5 + pixels) {
-                        unsigned pixel = word - 5, x = pixel % region.width;
-                        unsigned y = pixel / region.width % region.height;
-                        unsigned z = pixel / (region.width * region.height);
-                        expected = gpu_write ? (mode < 2 ? 0xff000000 : 0) :
-                            bc_golden(mode, bc_variant(x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
+                    unsigned packed = mode == 4 || mode == 5;
+                    unsigned words = packed ? (pixels + 1) / 2 : pixels;
+                    if (word >= 5 && word < 5 + words) {
+                        expected = 0;
+                        for (unsigned part = 0; part < (packed ? 2 : 1); ++part) {
+                            unsigned pixel = (word - 5) * (packed ? 2 : 1) + part;
+                            if (pixel >= pixels) break;
+                            unsigned x = pixel % region.width;
+                            unsigned y = pixel / region.width % region.height;
+                            unsigned z = pixel / (region.width * region.height);
+                            uint32_t value = gpu_write ? (mode < 2 ? 0xff000000 : 0) :
+                                bc_golden(mode, bc_variant(mode, x / 4, y / 4, z, round), (y & 3) * 4 + (x & 3), round);
+                            expected |= value << (16 * part);
+                        }
                     }
                     if (actual[word] != expected) {
                         if (bad < 2) printf("BC_MISMATCH word=%u actual=%08x expected=%08x\n", word, actual[word], expected);
@@ -249,7 +257,7 @@ int bc_decode_probe(int validate)
     if (destroy_messenger) destroy_messenger(instance, messenger, NULL);
     p_vkDestroyInstance(instance, NULL);
     dlclose(h);
-    printf("BC_DECODE_SUMMARY formats=8 readbacks=%u failures=%u validation_errors=%u image_interception=0\n",
+    printf("BC_DECODE_SUMMARY formats=12 readbacks=%u failures=%u validation_errors=%u image_interception=0\n",
         readbacks, failures, validation.errors);
-    return failures || validation.errors || readbacks != 128 ? 2 : 0;
+    return failures || validation.errors || readbacks != BC_FORMAT_COUNT * 4 * 4 ? 2 : 0;
 }

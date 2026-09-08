@@ -88,8 +88,8 @@ fails conversion. Old/new Adreno runs use identical probe binaries, and Mali
 native/forced controls pass. Ambiguous operand layouts remain conservative.
 This is an experimental shader/pipeline subset: G07/G08 remain open,
 including general interfaces, dynamic vertex input, shader objects and graphics
-pipeline libraries. A default-off [BC1–BC3 image subset](tests/baseline/bc-images.md)
-is now connected to the ICD. BC4–BC7, the remaining image semantics,
+pipeline libraries. A default-off [BC1–BC5 image subset](tests/baseline/bc-images.md)
+is now connected to the ICD. BC6–BC7, the remaining image semantics,
 clip/cull/point-size and software timeline patches remain open. Full boundaries and evidence are in the ICD and baseline
 READMEs. Mesa remains unmodified upstream; this code connects vendor drivers.
 
@@ -282,7 +282,7 @@ it does not provide slot reclamation, IE first-touch or signal reentrancy.
 | G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Fixed headless widget capture/replay now matches all RGBA bytes. The ICD Wayland window probe now also passes Khronos VVL+SyncVal create/render/resize/retirement/destroy and GFXReconstruct virtual-swapchain copy dumps on OnePlus 8T and Mali; still need arbitrary application coverage. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
 | G06 | Partial | Associate an injected wrong binding with the first wrong draw and effective descriptor/resource generation. |
-| G07 | Open | Default-off BC1–BC3 image operations now have independent RGBA8 sampling/byte references, mip/layer/subregion and retirement probes. BC4–BC7 and complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
+| G07 | Open | Default-off BC1–BC5 image operations have independent native sampling/byte references, mip/layer/subregion and retirement probes. BC4/BC5 include UNORM16/SNORM16 sampling, filtering and border/default-channel checks. BC6–BC7 and complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
 | G08 | Open | Fixed SPIR-V tooling, reflection/hash/specialization records, before/after semantic evidence for each transform. |
 | G09 | Open | Noncoherent/staging/reuse and queue ordering cases; validate emulation against completion and memory visibility. |
 | G10 | Open | Fixed Mesa/Zink revision and GL target-profile requirements; GL workload results with backend attribution. |
@@ -988,3 +988,23 @@ native unsupported BC behavior. One Redmi non-coherent-memory case remains
 UNSUPPORTED. Source/build hashes, exact runs and preserved probe failures are
 in [the BC image record](tests/baseline/bc-images.md). BC4–BC7, remaining image
 semantics, large-resource/performance and CTS gates remain open; G07 is not closed.
+
+
+## BC4/BC5 image extension (2026-09-08)
+
+The opt-in BC fallback now decodes BC4/BC5 UNORM/SNORM with normalized
+16-bit precision, using R16 and RG16 images to preserve channel defaults.
+BC4 packs pairs of texels into storage words, including odd rows/layers and
+final padding. No CPU upload decoding or implicit queue submission is added.
+Native/effective format queries retain BC6/BC7 behavior and the BC feature
+flag remains false.
+
+The existing probes now check twelve formats, 32×32 descriptor-pool rollover,
+negative endpoints, independent R/G values, linear filtering and border/default
+components. Final force/four-entry and missing runs on Redmi/Mali have 2,880
+complete image readbacks (960 BC4/BC5), zero mismatches and zero validation
+errors. Default-off native/frontend/ICD kernel routes separately have 1,152
+readbacks. Build hashes, all six run IDs and the initial stale-count failure
+are in [the image evidence](tests/baseline/bc-images.md#bc4bc5-extension-evidence-2026-09-08).
+BC1 RGB border semantics, BC6/BC7, remaining views/copies/aliasing, multi-queue,
+maximum limits, performance and CTS keep G07 open.

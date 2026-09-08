@@ -5,10 +5,10 @@ run on the same Android device.
 No APK, root, rootfs, compositor, X server, or CTS download is needed at runtime.
 This is a smoke test, not conformance certification or application compatibility coverage.
 
-The internal [BC1–BC3 GPU decoder probe](bc-decode.md) checks block bytes and
+The internal [BC1–BC5 GPU decoder probe](bc-decode.md) checks block bytes and
 execution-time uploads. The separate, default-off [BC image fallback and probe](bc-images.md)
 cover application images, queries, views, copies, sampling and command-state
-retirement. This remains a restricted G07 subset, with BC4–BC7 unimplemented.
+retirement. This remains a restricted G07 subset, with BC6–BC7 unimplemented.
 
 GLES 3 probes also report per-stage SSBO/image limits and vertex sampler/UBO
 limits when the actual context supports GLES 3.1. Each `GLES_LIMIT` includes its

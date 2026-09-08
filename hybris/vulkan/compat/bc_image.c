@@ -14,6 +14,14 @@ VkFormat hybris_bc_image_format(VkFormat format)
     case VK_FORMAT_BC1_RGB_SRGB_BLOCK: case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
     case VK_FORMAT_BC2_SRGB_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK:
         return VK_FORMAT_R8G8B8A8_SRGB;
+    case VK_FORMAT_BC4_UNORM_BLOCK:
+        return VK_FORMAT_R16_UNORM;
+    case VK_FORMAT_BC4_SNORM_BLOCK:
+        return VK_FORMAT_R16_SNORM;
+    case VK_FORMAT_BC5_UNORM_BLOCK:
+        return VK_FORMAT_R16G16_UNORM;
+    case VK_FORMAT_BC5_SNORM_BLOCK:
+        return VK_FORMAT_R16G16_SNORM;
     default: return VK_FORMAT_UNDEFINED;
     }
 }
@@ -86,7 +94,8 @@ VkResult hybris_bc_image_describe(const VkImageCreateInfo *info, struct hybris_b
     image->extent = info->extent;
     image->mip_levels = info->mipLevels;
     image->layers = info->arrayLayers;
-    image->block_bytes = info->format <= VK_FORMAT_BC1_RGBA_SRGB_BLOCK ? 8 : 16;
+    image->block_bytes = info->format <= VK_FORMAT_BC1_RGBA_SRGB_BLOCK ||
+        info->format == VK_FORMAT_BC4_UNORM_BLOCK || info->format == VK_FORMAT_BC4_SNORM_BLOCK ? 8 : 16;
     for (uint32_t mip = 0; mip < info->mipLevels; ++mip) {
         image->mip_offset[mip] = image->block_size;
         VkExtent3D extent = hybris_bc_image_extent(image, mip);
