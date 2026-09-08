@@ -24,11 +24,13 @@ p.add_argument('--profile',choices=['core32','compat32','core33'],default='core3
 p.add_argument('--display',help='X11 DISPLAY for GLX; omit for surfaceless EGL')
 p.add_argument('--vertex-prepass',action='store_true',help='exercise explicit compute vertex prepass feasibility workload')
 p.add_argument('--vertex-draws',action='store_true',help='run ordinary procedural, attribute, indexed and multidraw GL cases')
+p.add_argument('--capture-tools',type=Path,help='pinned GFXReconstruct install; records Vulkan calls, separately from validation')
 p.add_argument('--validation-layer',type=Path,help='glibc AArch64 Khronos validation layer')
 p.add_argument('--validation-manifest',type=Path,help='matching original validation JSON')
 a=p.parse_args()
 if a.backend=='hybris' and not a.hal:p.error('--hal is required for hybris')
 if a.backend=='turnip' and (a.hal or a.mali_loader_quirk):p.error('Turnip does not use a vendor HAL or Mali loader quirk')
+if a.capture_tools and a.validation_layer:p.error('capture and validation require separate runs with the pinned tools')
 if bool(a.validation_layer)!=bool(a.validation_manifest):p.error('provide both validation layer and manifest')
 if not re.fullmatch(r'\d+\.\d+\.\d+',a.api_version):p.error('invalid API version')
 root=Path(__file__).resolve().parents[2]
@@ -48,6 +50,14 @@ for name,digest in manifest['runtime'].items():
 out=build/'results'/(time.strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8]);out.mkdir(parents=True)
 stage=out/'stage';stage.mkdir()
 shutil.copytree(build/'runtime',stage/'runtime')
+capture_metadata={}
+if a.capture_tools:
+    from capture_stage import stage_tools
+    stage_tools(a.capture_tools,stage,capture_metadata,sha)
+    capture_metadata['capture_evidence_sha256']={
+        'capture.py':sha(Path(__file__).with_name('capture.py')),
+        'vertex_capture.py':sha(Path(__file__).with_name('vertex_capture.py')),
+        'capture_stage.py':sha(root/'tools/capture_stage.py')}
 if a.backend=='hybris':
     shutil.copytree(baseline/'install/usr/lib/hybris',stage/'hybris',symlinks=True)
     # The ICD has dependencies beyond Mesa's closure (for example wayland-egl).
@@ -90,9 +100,14 @@ if a.display:
                LIBGL_DRIVERS_PATH=remote+'/runtime/dri')
 if a.mali_loader_quirk:env['HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK']='1'
 if a.packed_vertex:env['HYBRIS_VULKAN_COMPAT_PACKED_VERTEX']=a.packed_vertex
-command='env '+' '.join(k+'='+shlex.quote(v) for k,v in env.items())+' ./runtime/ld-linux-aarch64.so.1 --library-path ./runtime:./hybris ./probe '+a.profile
+if a.capture_tools:
+    env.update(VK_LAYER_PATH=remote+'/capture-tools',VK_INSTANCE_LAYERS='VK_LAYER_LUNARG_gfxreconstruct',
+               GFXRECON_CAPTURE_FILE=remote+'/desktop.gfxr',GFXRECON_CAPTURE_FILE_TIMESTAMP='false')
+library_path='./runtime:./hybris'+(':./capture-tools:./capture-tools/runtime' if a.capture_tools else '')
+command='env '+' '.join(k+'='+shlex.quote(v) for k,v in env.items())+' ./runtime/ld-linux-aarch64.so.1 --library-path '+library_path+' ./probe '+a.profile
 record={'backend':a.backend,'serial':a.serial,'command':command,'mesa':manifest,'hybris':hybris_manifest,
  'staged_elf_sha256':{str(x.relative_to(stage)):sha(x) for x in stage.rglob('*') if x.is_file()},'runner_sha256':sha(Path(__file__))}
+record.update(capture_metadata)
 archive=out/'stage.tar'
 with tarfile.open(archive,'w') as t:t.add(stage,arcname='.')
 code=2
@@ -114,9 +129,18 @@ try:
     for name in artifacts:
         r=shell('cat '+shlex.quote(remote+'/'+name),capture_output=True)
         if not r.returncode:(out/name).write_bytes(r.stdout)
+    record['probe_exit_code']=code
+    if a.capture_tools:
+        from capture import collect_capture
+        try:
+            record['capture']=collect_capture(shell,remote,out,library_path,sha)
+        except (OSError,ValueError,subprocess.SubprocessError) as error:
+            record['capture']={'status':'FAIL','error':str(error)}
+            if code==0:code=2
 finally:
-    script='cd '+shlex.quote(remote)+' || exit; p=$(cat runner.pid); case "$p" in ""|*[!0-9]*) exit;; esac; [ "$(readlink /proc/$p/cwd)" = '+shlex.quote(remote)+' ] && kill -KILL "$p"; true'
-    shell('sh -c '+shlex.quote(script),capture_output=True)
+    for pidfile in ('runner.pid','capture-tool.pid'):
+        script='cd '+shlex.quote(remote)+' || exit; p=$(cat '+pidfile+'); case "$p" in ""|*[!0-9]*) exit;; esac; [ "$(readlink /proc/$p/cwd)" = '+shlex.quote(remote)+' ] && kill -KILL "$p"; true'
+        shell('sh -c '+shlex.quote(script),capture_output=True)
     shell('rm -rf '+shlex.quote(remote),check=True)
 if code==0:
     try:

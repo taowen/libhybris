@@ -98,3 +98,10 @@ pixels; phases 0, 2 and 8 pass. The probe stops there, so multidraw, indexed,
 resource-budget and procedural cases are not executed. Vertex SSBO limit is
 still zero (fragment/compute are 16 each). This expanded run is **FAIL** and its
 remaining errors are not closed by the divisor-properties correction.
+
+
+[Standard capture of the expanded workload](../desktop-gl/capture.md) now retains
+the recorded pipeline/binding state and queue-submit references. Four failing
+direct draws use divisor=2 with firstInstance=5 despite Mali's false KHR
+nonzero-firstInstance property. Four indirect argument buffers still require
+decoding. This is diagnostic evidence; the expanded workload remains failing.

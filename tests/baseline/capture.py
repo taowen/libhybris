@@ -2,7 +2,6 @@
 import json
 import hashlib
 import shlex
-import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -11,35 +10,13 @@ from shader_evidence import check_pipeline
 
 
 def stage_tools(install, stage, metadata, sha256):
-    provenance = json.loads((install / 'manifest.json').read_text())
-    for name, expected in provenance['files'].items():
-        if sha256(install / name) != expected:
-            raise ValueError('capture tool manifest mismatch: ' + name)
-    metadata['capture_build'] = provenance
+    from capture_stage import stage_tools as stage_capture_tools
+    stage_capture_tools(install, stage, metadata, sha256)
     here = Path(__file__).resolve().parent
     metadata['capture_evidence_sha256'] = {
         name: sha256(here / name) for name in (
             'run.py', 'capture.py', 'draw_evidence.py', 'descriptor_evidence.py',
             'shader_evidence.py', 'attachment_evidence.py')}
-
-    dest = stage / 'capture-tools'
-    dest.mkdir()
-    for name in ('gfxrecon-replay', 'gfxrecon-convert'):
-        shutil.copy2(install / 'bin' / name, dest / name)
-    layers = list(install.glob('lib*/**/libVkLayer_gfxreconstruct.so'))
-    if len(layers) != 1:
-        raise ValueError('expected one installed GFXReconstruct layer')
-    shutil.copy2(layers[0], dest / layers[0].name)
-    shutil.copytree(install / 'runtime', dest / 'runtime')
-    original = install / 'share/vulkan/explicit_layer.d/VkLayer_gfxreconstruct.json'
-    manifest = json.loads(original.read_text())
-    if manifest['layer']['name'] != 'VK_LAYER_LUNARG_gfxreconstruct':
-        raise ValueError('unexpected capture layer name')
-    manifest['layer']['library_path'] = './libVkLayer_gfxreconstruct.so'
-    (dest / 'capture.json').write_text(json.dumps(manifest))
-    metadata['capture_tools'] = {
-        str(path.relative_to(dest)): sha256(path)
-        for path in dest.rglob('*') if path.is_file()}
 
 
 def run_capture(shell, adb, remote, out, command, metadata, kill_remote, dynamic=False, multi=False):

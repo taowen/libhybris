@@ -54,6 +54,9 @@ build. The build reconfigures existing objects, installs into a fresh staging
 tree and collects transitive ELF dependencies, including the standard Vulkan
 loader. Do not run simultaneous builds in the same output directory.
 
+`--capture-tools` saves the Vulkan capture and a vertex-state index, including
+failed GL runs. See [capture usage, device evidence and limits](capture.md).
+
 `--vertex-draws` exercises ordinary GL attribute, indexed, multidraw and resource
 cases. `--vertex-prepass` is the existing explicit application compute fixture;
 it does not convert arbitrary vertex shaders or enable a private driver mode.
