@@ -103,5 +103,7 @@ remaining errors are not closed by the divisor-properties correction.
 [Standard capture of the expanded workload](../desktop-gl/capture.md) now retains
 the recorded pipeline/binding state and queue-submit references. Four failing
 direct draws use divisor=2 with firstInstance=5 despite Mali's false KHR
-nonzero-firstInstance property. Four indirect argument buffers still require
-decoding. This is diagnostic evidence; the expanded workload remains failing.
+nonzero-firstInstance property. The four indirect draws now also have captured CPU-upload candidates with
+firstInstance=5, linked through recorded copies and memory bindings. These are
+not observed GPU argument contents or actual draw counts. This is diagnostic
+evidence; the expanded workload remains failing.

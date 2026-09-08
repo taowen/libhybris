@@ -57,6 +57,8 @@ if a.capture_tools:
     capture_metadata['capture_evidence_sha256']={
         'capture.py':sha(Path(__file__).with_name('capture.py')),
         'vertex_capture.py':sha(Path(__file__).with_name('vertex_capture.py')),
+        'capture_files.py':sha(Path(__file__).with_name('capture_files.py')),
+        'indirect_uploads.py':sha(Path(__file__).with_name('indirect_uploads.py')),
         'capture_stage.py':sha(root/'tools/capture_stage.py')}
 if a.backend=='hybris':
     shutil.copytree(baseline/'install/usr/lib/hybris',stage/'hybris',symlinks=True)
