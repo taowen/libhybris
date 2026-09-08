@@ -46,9 +46,10 @@ Build a validation layer with the missing iterator advance fixed:
 tools/build-validation-layer.sh
 ```
 
-The script pins VVL and its five build dependencies, applies the two-line
-SPIRV-Tools patch, and builds AArch64 with the repository's fixed container
-recipe. No validation rules are changed. Select its outputs explicitly:
+The script pins VVL and its five build dependencies, including the
+[SPIRV-Tools fork](../../docs/tool-forks.md) with the two-line fix committed
+as `94043c878ff46fc2d7d48084696ef5fb02f5e3ea`, and builds AArch64 with the
+repository's fixed container recipe. No build-time patch is applied. No validation rules are changed. Select its outputs explicitly:
 
 ```sh
 python3 tests/baseline/run.py --serial SERIAL --icd-hal HAL \

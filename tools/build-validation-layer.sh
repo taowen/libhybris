@@ -29,10 +29,9 @@ Vulkan-ValidationLayers https://github.com/KhronosGroup/Vulkan-ValidationLayers.
 Vulkan-Headers https://github.com/KhronosGroup/Vulkan-Headers.git 691fa560c8a27d1255fa97e350a04cdca676e772
 Vulkan-Utility-Libraries https://github.com/KhronosGroup/Vulkan-Utility-Libraries.git 50563f48368d75281bc2fb1c3407dc531ce28910
 SPIRV-Headers https://github.com/KhronosGroup/SPIRV-Headers.git 09913f088a1197aba4aefd300a876b2ebbaa3391
-SPIRV-Tools https://github.com/KhronosGroup/SPIRV-Tools.git f289d047f49fb60488301ec62bafab85573668cc
+SPIRV-Tools https://github.com/taowen/SPIRV-Tools.git 94043c878ff46fc2d7d48084696ef5fb02f5e3ea
 robin-hood-hashing https://github.com/martinus/robin-hood-hashing.git 9145f963d80d6a02f0f96a47758050a89184a3ed
 SOURCES
-patch --directory="$out/src/SPIRV-Tools" -p1 --fuzz=0 < "$root/tools/patches/spirv-tools-flatten-debug-iterator.patch"
 python3 - "$out" "$root" <<'INPUTS'
 import json
 from pathlib import Path
@@ -93,7 +92,6 @@ manifest['source_inputs_sha256'] = sha(out / 'source-inputs.json')
 manifest['source_tree_sha256'] = {name: item['sha256'] for name, item in json.loads((out / 'source-inputs.json').read_text()).items()}
 manifest['input_fingerprint_script_sha256'] = sha(root / 'tools/build_inputs.py')
 manifest['container_recipe_sha256'] = sha(root / 'tools/container/Containerfile.capture')
-manifest['patch_sha256'] = sha(root / 'tools/patches/spirv-tools-flatten-debug-iterator.patch')
 manifest['build_script_sha256'] = sha(root / 'tools/build-validation-layer.sh')
 manifest['builder_packages_sha256'] = sha(out / 'builder-packages.txt')
 manifest['cmake_cache_sha256'] = {str(p.relative_to(out)): sha(p) for p in (out / 'build').glob('*/CMakeCache.txt')}

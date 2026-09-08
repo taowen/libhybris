@@ -3,36 +3,26 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${1:-$root/tests/baseline/build/gfxreconstruct}"
-revision=c2ff0eecc7a7f43aa236a5c98097a685b928b782
+repository=https://github.com/taowen/gfxreconstruct.git
+revision=e6865bedad471a7ffaada05b6b18b29d77da36ee
 engine="${CONTAINER_ENGINE:-podman}"
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 exec 9>"$out/.build.lock"
 flock -n 9 || { echo "capture build already active: $out" >&2; exit 2; }
 src="$out/source"
-patch_file="$root/tools/patches/gfxreconstruct-empty-submit.patch"
 if [[ ! -d "$src/.git" ]]; then
     git init -q "$src"
-    git -C "$src" remote add origin https://github.com/LunarG/gfxreconstruct.git
+    git -C "$src" remote add origin "$repository"
+fi
+if [[ -n "$(git -C "$src" status --porcelain)" ]]; then
+    echo "capture source has local changes; commit them in the fork before updating the pinned revision: $src" >&2
+    exit 2
 fi
 if ! git -C "$src" cat-file -e "$revision^{commit}" 2>/dev/null; then
-    git -C "$src" fetch --depth=1 origin "$revision"
+    git -C "$src" fetch --depth=1 "$repository" "$revision"
 fi
-# Only the exact repository patch is accepted in a previously built checkout.
-# Reject additional changes, including staged edits or dirty submodules.
-git -C "$src" diff --binary > "$out/source.patch"
-if ! git -C "$src" diff --cached --quiet; then
-    echo "capture source has staged changes: $src" >&2; exit 2
-fi
-if [[ -s "$out/source.patch" ]]; then
-    if [[ "$(git -C "$src" rev-parse HEAD)" != "$revision" ]] || ! cmp -s "$out/source.patch" "$patch_file"; then
-        echo "capture source has unexpected local changes: $src" >&2; exit 2
-    fi
-else
-    git -C "$src" checkout --detach "$revision"
-    git -C "$src" apply --check "$patch_file"
-    git -C "$src" apply "$patch_file"
-fi
+git -C "$src" checkout --detach "$revision"
 git -C "$src" submodule update --init --depth=1 \
     external/Vulkan-Headers external/SPIRV-Headers external/SPIRV-Reflect
 python3 - "$src" "$out" "$root" <<'INPUTS'
@@ -80,6 +70,7 @@ aarch64-linux-gnu-g++ --version > /work/compiler.txt
 git -C "$src" submodule status > "$out/submodules.txt"
 "$engine" image inspect --format '{{.Id}}' "$image" > "$out/builder-image.txt"
 printf '%s\n' "$revision" > "$out/source-revision.txt"
+printf '%s\n' "$repository" > "$out/source-repository.txt"
 python3 - "$out" "$root" <<'PY'
 import hashlib
 import json
@@ -89,13 +80,12 @@ root = pathlib.Path(sys.argv[1])
 install = root / 'install'
 digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
 manifest = {name: (root / name).read_text() for name in
-            ('source-revision.txt', 'submodules.txt', 'builder-image.txt')}
+            ('source-repository.txt', 'source-revision.txt', 'submodules.txt', 'builder-image.txt')}
 repository = pathlib.Path(sys.argv[2])
 manifest['compiler'] = (root / 'compiler.txt').read_text()
 manifest['source_tree_sha256'] = json.loads((root / 'source-inputs.json').read_text())['sha256']
 manifest['source_inputs_sha256'] = digest(root / 'source-inputs.json')
 manifest['input_fingerprint_script_sha256'] = digest(repository / 'tools/build_inputs.py')
-manifest['patch_sha256'] = digest(repository / 'tools/patches/gfxreconstruct-empty-submit.patch')
 manifest['build_script_sha256'] = digest(repository / 'tools/build-capture-tools.sh')
 manifest['container_recipe_sha256'] = digest(repository / 'tools/container/Containerfile.capture')
 manifest['cmake_cache_sha256'] = digest(root / 'build/CMakeCache.txt')

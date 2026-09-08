@@ -150,7 +150,7 @@ buffers while dumping resources. Zink uses a trailing empty submit to signal
 its timeline semaphore. The missing signal blocked the next wait: manual lazy
 capture `20260908T171021-c9642933` completed replay without resource dumping,
 but timed out after 60 seconds with dumping, leaving only its first readback.
-The [build-time patch](../../tools/patches/README.md) preserves that original
+The [fork commit](https://github.com/taowen/gfxreconstruct/commit/e6865bedad471a7ffaada05b6b18b29d77da36ee) preserves that original
 submit's semaphore/fence work. Replaying the **same capture** with the patched
 tool completed all 27 readbacks and matched all 15 saved images. This comparison
 used the pre-consolidation runtime saved with that capture; subsequent runs use
@@ -190,3 +190,11 @@ libhybris clean build used `734ec73` and
 Shell syntax, Python compilation and actual helper hashes recorded in the
 final runs were checked. Earlier manual commands, failed logs and partial
 outputs remain under the source captures' `capture/replay-attempts/`.
+
+
+The current builder uses `taowen/gfxreconstruct` at
+`e6865bedad471a7ffaada05b6b18b29d77da36ee` directly. The comparisons above
+predate the fork migration and retain their original build identities.
+The empty-submit change is now a normal fork commit; the builder applies no
+patch. New manifests record `source-repository.txt` and `source-revision.txt`
+alongside the actual source-tree and installed-file hashes.

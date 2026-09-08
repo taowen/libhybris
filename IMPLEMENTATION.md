@@ -37,12 +37,22 @@ headless regressions on both. No Mesa or anlabwc modification was needed.
 fixed-size rootful single-window scope. G11 remains open for resize/out-of-date,
 rootless/multiwindow, disconnect recovery and longer lifetime coverage.
 
+## Maintained dependency forks (2026-09-08)
+
+GFXReconstruct's empty-submit fix and SPIRV-Tools' debug-iterator fix now live
+in `taowen/gfxreconstruct` and `taowen/SPIRV-Tools`, both on branch `ardesk`.
+Builders pin their fork commits directly; the two build-time patches have
+been removed. Both AArch64 builds and the applicable Redmi/Mali capture and
+validation regressions pass. [Fork pins and exact migration checks](docs/tool-forks.md)
+retain replay comparison limits and the known unresolved failures.
+
 ## Current Mesa dependency
 
 The independent desktop-GL probes below use unmodified upstream `c3b008c1`,
-with Zink and Turnip. Ardesk's product build additionally applies its own
-`tools/patches/mesa-ardesk-wsi.patch` to a derived Mesa source tree; that product
-handoff is in Ardesk's `docs/GRAPHICS_CONSOLIDATION.md`. Both use this libhybris
+with Zink and Turnip. Ardesk's product build uses the `taowen/mesa` fork's
+`ardesk-wsi` branch at `980c6429e6cb83cb0c394ecad558211f63eab6db`, based on
+that same upstream commit with the shared WSI changes committed directly.
+The product handoff is in Ardesk's `docs/GRAPHICS_CONSOLIDATION.md`. Both use this libhybris
 repository. Since `734ec73`, Ardesk's `protocols/` is the sole wire-contract
 source, selected for standalone builds by `ARDESK_WSI_PROTOCOL_DIR`. Window
 regressions attach to the running Ardesk (`io.taowen.ardesk`, X display `:1`).
