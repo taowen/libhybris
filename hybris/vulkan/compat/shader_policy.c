@@ -5,6 +5,7 @@
 #include "bc_policy.h"
 #include "../icd/wsi.h"
 #include <string.h>
+#include <stdlib.h>
 
 /* Static vertex conversion cannot select a shader from command-time vertex
  * formats or independently compiled graphics libraries/shader objects. Keep
@@ -82,9 +83,50 @@ static void VKAPI_CALL features2_core(VkPhysicalDevice physical, VkPhysicalDevic
 { features2(physical, out, "vkGetPhysicalDeviceFeatures2"); }
 static void VKAPI_CALL features2_khr(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out)
 { features2(physical, out, "vkGetPhysicalDeviceFeatures2KHR"); }
+/* KHR promotion added supportsNonZeroFirstInstance and a distinct properties
+ * sType. Some clients enable KHR but still request the old EXT max field. On
+ * KHR-only drivers, supply that field from its real KHR value without exposing
+ * EXT or promising EXT's nonzero-firstInstance behavior. */
+static void properties2(VkPhysicalDevice physical, VkPhysicalDeviceProperties2 *out, const char *name)
+{
+    struct hybris_icd_physical context;
+    if (!hybris_icd_lookup_physical(physical, &context)) return;
+    PFN_vkGetPhysicalDeviceProperties2 query = (PFN_vkGetPhysicalDeviceProperties2)context.resolver(context.instance, name);
+    query(physical, out);
+    VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT *legacy = NULL;
+    for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext)
+        if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT)
+            legacy = (void *)node;
+    if (!legacy || legacy->maxVertexAttribDivisor || !hybris_shader_physical_mask(physical)) return;
+    PFN_vkEnumerateDeviceExtensionProperties enumerate = (PFN_vkEnumerateDeviceExtensionProperties)
+        context.resolver(context.instance, "vkEnumerateDeviceExtensionProperties");
+    uint32_t count = 0;
+    if (enumerate(physical, NULL, &count, NULL) != VK_SUCCESS || !count) return;
+    VkExtensionProperties *extensions = calloc(count, sizeof(*extensions));
+    if (!extensions) return;
+    int khr = 0, ext = 0;
+    if (enumerate(physical, NULL, &count, extensions) == VK_SUCCESS)
+        for (uint32_t j = 0; j < count; ++j) {
+            khr |= !strcmp(extensions[j].extensionName, VK_KHR_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME);
+            ext |= !strcmp(extensions[j].extensionName, VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME);
+        }
+    free(extensions);
+    if (!khr || ext) return;
+    VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR divisor = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_KHR};
+    VkPhysicalDeviceProperties2 native = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &divisor};
+    query(physical, &native);
+    legacy->maxVertexAttribDivisor = divisor.maxVertexAttribDivisor;
+}
+static void VKAPI_CALL properties2_core(VkPhysicalDevice physical, VkPhysicalDeviceProperties2 *out)
+{ properties2(physical, out, "vkGetPhysicalDeviceProperties2"); }
+static void VKAPI_CALL properties2_khr(VkPhysicalDevice physical, VkPhysicalDeviceProperties2 *out)
+{ properties2(physical, out, "vkGetPhysicalDeviceProperties2KHR"); }
 PFN_vkVoidFunction hybris_shader_policy_proc(const char *name)
 {
     if (!hybris_scaled_enabled()) return NULL;
+    if (!strcmp(name, "vkGetPhysicalDeviceProperties2")) return (PFN_vkVoidFunction)properties2_core;
+    if (!strcmp(name, "vkGetPhysicalDeviceProperties2KHR")) return (PFN_vkVoidFunction)properties2_khr;
     if (!strcmp(name, "vkGetPhysicalDeviceFeatures2")) return (PFN_vkVoidFunction)features2_core;
     if (!strcmp(name, "vkGetPhysicalDeviceFeatures2KHR")) return (PFN_vkVoidFunction)features2_khr;
     return NULL;

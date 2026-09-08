@@ -900,6 +900,8 @@ clip/cull、PointSize 以及不明确的结构/指针形式保持原样，不提
 vec4、负对照、实际 SPIR-V 审计及既有 scaled 聚合回归通过。Mali 原生 A2R
 不支持，未把其 native 控制组记作该格式通过。官方 Mesa 已能创建 GL 3.3
 上下文。后续静态转换能力策略使应用选择静态管线，divisor=1 绘制通过，
-divisor=2 仍失败；边界诊断观察到缺少 divisor 状态，具体丢失位置未确定。
+divisor=2 曾失败。现确认 Zink 的旧 EXT 属性查询在 KHR-only Mali 上得到零
+最大值，导致 divisor 被截为零；按原生 KHR 最大值补足该旧查询后，十二幅
+packed 图像和主绘制均通过 VVL/SyncVal，未改 Mesa 或新增 EXT 宣告。
 独立 Vulkan 动态 stride + divisor=1/2/3 在 Mali 通过，Adreno 缺少对应动态
-扩展，不能替代 GL 验收。详见 [结果与未覆盖项](tests/baseline/packed-vertex.md)。
+扩展；这些固定离屏结果不代表完整 GL、窗口或所有实例化语义验收。详见 [结果与未覆盖项](tests/baseline/packed-vertex.md)。

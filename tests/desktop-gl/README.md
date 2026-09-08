@@ -8,8 +8,8 @@ the bundled upstream Turnip ICD on an Adreno KGSL device. Mesa implements EGL
 and GLX. No custom Zink vertex prepass or Gallium Freedreno KGSL code is built.
 
 The optional `--packed-vertex 1` selects the ICD's experimental static packed
-SNORM fallback. On Mali it permits GL 3.3 context creation, but the current Zink
-draw still fails because it uses dynamic vertex input. See the
+SNORM fallback and its static capability/property policy. On Mali the requested
+GL 3.3 context, main draw and twelve packed draws now pass with validation. See the
 [actual packed results and limitations](../baseline/packed-vertex.md).
 
 Build prerequisites are the parent Ardesk Mesa checkout, its AArch64 cross

@@ -66,15 +66,35 @@ with confirmed VVL and SyncVal activation) draw all six divisor=1 packed cases
 correctly. All six divisor=2 cases still have 128 incorrect pixels; the main
 draw reports failure because the packed subprobe fails. No validation error was
 reported. The cause of the divisor failure remains unresolved, and desktop GL
-acceptance remains **FAIL**. Mesa source is unchanged.
+acceptance at that stage remained **FAIL**. Mesa source is unchanged.
 
 
 A temporary trace immediately before the ICD's backend CreateGraphicsPipelines
 call in `20260908T160612-b2766ef1` and isolated-build repeat
 `20260908T161056-c5371984` observes twelve one-binding packed pipelines with
 instance-rate input and no vertex-input divisor `pNext` chain. Both retain the
-same six divisor=2 failures. This narrows the investigation to missing submitted
-divisor state; it does not establish where that state was lost. The temporary
+same six divisor=2 failures. This narrowed the investigation to missing submitted
+divisor state; the trace alone did not establish where that state was lost. The temporary
 instrumentation was removed. Independent [dynamic binding stride](scaled-instancing.md#dynamic-binding-stride)
 checks pass on Mali with explicit divisor state, including forced conversion,
 but they use scaled formats and do not prove the failing GL workload correct.
+
+
+The subsequent [KHR-to-legacy maximum query correction](capabilities.md#legacy-divisor-properties-on-khr-only-devices)
+resolves the missing state: Zink was clamping the divisor to the zero returned
+by its old EXT properties query. Run `20260908T162117-15b1d0b5` requests EGL
+core 3.3 on Mali with `--packed-vertex 1` and reports GL 4.4. The main draw and
+all twelve packed draws pass with zero bad pixels and zero GL errors. VVL and
+SyncVal are explicitly active and report no validation errors. The official
+Mesa commit and GL probe binary are unchanged. Earlier failed runs are retained.
+This is the fixed offscreen workload; it does not establish full OpenGL 4.4,
+GLX/window presentation, nonzero base-instance or every packed-format semantic.
+
+
+Expanded run `20260908T162454-da900e1b` adds `--vertex-prepass --vertex-draws`
+and retains validation. Packed draws and all three explicit compute-prepass
+phases pass, but attribute phases 1, 3, 4, 5, 6, 7, 9 and 10 each fail all 256
+pixels; phases 0, 2 and 8 pass. The probe stops there, so multidraw, indexed,
+resource-budget and procedural cases are not executed. Vertex SSBO limit is
+still zero (fragment/compute are 16 each). This expanded run is **FAIL** and its
+remaining errors are not closed by the divisor-properties correction.

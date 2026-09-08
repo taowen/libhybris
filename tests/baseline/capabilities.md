@@ -121,4 +121,52 @@ Active and combined runs include packed vec4 readbacks with validation and
 shader-dump audits. The zero-mask Adreno audit requires no converted modules
 while retaining all six pixel readbacks and negative controls. This capability
 policy does not close the dynamic-input, pipeline-library or shader-object gaps.
-The [desktop GL result](packed-vertex.md) remains failing for divisor=2.
+The initial [desktop GL result](packed-vertex.md) still failed for divisor=2;
+the property correction below addresses that separate failure.
+
+
+## Legacy divisor properties on KHR-only devices
+
+The KHR promotion introduced a distinct properties structure with
+`supportsNonZeroFirstInstance`; it is not an alias of the old EXT properties
+structure. See the [KHR proposal](https://docs.vulkan.org/features/latest/features/proposals/VK_KHR_vertex_attribute_divisor.html).
+On Mali, the native EXT query leaves an initially zero maximum at zero while
+the KHR query returns 4294967295 and nonzero-firstInstance=false. Official Zink
+at the pinned revision enables the KHR extension through its promotion handling,
+but still queries the EXT properties structure. `zink_create_vertex_elements_state`
+then clamps the requested divisor to that zero maximum and omits divisor state
+from the static pipeline. This accounts for the earlier divisor=2 failures.
+
+With a nonzero static vertex-conversion mask, properties2 core/KHR wrappers now
+fill a zero EXT maximum from an independent native KHR query, only when KHR is
+advertised and EXT is absent. Native EXT support, an already populated EXT field,
+default-off and zero-mask paths are preserved. No EXT extension is added and
+KHR's nonzero-firstInstance value is unchanged. This supports the legacy maximum
+query; it does not implement the full EXT extension or nonzero-firstInstance.
+Core-only Vulkan 1.4 devices without KHR advertisement are outside this fallback.
+
+`vertex-policy` now checks both properties2 aliases, combined EXT/KHR/maintenance3
+chains versus separate queries, pointer preservation, core property consistency
+and the native KHR firstInstance flag. Restricted routes require the corrected
+maximum on KHR-only devices. Fresh AArch64 runtime and NDK/glibc probe builds
+completed; the following 2026-09-08 runs retain the deployed hashes and queries:
+
+| Configuration | Mali | Adreno 650 | Result per device |
+| --- | --- | --- | --- |
+| Packed missing / force | `20260908T162138-9a01cabf` | `20260908T162139-fe639a1f` | 5 PASS |
+| Default off | `20260908T162208-c34384b1` | `20260908T162210-4f458c39` | 6 PASS |
+| Zero mask | `20260908T162300-d33b0205` | `20260908T162301-c08e069f` | 7 PASS |
+| Packed plus BC missing | `20260908T162424-14de5f5a` | `20260908T162349-341315cc` | 5 PASS |
+
+Default and zero-mask native/ICD/direct-ICD divisor records match exactly on each
+device. Mali's active EXT maximum becomes 4294967295 while KHR's maximum and
+false firstInstance flag remain intact; Adreno retains its native EXT maximum
+65535. Active/combined runs also pass the existing features2 and packed vec4
+validation/dump checks. A clean old-library control, `20260908T162348-1a073c53`,
+fails both restricted property routes with the identical new probe binary
+SHA-256 `5134566b0f5fa65c7b0b2528be39d3edd2f480e1309986c3a9d31d6b0895726b`.
+Its version discovery still passes. The corrected library passes those routes.
+
+The [packed GL probe](packed-vertex.md) now passes on Mali with actual VVL and
+SyncVal activation; the expanded attribute workload still fails. This closes the reproduced maximum-query failure, not all
+vertex-input, desktop GL or G05/G07/G10 acceptance requirements.

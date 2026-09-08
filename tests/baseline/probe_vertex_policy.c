@@ -32,6 +32,7 @@ int vertex_policy_probe(int direct, int restricted) {
   const char *names[] = {VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME,
       VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, VK_EXT_SHADER_OBJECT_EXTENSION_NAME};
   unsigned advertised[3] = {0};
+  unsigned divisor_khr = 0, divisor_ext = 0;
   CHECK(p_vkEnumerateDeviceExtensionProperties(physical, NULL, &count, NULL));
   VkExtensionProperties *extensions = calloc(count, sizeof(*extensions));
   if (count && !extensions) return 2;
@@ -48,7 +49,48 @@ int vertex_policy_probe(int direct, int restricted) {
     if (result != VK_INCOMPLETE || count != 1 || strcmp(prefix.extensionName, extensions[0].extensionName) ||
         prefix.specVersion != extensions[0].specVersion) return 2;
   }
+  for (uint32_t i = 0; i < total; ++i) {
+    divisor_khr |= !strcmp(extensions[i].extensionName, VK_KHR_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME);
+    divisor_ext |= !strcmp(extensions[i].extensionName, VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME);
+  }
   free(extensions);
+  V(vkGetPhysicalDeviceProperties); V(vkGetPhysicalDeviceProperties2); V(vkGetPhysicalDeviceProperties2KHR);
+  VkPhysicalDeviceProperties legacy_properties;
+  p_vkGetPhysicalDeviceProperties(physical, &legacy_properties);
+  uint32_t previous_ext = 0, previous_khr = 0;
+  VkBool32 previous_first = VK_FALSE;
+  for (unsigned route = 0; route < 2; ++route) {
+    PFN_vkGetPhysicalDeviceProperties2 query = route ? p_vkGetPhysicalDeviceProperties2KHR : p_vkGetPhysicalDeviceProperties2;
+    if (properties2_check(query, physical, &legacy_properties)) return 2;
+    VkPhysicalDeviceMaintenance3Properties tail = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES};
+    VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR khr = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_KHR, .pNext = &tail};
+    VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT ext = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT, .pNext = &khr};
+    VkPhysicalDeviceProperties2 all = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &ext};
+    query(physical, &all);
+    if (all.pNext != &ext || ext.pNext != &khr || khr.pNext != &tail || tail.pNext) return 2;
+    VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR single_khr = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_KHR};
+    VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT single_ext = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT};
+    VkPhysicalDeviceMaintenance3Properties single_tail = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES};
+    VkPhysicalDeviceProperties2 single = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &single_khr};
+    query(physical, &single); single.pNext = &single_ext; query(physical, &single);
+    single.pNext = &single_tail; query(physical, &single);
+    if (ext.maxVertexAttribDivisor != single_ext.maxVertexAttribDivisor ||
+        khr.maxVertexAttribDivisor != single_khr.maxVertexAttribDivisor ||
+        khr.supportsNonZeroFirstInstance != single_khr.supportsNonZeroFirstInstance ||
+        tail.maxPerSetDescriptors != single_tail.maxPerSetDescriptors ||
+        tail.maxMemoryAllocationSize != single_tail.maxMemoryAllocationSize) return 2;
+    if (restricted && divisor_khr && !divisor_ext && ext.maxVertexAttribDivisor != khr.maxVertexAttribDivisor) return 2;
+    if (route && (previous_ext != ext.maxVertexAttribDivisor || previous_khr != khr.maxVertexAttribDivisor ||
+        previous_first != khr.supportsNonZeroFirstInstance)) return 2;
+    previous_ext = ext.maxVertexAttribDivisor; previous_khr = khr.maxVertexAttribDivisor;
+    previous_first = khr.supportsNonZeroFirstInstance;
+    printf("VERTEX_POLICY divisor route=%u ext_advertised=%u khr_advertised=%u ext_max=%u khr_max=%u nonzero_first=%u\n",
+        route, divisor_ext, divisor_khr, previous_ext, previous_khr, previous_first);
+  }
   VkPhysicalDevice16BitStorageFeatures storage = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES};
   VkPhysicalDeviceShaderObjectFeaturesEXT object = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT, .pNext = &storage};
