@@ -12,7 +12,7 @@ import tarfile
 import time
 from manifest import sha256_file, verify_manifest
 
-PACKAGE = 'io.taowen.hybriswsitest'
+PACKAGE = 'io.taowen.ardesk'
 
 class Host:
     def __init__(self, serial, out, package=PACKAGE, runtime_dir=None, wayland=None):

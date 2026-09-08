@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/tests/baseline/build"
 HEADERS=""
+PROTOCOLS="${ARDESK_WSI_PROTOCOL_DIR:-$ROOT/../../protocols}"
 CLEAN=0
 DEBUG_BUILD=0
 INCREMENTAL=0
@@ -23,6 +24,9 @@ Builds libhybris for aarch64 glibc and stages:
 Without --headers, fetch the pinned Android headers using this repository's
 tools/fetch-android-headers.sh. tools/ensure-builder.sh builds the pinned
 Debian cross-toolchain recipe. BUILDER_IMAGE may explicitly override it.
+ARDESK_WSI_PROTOCOL_DIR selects the shared Ardesk protocol package (defaults
+to ../../protocols when checked out inside Ardesk). It is snapshotted and
+included in cache validation and build provenance.
 Build snapshots, header/compiler identities and ELF hashes are recorded.
 --debug enables existing libhybris logging/trace macros (runtime opt-in).
 --incremental reuses a completed compiler cache for C/C++/assembly edits.
@@ -43,6 +47,11 @@ while [[ $# -gt 0 ]]; do
         *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
+
+if [[ ! -f "$PROTOCOLS/ardesk-wsi-protocols.pc" ]]; then
+    echo "Set ARDESK_WSI_PROTOCOL_DIR to the Ardesk protocols package directory." >&2
+    exit 2
+fi
 
 mkdir -p "$OUT"
 exec 9>"$OUT/.build.lock"
@@ -75,7 +84,7 @@ CACHE_OPTIONS=()
 if [[ "$INCREMENTAL" = 1 && "$CLEAN" != 1 ]]; then CACHE_OPTIONS+=(--incremental); fi
 if [[ "$DEBUG_BUILD" = 1 ]]; then CACHE_OPTIONS+=(--debug); fi
 python3 "$ROOT/tools/prepare-build.py" prepare --root "$ROOT" --out "$OUT" \
-    --headers "$HEADERS" --builder "$BUILDER_ID" --started "$BUILD_STARTED" "${CACHE_OPTIONS[@]}"
+    --headers "$HEADERS" --protocols "$PROTOCOLS" --builder "$BUILDER_ID" --started "$BUILD_STARTED" "${CACHE_OPTIONS[@]}"
 CACHE_MODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mode"])' "$OUT/build-report.json")"
 
 HEADERS_ABS="$(cd "$HEADERS_COPY" && pwd)"
@@ -120,7 +129,7 @@ run_logged() {
     fi
 }
 # Query target packages, not fabricated .pc versions or host libraries.
-export PKG_CONFIG_PATH=
+export PKG_CONFIG_PATH=/src/protocols
 export PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
 HOST_WAYLAND_SCANNER="$(command -v wayland-scanner)"
 pkg-config --modversion wayland-client wayland-server wayland-egl vulkan x11 xcb x11-xcb > /out/target-package-versions.txt

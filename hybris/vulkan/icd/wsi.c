@@ -301,13 +301,18 @@ int hybris_icd_physical_has_native_buffer(VkPhysicalDevice physical)
         free(extensions);
         return 0;
     }
-    int found = 0;
-    for (uint32_t i = 0; i < count; ++i)
+    int native_buffer = 0, external_ahb = 0;
+    for (uint32_t i = 0; i < count; ++i) {
         if (!strcmp(extensions[i].extensionName, "VK_ANDROID_native_buffer") &&
             extensions[i].specVersion >= 8)
-            found = 1;
+            native_buffer = 1;
+        if (!strcmp(extensions[i].extensionName, "VK_ANDROID_external_memory_android_hardware_buffer"))
+            external_ahb = 1;
+    }
     free(extensions);
-    return found;
+    return native_buffer && external_ahb &&
+        (context.resolver(context.instance, "vkGetPhysicalDeviceImageFormatProperties2") ||
+         context.resolver(context.instance, "vkGetPhysicalDeviceImageFormatProperties2KHR"));
 }
 
 int hybris_icd_wsi_graphics_family(VkPhysicalDevice physical, uint32_t index)
@@ -398,18 +403,37 @@ static VkResult fill_array(uint32_t available, uint32_t *count, void *out,
     return written < available ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
-/* Query image creation constraints, not a graphics-feature OR mask. Every
- * advertised format must support color attachment use and the common usage. */
+/* Surface formats must be importable Android hardware buffers, not merely
+ * ordinary optimal images. Mali can render BGRA images but rejects BGRA AHB
+ * swapchains in its gralloc-usage query. Query the actual backing type here so
+ * every advertised format/usage combination can be used by our native pool. */
 static VkResult image_limits(const struct hybris_icd_physical *context,
     VkPhysicalDevice physical, VkFormat format, VkImageUsageFlags usage,
     VkImageFormatProperties *properties)
 {
-    PFN_vkGetPhysicalDeviceImageFormatProperties query =
-        (PFN_vkGetPhysicalDeviceImageFormatProperties)context->resolver(context->instance,
-            "vkGetPhysicalDeviceImageFormatProperties");
-    if (!query) return VK_ERROR_INITIALIZATION_FAILED;
-    return query(physical, format, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
-        usage, 0, properties);
+    PFN_vkGetPhysicalDeviceImageFormatProperties2 query =
+        (PFN_vkGetPhysicalDeviceImageFormatProperties2)context->resolver(context->instance,
+            "vkGetPhysicalDeviceImageFormatProperties2");
+    if (!query) query = (PFN_vkGetPhysicalDeviceImageFormatProperties2)
+        context->resolver(context->instance, "vkGetPhysicalDeviceImageFormatProperties2KHR");
+    if (!query) return VK_ERROR_EXTENSION_NOT_PRESENT;
+    VkPhysicalDeviceExternalImageFormatInfo external = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID};
+    VkPhysicalDeviceImageFormatInfo2 info = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+        .pNext = &external, .format = format, .type = VK_IMAGE_TYPE_2D,
+        .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = usage};
+    VkExternalImageFormatProperties external_properties = {
+        .sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
+    VkImageFormatProperties2 result_properties = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2, .pNext = &external_properties};
+    VkResult result = query(physical, &info, &result_properties);
+    if (result != VK_SUCCESS) return result;
+    if (!(external_properties.externalMemoryProperties.externalMemoryFeatures &
+            VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    *properties = result_properties.imageFormatProperties;
+    return VK_SUCCESS;
 }
 
 static uint32_t surface_formats(const struct hybris_icd_physical *context,

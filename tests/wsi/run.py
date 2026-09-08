@@ -19,7 +19,7 @@ def main():
     p.add_argument('--package', default=PACKAGE, help='installed debuggable compositor package; must already be running')
     p.add_argument('--runtime-dir', help='device-side XDG_RUNTIME_DIR; defaults to the package files/runtime directory')
     p.add_argument('--wayland-display', dest='wayland', default='wayland-0', help='existing Wayland socket name or absolute device path')
-    p.add_argument('--display', default=':0', help='existing local X display supplied by the compositor')
+    p.add_argument('--display', default=':1', help='existing local X display supplied by the compositor')
     p.add_argument('--xauthority', help='device-side Xauthority path accessible to the compositor UID')
     p.add_argument('--platform', choices=('wayland', 'xcb', 'xlib'), default='wayland')
     p.add_argument('--case', choices=('present', 'swapchain-review', 'control', 'resize', 'missing-protocol', 'acquire-timeout'), default='present')
@@ -47,7 +47,7 @@ def main():
     if a.capture_tools and (not wayland or a.validation_layer or a.case == 'swapchain-review'):
         p.error('capture requires a separate Wayland present run: pinned capture tooling cannot combine validation or allocator-failure review')
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+', a.package): p.error('invalid Android package name')
-    if not re.fullmatch(r':\d+(?:\.0)?', a.display): p.error('--display must select a local X display, for example :0')
+    if not re.fullmatch(r':\d+(?:\.0)?', a.display): p.error('--display must select a local X display, for example :1')
     if a.trace and not wayland: p.error('--trace is the Wayland native-window trace; X11 protocol trace is always collected')
     if a.probe is None: a.probe = ROOT / ('tests/wsi/build' if wayland else 'tests/x11/build')
     if a.timeout is None: a.timeout = (180 if a.validation_layer or a.capture_tools else 65) if wayland else 35

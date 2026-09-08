@@ -12,6 +12,8 @@
 #include <pthread.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -230,8 +232,17 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     if (!usage2) return VK_ERROR_EXTENSION_NOT_PRESENT;
     uint64_t consumer = 0, producer = 0;
     VkResult result = usage2(device, info->imageFormat, info->imageUsage, 0, &consumer, &producer);
-    if (result != VK_SUCCESS) return result;
-    if ((producer | consumer) >> 32) return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "hybris WSI: gralloc usage query failed: result=%d format=%d usage=0x%x\n",
+            result, info->imageFormat, info->imageUsage);
+        return result;
+    }
+    if ((producer | consumer) >> 32) {
+        fprintf(stderr, "hybris WSI: gralloc usage exceeds legacy transport: producer=0x%" PRIx64
+            " consumer=0x%" PRIx64 " format=%d usage=0x%x\n",
+            producer, consumer, info->imageFormat, info->imageUsage);
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
     int usage = android_convertGralloc1To0Usage(producer, consumer);
     uint32_t count = info->minImageCount;
     if (count < 2 || count > 8) return VK_ERROR_INITIALIZATION_FAILED;
@@ -284,6 +295,10 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
         result = import_image(&context, info, buffer, buffer->usage, allocator,
             &state->images[i].image);
         if (result != VK_SUCCESS) {
+            fprintf(stderr, "hybris WSI: native image import failed: result=%d format=%d usage=0x%x"
+                " native_format=%d native_usage=0x%x extent=%ux%u\n",
+                result, info->imageFormat, info->imageUsage, buffer->format,
+                (unsigned)buffer->usage, info->imageExtent.width, info->imageExtent.height);
             destroy_images(&context, state);
             object_free(allocator, state->custom_allocator, state->images);
             object_free(allocator, state->custom_allocator, state);

@@ -263,20 +263,30 @@ int main(int argc, char **argv) {
         CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps));
         if (width < caps.minImageExtent.width || width > caps.maxImageExtent.width ||
             height < caps.minImageExtent.height || height > caps.maxImageExtent.height) return 3;
-        const VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        if ((caps.supportedUsageFlags & usage) != usage) { printf("UNSUPPORTED transfer swapchain usage=%x\n", caps.supportedUsageFlags); return 3; }
+        const VkImageUsageFlags required = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        const VkImageUsageFlags usage = required | (caps.supportedUsageFlags &
+            (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT));
+        if ((caps.supportedUsageFlags & required) != required) { printf("UNSUPPORTED transfer swapchain usage=%x\n", caps.supportedUsageFlags); return 3; }
         count = 0;
         CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, NULL));
         VkSurfaceFormatKHR *formats = calloc(count, sizeof(*formats));
         if (!formats) return 2;
         CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, formats));
         VkSurfaceFormatKHR format = {0};
-        for (uint32_t i = 0; i < count; ++i)
-            if (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR &&
-                (formats[i].format == VK_FORMAT_R8G8B8A8_UNORM || formats[i].format == VK_FORMAT_B8G8R8A8_UNORM)) { format = formats[i]; break; }
+        /* Exercise each advertised 8-bit format across resize epochs. This
+         * catches formats that support ordinary images but cannot back an AHB
+         * swapchain, and includes the sampled/color usage requested by Zink. */
+        for (uint32_t i = 0; i < count; ++i) {
+            uint32_t index = (i + epoch) % count;
+            if (formats[index].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR &&
+                (formats[index].format == VK_FORMAT_R8G8B8A8_UNORM || formats[index].format == VK_FORMAT_B8G8R8A8_UNORM)) {
+                format = formats[index];
+                break;
+            }
+        }
         free(formats);
         if (!format.format) return 3;
-        printf("WSI format=%u colorSpace=%u image-count-min=%u max=%u\n", format.format, format.colorSpace, caps.minImageCount, caps.maxImageCount);
+        printf("WSI format=%u colorSpace=%u image-count-min=%u max=%u usage=0x%x advertised-formats=%u\n", format.format, format.colorSpace, caps.minImageCount, caps.maxImageCount, usage, count);
         uint32_t image_count = caps.minImageCount + 1;
         if (caps.maxImageCount && image_count > caps.maxImageCount) image_count = caps.maxImageCount;
         VkCompositeAlphaFlagBitsKHR alpha = caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR

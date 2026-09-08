@@ -4,7 +4,9 @@ libhybris does not build, install or package a compositor APK or Xwayland.
 The previous JNI/Java APK host and builder have been removed from this tree.
 Their historical implementation remains available in git history.
 
-Install and start a debuggable compositor APK using its owning project. It
+Install and start Ardesk (`io.taowen.ardesk`) using Ardesk build tooling.
+The default X display is `:1`. An explicitly selected external debuggable APK
+may provide the same service contract. It
 must provide a Wayland endpoint for Wayland checks. The runner defaults to
 `files/runtime/wayland-0`; `--runtime-dir` and `--wayland-display` select the
 actual endpoint published by the APK. X11-only checks use DISPLAY directly.

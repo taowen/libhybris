@@ -116,8 +116,11 @@ int main(int argc, char **argv) {
     xcb_window_t window = xcb_generate_id(c);
     uint32_t values[] = {0, 1};
     int code = 2;
+    /* Keep the probe away from Android's edge UI and the initial cursor. */
+    int16_t x = screen->width_in_pixels > 320 ? (screen->width_in_pixels - 320) / 2 : 0;
+    int16_t y = screen->height_in_pixels > 240 ? (screen->height_in_pixels - 240) / 2 : 0;
     if (checked(c, xcb_create_window_checked(c, screen->root_depth, window, screen->root,
-            0, 0, 320, 240, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual,
+            x, y, 320, 240, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual,
             XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT, values), "create")) goto done;
     if (checked(c, xcb_map_window_checked(c, window), "map")) goto destroy;
     printf("X11_WINDOW id=%u size=320x240\n", window);

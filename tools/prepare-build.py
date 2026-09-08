@@ -32,6 +32,7 @@ def prepare(args):
     snapshot.mkdir()
     for name in ('hybris', 'compat'):
         shutil.copytree(root / name, snapshot / name, symlinks=True)
+    shutil.copytree(args.protocols.resolve(), snapshot / 'protocols', symlinks=True)
     (snapshot / 'tools').mkdir()
     for name in ('stage-runtime.py', 'prepare-build.py'):
         shutil.copy2(root / 'tools' / name, snapshot / 'tools' / name)
@@ -131,6 +132,7 @@ sub = parser.add_subparsers(dest='action', required=True)
 prepare_parser = sub.add_parser('prepare')
 prepare_parser.add_argument('--root', type=Path, required=True)
 prepare_parser.add_argument('--out', type=Path, required=True)
+prepare_parser.add_argument('--protocols', type=Path, required=True)
 prepare_parser.add_argument('--headers', type=Path, required=True)
 prepare_parser.add_argument('--builder', required=True)
 prepare_parser.add_argument('--debug', action='store_true')

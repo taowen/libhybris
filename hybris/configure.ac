@@ -103,6 +103,13 @@ AC_ARG_ENABLE(x11,
 ],
   [x11="no"])
 AM_CONDITIONAL( [WANT_X11], [test x"$x11" = x"yes"])
+AS_IF([test x"$wayland" = x"yes" || test x"$x11" = x"yes"], [
+    PKG_CHECK_MODULES(ARDESK_WSI_PROTOCOLS, [ardesk-wsi-protocols >= 0.3])
+    CPPFLAGS="$CPPFLAGS $ARDESK_WSI_PROTOCOLS_CFLAGS"
+    ARDESK_WSI_PROTOCOL_DIR=`$PKG_CONFIG --variable=pkgdatadir ardesk-wsi-protocols`
+    AC_SUBST(ARDESK_WSI_PROTOCOL_DIR)
+])
+
 
 AC_ARG_ENABLE(glvnd,
   [  --enable-glvnd                                 Enable GLVND support])

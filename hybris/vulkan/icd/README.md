@@ -44,8 +44,10 @@ still rejects HALs advertising driver-owned `VK_KHR_surface` or
 built with Wayland, it advertises `VK_KHR_surface` and
 `VK_KHR_wayland_surface` itself, creates local `VkSurfaceKHR` objects with
 the existing `window_owner` native-window factory. When the HAL advertises
-`VK_ANDROID_native_buffer` revision 8 or later, a graphics queue and usable
-color-attachment formats, the adapter exposes an experimental FIFO swapchain.
+`VK_ANDROID_native_buffer` revision 8 or later,
+`VK_ANDROID_external_memory_android_hardware_buffer`, image-format query2,
+a graphics queue and importable AHB color-attachment formats, the adapter
+exposes an experimental FIFO swapchain.
 Native buffers are retained until their imported images are destroyed, including
 acquired images of retired swapchains. A failed replacement also retires its
 old chain. Dequeue uses Wayland read preparation and a monotonic poll timeout.
@@ -55,7 +57,13 @@ on before the native window receives the buffer. Presentation still performs a
 host wait on release FDs because android_wlegl has no per-commit fence protocol;
 there is no queue/device wait-idle in this implementation.
 
-Format, usage and extent queries use HAL image-format creation queries; image
+Format, usage and extent queries use HAL image-format creation queries with
+the Android hardware buffer external handle type and require IMPORTABLE.
+Ordinary optimal-image support is insufficient: the inspected X300 driver
+supports ordinary BGRA8 images but rejects BGRA8 AHBs. Surface enumeration
+therefore offers RGBA8 on that driver before any window buffer is allocated.
+Swapchain errors identify the gralloc-usage or native-image-import stage.
+Image
 count 2–8, one layer, identity transform, inherited native alpha and FIFO are
 adapter constraints. Single-device group queries and AcquireNextImage2 are
 implemented. Protected/multi-device modes and swapchain-backed image alias
