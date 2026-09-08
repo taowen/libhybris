@@ -47,7 +47,14 @@ for name,digest in manifest['runtime'].items():
 out=build/'results'/(time.strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8]);out.mkdir(parents=True)
 stage=out/'stage';stage.mkdir()
 shutil.copytree(build/'runtime',stage/'runtime')
-if a.backend=='hybris':shutil.copytree(baseline/'install/usr/lib/hybris',stage/'hybris',symlinks=True)
+if a.backend=='hybris':
+    shutil.copytree(baseline/'install/usr/lib/hybris',stage/'hybris',symlinks=True)
+    # The ICD has dependencies beyond Mesa's closure (for example wayland-egl).
+    # Keep Mesa's selected runtime for shared SONAMEs and add the verified ICD
+    # dependencies that are absent from it.
+    for source in (baseline/'runtime').iterdir():
+        destination=stage/'runtime'/source.name
+        if not destination.exists():shutil.copy2(source,destination)
 shutil.copy2(build/'probe',stage/'probe')
 if a.validation_layer:
     (stage/'layers').mkdir()

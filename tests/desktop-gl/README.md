@@ -27,6 +27,14 @@ python3 tests/desktop-gl/run.py \
 ```
 
 The Mali command currently reports FAIL; it is retained as a negative baseline.
+The hybris runner adds missing libraries from the verified baseline runtime to
+Mesa's runtime bundle; shared SONAMEs retain Mesa's selected libraries. This
+includes the ICD's Wayland dependencies even for a surfaceless EGL run.
+On Mali X300, `20260908T145458-d2dddd4d` failed before loading the ICD because
+`libwayland-egl.so.1` was absent. With the complete bundle,
+`20260908T150211-29217a18` initializes EGL and rejects core 3.3 with
+`EGL_BAD_MATCH`; `20260908T150239-1ac3fa90` creates core 3.2 but still fails the
+packed vertex cases. These are negative compatibility results, not GL passes.
 `--api-version` must match the selected ICD's actual version, not a desired
 capability. The explicit build-ID-scoped Mali loader quirk is in libhybris,
 not a Mesa patch. Turnip neither stages nor uses hybris. No GL/GLSL version or
