@@ -4,6 +4,8 @@
 #include "device.h"
 #include "swapchain.h"
 #include "../compat/scaled_dispatch.h"
+#include "../compat/bc_policy.h"
+#include "../compat/bc_context.h"
 #include <pthread.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -78,6 +80,7 @@ void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCal
     }
     pthread_mutex_unlock(&device_guard);
     if (!state) return;
+    hybris_bc_device_remove(device);
     hybris_scaled_device_destroy(device);
     state->destroy(device, allocator);
     free_state(state);
@@ -89,6 +92,8 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     const VkAllocationCallbacks *allocator, VkDevice *device)
 {
     pthread_once(&trace_once, initialize_trace);
+    VkResult checked = hybris_bc_prepare_device(physical, info);
+    if (checked != VK_SUCCESS) return checked;
     struct device_state *state = allocator
         ? allocator->pfnAllocation(allocator->pUserData, sizeof(*state),
                                   _Alignof(struct device_state), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE)
@@ -157,7 +162,10 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     }
     if (result == VK_SUCCESS)
         result = hybris_scaled_device_create(*device, physical, resolver, query, allocator);
+    if (result == VK_SUCCESS)
+        result = hybris_bc_attach_device(*device, physical, resolver, allocator);
     if (result != VK_SUCCESS) {
+        hybris_scaled_device_destroy(*device);
         state->destroy(*device, allocator);
         *device = VK_NULL_HANDLE;
         free_state(state);
@@ -183,6 +191,8 @@ PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char
     PFN_vkVoidFunction backend = resolver ? resolver(device, name) : NULL;
     PFN_vkVoidFunction local = hybris_icd_swapchain_proc(name, swapchain_enabled);
     if (local) return local;
+    PFN_vkVoidFunction bc = backend ? hybris_bc_proc(name) : NULL;
+    if (bc) return bc;
     if (backend && swapchain_enabled) {
         PFN_vkVoidFunction image = hybris_icd_swapchain_image_proc(name);
         if (image) return image;

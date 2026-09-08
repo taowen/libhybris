@@ -39,6 +39,8 @@ libvulkan_la_LDFLAGS = \
 # Optional standard-loader backend; no default ICD JSON is installed.
 libhybris_vulkan_icd_la_SOURCES = icd/icd.c icd/instance.c icd/instance.h icd/device.c icd/device.h icd/wsi.c icd/wsi.h icd/swapchain.c icd/swapchain.h icd/vk_android_native_buffer.h icd/hwvulkan.h icd/physical_commands.inc \
     compat/bc_decode.c compat/bc_decode.h compat/shaders/bc_decode.inc \
+    compat/bc_image.c compat/bc_image.h compat/bc_command_state.c compat/bc_command_state.h compat/bc_transfer.c compat/bc_transfer.h \
+    compat/bc_context.c compat/bc_context.h compat/bc_commands.c compat/bc_resources.c compat/bc_record.c compat/bc_barriers.c compat/bc_image_copy.c compat/bc_policy.c compat/bc_policy.h \
     compat/spirv_decorations.c compat/spirv_decorations.h compat/spirv_constants.c compat/spirv_constants.h compat/spirv_aggregate.c compat/spirv_aggregate.h compat/spirv_entry.c compat/spirv_entry.h compat/spirv_results.inc compat/spirv_literals.inc compat/scaled_dump.c compat/scaled_dispatch.c compat/scaled_dispatch.h compat/scaled_formats.c compat/scaled_formats.h compat/scaled_spirv.c compat/scaled_vertex.h
 EXTRA_DIST = icd/README.md compat/shaders/bc_decode.comp compat/shaders/generate-bc.py
 libhybris_vulkan_icd_la_CFLAGS = $(libvulkan_la_CFLAGS) -fvisibility=hidden

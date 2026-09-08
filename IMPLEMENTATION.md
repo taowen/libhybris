@@ -88,8 +88,9 @@ fails conversion. Old/new Adreno runs use identical probe binaries, and Mali
 native/forced controls pass. Ambiguous operand layouts remain conservative.
 This is an experimental shader/pipeline subset: G07/G08 remain open,
 including general interfaces, dynamic vertex input, shader objects and graphics
-pipeline libraries. BC, clip/cull/point-size and software timeline patches are
-still not ported. Full boundaries and evidence are in the ICD and baseline
+pipeline libraries. A default-off [BC1–BC3 image subset](tests/baseline/bc-images.md)
+is now connected to the ICD. BC4–BC7, the remaining image semantics,
+clip/cull/point-size and software timeline patches remain open. Full boundaries and evidence are in the ICD and baseline
 READMEs. Mesa remains unmodified upstream; this code connects vendor drivers.
 
 Condition-variable ABI hooks and Android futex wake helpers now live in
@@ -281,7 +282,7 @@ it does not provide slot reclamation, IE first-touch or signal reentrancy.
 | G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Fixed headless widget capture/replay now matches all RGBA bytes. The ICD Wayland window probe now also passes Khronos VVL+SyncVal create/render/resize/retirement/destroy and GFXReconstruct virtual-swapchain copy dumps on OnePlus 8T and Mali; still need arbitrary application coverage. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
 | G06 | Partial | Associate an injected wrong binding with the first wrong draw and effective descriptor/resource generation. |
-| G07 | Open | Reference pixels for each supported format and upload/copy/view/subresource path; reject unsupported semantics. |
+| G07 | Open | Default-off BC1–BC3 image operations now have independent RGBA8 sampling/byte references, mip/layer/subregion and retirement probes. BC4–BC7 and complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
 | G08 | Open | Fixed SPIR-V tooling, reflection/hash/specialization records, before/after semantic evidence for each transform. |
 | G09 | Open | Noncoherent/staging/reuse and queue ordering cases; validate emulation against completion and memory visibility. |
 | G10 | Open | Fixed Mesa/Zink revision and GL target-profile requirements; GL workload results with backend attribution. |
@@ -967,3 +968,23 @@ identical images and 621 valid SPIR-V modules with zero SyncVal errors. Exact
 result IDs and the earlier aggregate-verifier failure are in desktop-gl README.
 GPU indirect arguments, custom restart CPU rewrite removal, all fallback/stage
 combinations, full SSBO semantics, performance and Blender remain open.
+
+
+## BC1–BC3 image subset (2026-09-08)
+
+The standard-loader ICD now has default-off `HYBRIS_BC_TEXTURES=missing|force`
+image interception with compressed backing, GPU decoding, compute-state
+preservation and command-buffer resource retirement. Format/image/sparse queries
+and device enablement follow the same restricted policy; the complete BC feature
+remains false. The work is split into storage, transfer, state, registry,
+resource, copy, barrier and policy modules.
+
+Redmi and Mali passed four exported-core/proc validation routes in force mode
+and a separate missing-mode route, with 1,920 BC image readbacks matching native
+RGBA8 references and compressed bytes. GPU subregions, mip/layer, 3D copies,
+sRGB/swizzle, dedicated binding and reset/free paths are included. Mali also
+executes copy2, synchronization2 and maintenance4. Default-off controls preserve
+native unsupported BC behavior. One Redmi non-coherent-memory case remains
+UNSUPPORTED. Source/build hashes, exact runs and preserved probe failures are
+in [the BC image record](tests/baseline/bc-images.md). BC4–BC7, remaining image
+semantics, large-resource/performance and CTS gates remain open; G07 is not closed.

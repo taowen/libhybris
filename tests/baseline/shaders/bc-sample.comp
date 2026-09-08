@@ -1,0 +1,16 @@
+#version 450
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) uniform sampler2DArray source_image;
+layout(set = 0, binding = 2) uniform sampler2DArray reference_image;
+layout(set = 0, binding = 1, std430) buffer Output { uint pixels[]; } output_data;
+layout(push_constant) uniform Shape { uint width; uint height; uint layers; } shape;
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= shape.width * shape.height * shape.layers) return;
+    ivec3 position = ivec3(index % shape.width, index / shape.width % shape.height,
+        index / (shape.width * shape.height));
+    output_data.pixels[index] = packUnorm4x8(texelFetch(source_image, position, 0));
+    output_data.pixels[shape.width * shape.height * shape.layers + index] =
+        packUnorm4x8(texelFetch(reference_image, position, 0));
+}

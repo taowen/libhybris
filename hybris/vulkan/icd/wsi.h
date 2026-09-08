@@ -10,6 +10,7 @@ enum { HYBRIS_ICD_WSI_WAYLAND = 1, HYBRIS_ICD_WSI_XCB = 2, HYBRIS_ICD_WSI_XLIB =
 struct hybris_icd_physical {
     VkInstance instance;
     uint64_t generation;
+    uint32_t api_version;
     PFN_vkGetInstanceProcAddr resolver;
 };
 

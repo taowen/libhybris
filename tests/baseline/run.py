@@ -30,6 +30,7 @@ p.add_argument('--runtime', type=Path, help='Directory containing glibc loader a
 p.add_argument('--manifest', type=Path, help='Provenance JSON from tools/manifest.py')
 p.add_argument('--out', type=Path, default=Path(__file__).resolve().parent / 'build/results')
 p.add_argument('--bundle', type=Path, default=Path(__file__).resolve().parent / 'build/bundle')
+p.add_argument('--bc-textures', choices=('missing', 'force'), help='Enable experimental BC1-3 image fallback for ICD cases')
 p.add_argument('--scaled-format-trace', action='store_true', help='Audit raw/effective scaled format decisions; requires scaled compatibility')
 p.add_argument('--scaled-vertex-compat', choices=('missing', 'force'), help='Enable experimental scaled vertex fallback for ICD cases')
 p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
@@ -40,6 +41,8 @@ p.add_argument('--validation-manifest', type=Path, help='Original layer JSON mat
 p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
 p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
 a = p.parse_args()
+if a.bc_textures and not a.icd_hal:
+    p.error('--bc-textures requires --icd-hal')
 if a.scaled_format_trace and not a.scaled_vertex_compat:
     p.error('--scaled-format-trace requires --scaled-vertex-compat')
 if a.scaled_vertex_compat and not a.icd_hal:
@@ -250,6 +253,7 @@ cases.extend(('hybris', mode, 'probe-glibc') for mode in ('render-owners', 'comm
 for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'memory-ranges', binary))
     cases.append((backend, 'bc-decode', binary))
+    cases.append((backend, 'bc-images', binary))
     cases.append((backend, 'scaled-vertex', binary))
     cases.append((backend, 'scaled-vertex-multi', binary))
     cases.append((backend, 'scaled-vertex-literal', binary))
@@ -278,10 +282,11 @@ if a.icd_hal:
     metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
     # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('version', 'native-buffer', 'bc-decode', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
+              for mode in ('version', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
     cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
+    cases.append(('icd-linked', 'bc-images-linked', 'probe-glibc-linked'))
     cases.append(('icd-linked', 'scaled-vertex-linked', 'probe-glibc-linked'))
     cases.append(('icd-linked', 'scaled-vertex-multi-linked', 'probe-glibc-linked'))
     cases.append(('icd-linked', 'scaled-vertex-literal-linked', 'probe-glibc-linked'))
@@ -290,6 +295,7 @@ if a.icd_hal:
     cases.extend(('icd-linked', mode, 'probe-glibc-linked')
                  for mode in ('render-core13-linked', 'render-khr13-linked'))
     if a.validation_layer:
+        cases.append(('icd-linked', 'bc-images-linked-validation', 'probe-glibc-linked'))
         (stage / 'layers').mkdir()
         shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
         metadata['validation_layer_sha256'] = sha256_file(a.validation_layer)
@@ -307,7 +313,7 @@ if a.icd_hal:
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
         cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
-        cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'bc-decode-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'bc-decode-validation', 'bc-images-validation', 'bc-images-gdpa-validation', 'bc-images-dlsym-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)
@@ -366,6 +372,8 @@ try:
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 ' + command
         if backend == 'icd' and mode == 'life':
             command = 'HYBRIS_ICD_INSTANCE_TRACE=1 HYBRIS_ICD_DEVICE_TRACE=1 ' + command
+        if backend in {'icd', 'icd-linked'} and a.bc_textures:
+            command = 'HYBRIS_BC_TEXTURES=' + a.bc_textures + ' ' + command
         if backend in {'icd', 'icd-linked'} and a.scaled_vertex_compat:
             command = 'HYBRIS_VULKAN_COMPAT_SCALED_VERTEX=' + ('force' if a.scaled_vertex_compat == 'force' else '1') + ' ' + command
             if a.scaled_format_trace:

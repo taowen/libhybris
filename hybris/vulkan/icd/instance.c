@@ -6,6 +6,7 @@
 #include "wsi.h"
 #include "swapchain.h"
 #include "../compat/scaled_dispatch.h"
+#include "../compat/bc_policy.h"
 #include <pthread.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -28,6 +29,7 @@ struct instance_state {
     int custom_allocator;
     int surface_enabled;
     int platforms_enabled;
+    uint32_t api_version;
     struct physical_state *physical;
     struct instance_state *next;
 };
@@ -132,6 +134,8 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
         return result;
     }
     state->handle = *instance;
+    state->api_version = info->pApplicationInfo && info->pApplicationInfo->apiVersion ?
+        info->pApplicationInfo->apiVersion : VK_API_VERSION_1_0;
     state->resolver = hal->GetInstanceProcAddr;
     state->destroy = (PFN_vkDestroyInstance)state->resolver(*instance, "vkDestroyInstance");
     pthread_mutex_lock(&instance_guard);
@@ -261,6 +265,7 @@ int hybris_icd_lookup_physical(VkPhysicalDevice physical,
     if (!state || !out) return 0;
     out->instance = state->handle;
     out->generation = state->generation;
+    out->api_version = state->api_version;
     out->resolver = state->resolver;
     return 1;
 }
@@ -274,6 +279,7 @@ static void VKAPI_CALL format_properties(VkPhysicalDevice physical, VkFormat for
         state->resolver(state->handle, "vkGetPhysicalDeviceFormatProperties");
     query(physical, format, properties);
     hybris_scaled_format(query, physical, format, properties);
+    hybris_bc_format_properties(physical, format, properties);
 }
 static void format_properties2(VkPhysicalDevice physical, VkFormat format,
                                VkFormatProperties2 *properties, const char *name)
@@ -292,6 +298,19 @@ static void format_properties2(VkPhysicalDevice physical, VkFormat format,
         for (VkBaseOutStructure *next = properties->pNext; next; next = next->pNext)
             if (next->sType == VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3)
                 ((VkFormatProperties3 *)next)->bufferFeatures |= VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
+    if (hybris_bc_format_properties(physical, format, &properties->formatProperties)) {
+        for (VkBaseOutStructure *next = properties->pNext; next; next = next->pNext) {
+            if (next->sType == VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3) {
+                VkFormatProperties3 *extended = (void *)next;
+                extended->linearTilingFeatures = extended->bufferFeatures = 0;
+                extended->optimalTilingFeatures = properties->formatProperties.optimalTilingFeatures;
+            } else if (next->sType == VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT) {
+                ((VkDrmFormatModifierPropertiesListEXT *)next)->drmFormatModifierCount = 0;
+            } else if (next->sType == VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT) {
+                ((VkDrmFormatModifierPropertiesList2EXT *)next)->drmFormatModifierCount = 0;
+            }
+        }
+    }
 }
 static void VKAPI_CALL format_properties2_core(VkPhysicalDevice physical, VkFormat format, VkFormatProperties2 *properties)
 { format_properties2(physical, format, properties, "vkGetPhysicalDeviceFormatProperties2"); }
@@ -315,7 +334,24 @@ static VkResult VKAPI_CALL create_device(VkPhysicalDevice physical,
 static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical,
     const char *layer, uint32_t *count, VkExtensionProperties *properties)
 {
-    return hybris_icd_enumerate_device_extensions(physical, layer, count, properties);
+    if (layer || !hybris_bc_physical_mask(physical))
+        return hybris_icd_enumerate_device_extensions(physical, layer, count, properties);
+    uint32_t available = 0;
+    VkResult result = hybris_icd_enumerate_device_extensions(physical, NULL, &available, NULL);
+    if (result != VK_SUCCESS) return result;
+    VkExtensionProperties *all = available ? calloc(available, sizeof(*all)) : NULL;
+    if (available && !all) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    result = hybris_icd_enumerate_device_extensions(physical, NULL, &available, all);
+    if (result != VK_SUCCESS && result != VK_INCOMPLETE) { free(all); return result; }
+    uint32_t kept = 0, written = 0, capacity = properties ? *count : 0;
+    for (uint32_t i = 0; i < available; ++i) {
+        if (!hybris_bc_extension_allowed(all[i].extensionName)) continue;
+        if (properties && written < capacity) properties[written++] = all[i];
+        ++kept;
+    }
+    free(all);
+    *count = properties ? written : kept;
+    return properties && written < kept ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
 PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *name)
@@ -334,6 +370,10 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
      * device object; GIPA may return the pointer before a device exists. */
     PFN_vkVoidFunction swapchain = hybris_icd_swapchain_proc(name, 1);
     if (swapchain) return swapchain;
+    PFN_vkVoidFunction bc = backend ? hybris_bc_proc(name) : NULL;
+    if (bc) return bc;
+    bc = backend ? hybris_bc_policy_proc(name) : NULL;
+    if (bc) return bc;
     PFN_vkVoidFunction image = backend ? hybris_icd_swapchain_image_proc(name) : NULL;
     if (image) return image;
     /* Preserve the HAL's command scope and extension gating. */
@@ -353,7 +393,7 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
         return (PFN_vkVoidFunction)hybris_icd_device_proc;
     if (backend && !strcmp(name, "vkDestroyDevice"))
         return (PFN_vkVoidFunction)hybris_icd_destroy_device;
-    if (backend && hybris_scaled_enabled()) {
+    if (backend && (hybris_scaled_enabled() || hybris_bc_enabled())) {
         if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties")) return (PFN_vkVoidFunction)format_properties;
         if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties2")) return (PFN_vkVoidFunction)format_properties2_core;
         if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties2KHR")) return (PFN_vkVoidFunction)format_properties2_khr;

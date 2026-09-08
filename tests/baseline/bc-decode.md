@@ -10,8 +10,9 @@ The kernel expands RGB565 endpoints by bit replication and uses integer
 interpolation with truncation. The fixtures establish the listed byte results,
 not comprehensive format precision conformance.
 
-This is an internal kernel. **BC image interception is not connected to the
-ICD, and no format properties or `textureCompressionBC` declarations change.**
+This is an internal kernel. The separate, default-off [BC image fallback](bc-images.md)
+now connects it to ICD image operations. The decoder evidence below predates
+that integration and does not establish image support.
 The probe explicitly creates and records the decoder from the same production
 C source, snapshotted into its build bundle. Its Vulkan calls run through the
 native, frontend and standard ICD routes. `image_interception=0` is part of the
@@ -24,8 +25,8 @@ range. Large dispatches are split at the device's X workgroup-count limit.
 Unsupported/internal invalid inputs return an error before any command is
 recorded. The caller supplies descriptors and synchronization, retains all
 resources until commands retire, and owns the compute pipeline, descriptor
-and push-constant state. An ICD interceptor still needs state preservation
-before it can use this API. No host mapping, queue submit or wait occurs in the
+and push-constant state. Callers need state preservation before using this API; the optional image
+interceptor maintains its own command journal. No host mapping, queue submit or wait occurs in the
 kernel helper.
 
 ## Existing baseline case
