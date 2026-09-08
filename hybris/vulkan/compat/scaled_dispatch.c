@@ -5,6 +5,8 @@
 #include "scaled_vertex.h"
 #include "scaled_formats.h"
 #include "spirv_entry.h"
+#include "shader_cleanup.h"
+#include "spirv_builtins.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
@@ -50,7 +52,8 @@ VkResult hybris_scaled_device_create(VkDevice handle, VkPhysicalDevice physical,
     device->handle = handle;
     device->custom = allocator != NULL;
     if (allocator) device->allocator = *allocator;
-    device->create_shader = (PFN_vkCreateShaderModule)resolver(handle, "vkCreateShaderModule");
+    device->create_shader = hybris_shader_cleanup_enabled() ? hybris_shader_cleanup_create :
+        (PFN_vkCreateShaderModule)resolver(handle, "vkCreateShaderModule");
     device->destroy_shader = (PFN_vkDestroyShaderModule)resolver(handle, "vkDestroyShaderModule");
     device->create_pipelines = (PFN_vkCreateGraphicsPipelines)resolver(handle, "vkCreateGraphicsPipelines");
     device->mask = hybris_scaled_mask(handle, physical, query);
@@ -199,6 +202,14 @@ static VkResult convert_pipeline(struct scaled_device *device, VkGraphicsPipelin
                 stage->pName, allocator, &code, &size, reason) : VK_ERROR_UNKNOWN;
         }
         if (result != VK_SUCCESS) goto done;
+        if (hybris_shader_cleanup_enabled()) {
+            uint32_t *clean = NULL;
+            size_t clean_size = 0;
+            unsigned removed = 0;
+            result = hybris_spirv_unused_builtins(code, size, allocator, &clean, &clean_size, &removed);
+            if (result != VK_SUCCESS) { hybris_scaled_free(allocator, code); goto done; }
+            if (clean) { hybris_scaled_free(allocator, code); code = clean; size = clean_size; }
+        }
         hybris_scaled_dump(shader->code, shader->size, code, size, vertex ? attrs : NULL, vertex ? count : 0, stage->pSpecializationInfo);
         VkShaderModuleCreateInfo module = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = size, .pCode = code };
         result = device->create_shader(device->handle, &module, allocator, &copy->temporary[j]);

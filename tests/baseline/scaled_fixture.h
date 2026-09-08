@@ -2,6 +2,7 @@
 #ifndef HYBRIS_SCALED_FIXTURE_H
 #define HYBRIS_SCALED_FIXTURE_H
 #include "shaders/scaled.vert.inc"
+#include "shaders/scaled.builtins.inc"
 #include "shaders/scaled.divisor.inc"
 #include "shaders/scaled.multi.inc"
 #include "shaders/scaled.literal.inc"
@@ -44,6 +45,7 @@ static const struct scaled_shader {
   SHADER("matrix", kScaledMatrixSpv, 0, 1, 0, 0),
   SHADER("nested", kScaledNestedSpv, 0, 1, 0, 0),
   SHADER("array", kScaledArraySpv, 0, 1, 0, 0),
+  SHADER("builtins", kScaledBuiltinsSpv, 0, 0, 0, 0),
   SHADER("literal", kScaledLiteralSpv, 0, 0, 0, 0),
   SHADER("multi", kScaledMultiSpv, 1, 0, 0, 0),
   SHADER("", kScaledVertSpv, 0, 0, 0, 0),

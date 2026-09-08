@@ -13,6 +13,10 @@ case passes on Mali and still fails on Redmi, as recorded in the
 [RGB8 scope](bc-rgb8.md). This remains a restricted G07 subset, with Redmi BC6H/BC7 filtering and RGB border failures unresolved;
 see [BC7 evidence](bc7.md) and [BC6H evidence](bc6h.md).
 
+The opt-in [unused clip/cull cleanup](unused-builtins.md) removes only unaccessed
+output declarations and preserves active uses. The runner enables it with
+`--unused-builtins`; it composes with scaled conversion without changing feature queries.
+
 The [multi-descriptor widget fixture](widget-multi.md) adds four dynamic UBOs
 across two sets and an array, with exact full-image readback and per-descriptor
 capture evidence. Ordinary and single-dynamic captures remain in the runner.

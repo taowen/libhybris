@@ -29,7 +29,7 @@ def vertex_input(text, entry):
     return inputs[0]
 
 
-def scaled_evidence(directory, log, forced, source):
+def scaled_evidence(directory, log, forced, source, unused_builtins=False):
     validator = shutil.which('spirv-val')
     if not validator:
         raise ValueError('spirv-val is required to audit converted modules')
@@ -141,6 +141,13 @@ def scaled_evidence(directory, log, forced, source):
         retained_ids = set(re.findall(r'^\s*(%\d+) = ', modules[1], re.M))
         original_decorations = [line for line in re.findall(stable, modules[0], re.M)
                                 if re.search(r'%\d+', line).group() in retained_ids]
+        if unused_builtins:
+            from builtin_evidence import builtin_decorations
+            original_decorations, entry["builtin_cleanup"] = builtin_decorations(*modules)
+            if source.name == 'scaled.builtins.inc':
+                changes = list(entry['builtin_cleanup'].values())
+                if len(changes) != 1 or changes[0]['removed'] != [0, 1] or not changes[0]['access_chains']:
+                    raise ValueError('reordered builtin fixture did not exercise pruning and access remapping')
         if sorted(original_decorations) != sorted(re.findall(stable, modules[1], re.M)):
             raise ValueError('conversion changed decorations of retained declarations')
         if vertex:

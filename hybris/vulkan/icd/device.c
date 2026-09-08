@@ -4,6 +4,7 @@
 #include "device.h"
 #include "swapchain.h"
 #include "../compat/scaled_dispatch.h"
+#include "../compat/shader_cleanup.h"
 #include "../compat/bc_policy.h"
 #include "../compat/bc_context.h"
 #include <pthread.h>
@@ -201,7 +202,8 @@ PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char
         return (PFN_vkVoidFunction)hybris_icd_destroy_device;
     if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
         return (PFN_vkVoidFunction)hybris_icd_device_proc;
-    PFN_vkVoidFunction compat = backend ? hybris_scaled_proc(name) : NULL;
+    PFN_vkVoidFunction compat = backend ? hybris_shader_cleanup_proc(name) : NULL;
+    if (!compat && backend) compat = hybris_scaled_proc(name);
     return compat ? compat : backend;
 }
 

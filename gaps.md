@@ -880,3 +880,10 @@ sentinel 检查通过；Mali 标准 validation 路径 384 次图像回读全部�
 保留 BC6H 原生过滤参考与 BC/native 边框差异，以及已有 BC1/BC7 失败，未放宽
 门槛。十六种 BC 格式已有受限 fallback，但 textureCompressionBC 仍为 false，
 G07 继续开放；详见 [BC6H 证据与限制](tests/baseline/bc6h.md)。
+
+2026-09-08 G08：新增默认关闭的未使用 clip/cull 输出声明清理，按实际访问
+保留成员，并同步重写结构、成员装饰和 AccessChain 常量索引；实际使用的
+clip/cull、PointSize 以及不明确的结构/指针形式保持原样，不提升 feature。
+双机四入口及多入口 shader、multi-UBO 绘制和独立 SPIR-V 结构审计通过。
+初次证据检查器将预期成员删除判为 FAIL 的结果保留，随后加入精确结构/
+访问链验证，未放宽像素门槛。详见 [范围和证据](tests/baseline/unused-builtins.md)。
