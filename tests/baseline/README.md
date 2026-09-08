@@ -13,6 +13,10 @@ case passes on Mali and still fails on Redmi, as recorded in the
 [RGB8 scope](bc-rgb8.md). This remains a restricted G07 subset, with BC6–BC7
 unimplemented.
 
+The [multi-descriptor widget fixture](widget-multi.md) adds four dynamic UBOs
+across two sets and an array, with exact full-image readback and per-descriptor
+capture evidence. Ordinary and single-dynamic captures remain in the runner.
+
 GLES 3 probes also report per-stage SSBO/image limits and vertex sampler/UBO
 limits when the actual context supports GLES 3.1. Each `GLES_LIMIT` includes its
 GL error and an invalid query fails the probe. A GLES 3.0 context reports the

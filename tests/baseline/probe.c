@@ -89,6 +89,10 @@ int main(int argc, char **argv) {
     rc = ubo_large_probe(0);
   else if (!strcmp(mode, "ubo-large-validation"))
     rc = ubo_large_probe(1);
+  else if (!strcmp(mode, "ubo-multi") || !strcmp(mode, "ubo-multi-validation"))
+    rc = ubo_multi_probe(strstr(mode, "validation") != NULL);
+  else if (!strcmp(mode, "ubo-multi-good") || !strcmp(mode, "ubo-multi-bad"))
+    rc = ubo_multi_draw(!strcmp(mode, "ubo-multi-bad"), 0);
   else if (!strcmp(mode, "ubo-dynamic-good") || !strcmp(mode, "ubo-dynamic-bad"))
     rc = ubo_dynamic_draw(!strcmp(mode, "ubo-dynamic-bad"));
   else if (!strncmp(mode, "bc-images", 9))

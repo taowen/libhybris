@@ -96,4 +96,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL validation_message(
     VkDebugUtilsMessageTypeFlagsEXT types,
     const VkDebugUtilsMessengerCallbackDataEXT *data, void *user);
 
+int ubo_multi_draw(int alternate, int validate);
+int ubo_multi_probe(int validate);
+
 #endif

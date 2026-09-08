@@ -189,6 +189,8 @@ cases = [
     ('hybris', 'ubo-staged', 'probe-glibc'),
     ('native', 'ubo-large', 'probe-bionic'),
     ('hybris', 'ubo-large', 'probe-glibc'),
+    ('native', 'ubo-multi', 'probe-bionic'),
+    ('hybris', 'ubo-multi', 'probe-glibc'),
     ('native', 'ubo-dynamic', 'probe-bionic'),
     ('hybris', 'ubo-dynamic', 'probe-glibc'),
     ('native', 'stdio', 'probe-bionic'),
@@ -282,7 +284,7 @@ if a.icd_hal:
     metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
     # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('version', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-large', 'ubo-staged', 'ubo-template')]
+              for mode in ('version', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch')]
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
     cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
@@ -313,7 +315,7 @@ if a.icd_hal:
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
         cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
-        cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'bc-decode-validation', 'bc-images-validation', 'bc-images-gdpa-validation', 'bc-images-dlsym-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'bc-decode-validation', 'bc-images-validation', 'bc-images-gdpa-validation', 'bc-images-dlsym-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-multi-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)
@@ -341,7 +343,7 @@ try:
     metadata['selected_cases'] = a.selected_cases
     metadata['scheduled_cases'] = [backend + '-' + mode for backend, mode, _ in cases]
     if a.capture_tools:
-        metadata['scheduled_cases'] += ['icd-capture-replay', 'icd-capture-dynamic-replay']
+        metadata['scheduled_cases'] += ['icd-capture-replay', 'icd-capture-dynamic-replay', 'icd-capture-multi-replay']
     for backend, mode, binary in cases:
         if backend == 'native':
             command = (
@@ -505,12 +507,12 @@ try:
         if backend == 'icd' and mode == 'version' and code != 0:
             raise SystemExit('ICD version discovery failed; dependent cases were not run')
     if a.capture_tools:
-        for dynamic in (False, True):
-            folder = 'capture-dynamic' if dynamic else 'capture'
+        for dynamic, multi in ((False, False), (True, False), (True, True)):
+            folder = 'capture-multi' if multi else 'capture-dynamic' if dynamic else 'capture'
             case_name = 'icd-' + folder + '-replay'
             try:
                 run_capture(shell, adb, remote, a.out, metadata['commands']['icd-ubo']['command'],
-                            metadata, kill_remote, dynamic=dynamic)
+                            metadata, kill_remote, dynamic=dynamic, multi=multi)
                 code = 0
             except subprocess.TimeoutExpired as exc:
                 code = 124

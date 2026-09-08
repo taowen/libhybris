@@ -12,12 +12,13 @@ python3 tests/baseline/run.py --serial SERIAL --icd-hal HAL \
 Use the existing scoped loader quirk on the supported Mali driver. The runner
 automatically schedules ICD version discovery and the ICD widget dependency.
 `device.json` retains both requested `selected_cases` and actual
-`scheduled_cases`. Ordinary and dynamic UBO capture/replay still each execute
+`scheduled_cases`. Ordinary, single-dynamic and [multi-dynamic](widget-multi.md)
+UBO capture/replay each execute
 correct and alternate bindings, independent reference renders, API conversion,
 resource dumps, shader/layout association and exact full-image comparisons.
 The probe-manifest-checked shader snapshots remain mandatory.
 
-Each of the 16 reference/capture/convert/replay commands now records its raw
+Each of the 24 reference/capture/convert/replay commands records its raw
 `exit_code`, `timed_out` flag and elapsed seconds in command metadata. A host
 observation timeout has no process exit code; it is not reported as zero.
 The command log and existing suite-level failure/timeout classification remain
@@ -32,6 +33,7 @@ capture-specific failure. A separate 512-line alternating-stream exercise in
 `build/capture-output-transport/evidence.json` matched all ordered bytes on both
 devices with both the old and new launch; it did not reproduce the failure.
 
+The earlier two-suite capture implementation was verified as follows.
 Actual incremental library build completed in 9.732 seconds, followed by
 Bionic/glibc/linked probe builds. Adreno run `20260907T192405-125fb0c9` and Mali
 run `20260907T192407-f3c97627` each record 6 PASS: version, native/frontend/ICD

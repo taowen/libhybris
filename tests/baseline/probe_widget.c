@@ -1,15 +1,13 @@
 #include "probe.h"
 
-#include "shaders/widget.vert.inc"
-#include "shaders/widget.frag.inc"
-#include "shaders/widget-large.vert.inc"
-#include "shaders/widget-large.frag.inc"
 #include "widget_fixture.h"
 #include "render_path.h"
+#include "widget_pipeline.h"
 
 
 static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic, int large, int update_mode, int render_family, int entry_route) {
   struct render_path path = {.family = render_family, .route = entry_route};
+  const int multi = dynamic == 2;
   const int staged = update_mode == 1;
   const int templated = update_mode == 2;
   const int repeat = staged || templated;
@@ -88,17 +86,11 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   V(vkBindImageMemory);
   V(vkCreateImageView);
   V(vkDestroyImageView);
-  V(vkCreateShaderModule);
   V(vkDestroyShaderModule);
-  V(vkCreateDescriptorSetLayout);
   V(vkDestroyDescriptorSetLayout);
-  V(vkCreatePipelineLayout);
   V(vkDestroyPipelineLayout);
-  V(vkCreateRenderPass);
   V(vkDestroyRenderPass);
-  V(vkCreateFramebuffer);
   V(vkDestroyFramebuffer);
-  V(vkCreateGraphicsPipelines);
   V(vkDestroyPipeline);
   V(vkCreateDescriptorPool);
   V(vkDestroyDescriptorPool);
@@ -207,13 +199,15 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
     VkPhysicalDeviceProperties properties;
     p_vkGetPhysicalDeviceProperties(pd, &properties);
     VkDeviceSize alignment = properties.limits.minUniformBufferOffsetAlignment;
-    if (!alignment || alignment > UINT32_MAX / 8) return 2;
+    if (!alignment || alignment > UINT32_MAX / 32) return 2;
     stride = ((ubo_bytes + alignment - 1) / alignment) * alignment;
-    total = stride * 3 + ubo_bytes;
+    total = stride * (multi ? 11 : 3) + ubo_bytes;
     dynamic_offset = (uint32_t)(stride * (inject_wrong_binding ? 1 : 2));
-    printf("UBO_DYNAMIC alignment=%llu base=%llu dynamic=%u range=%u total=%llu\n",
-           (unsigned long long)alignment, (unsigned long long)stride, dynamic_offset,
-           ubo_bytes, (unsigned long long)total);
+    if (multi) printf("UBO_MULTI alignment=%llu stride=%llu range=%u total=%llu\n",
+        (unsigned long long)alignment, (unsigned long long)stride, ubo_bytes, (unsigned long long)total);
+    else printf("UBO_DYNAMIC alignment=%llu base=%llu dynamic=%u range=%u total=%llu\n",
+        (unsigned long long)alignment, (unsigned long long)stride, dynamic_offset,
+        ubo_bytes, (unsigned long long)total);
   }
 
   VkBufferCreateInfo ubo_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -240,7 +234,9 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   CHECK(p_vkBindBufferMemory(device, ubo_bad, umem_bad, 0));
   void *mapped;
   CHECK(p_vkMapMemory(device, umem_good, 0, total, 0, &mapped));
-  if (dynamic) {
+  if (multi) {
+    widget_multi_data(mapped, stride, &good.widget, &bad.widget);
+  } else if (dynamic) {
     memset(mapped, 0, (size_t)total);
     for (unsigned slot = 0; slot < 4; ++slot)
       memcpy((char *)mapped + stride * slot, slot == 3 ? good_data : bad_data, ubo_bytes);
@@ -344,131 +340,21 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   CHECK(p_vkAllocateMemory(device, &rma, NULL, &rmem));
   CHECK(p_vkBindBufferMemory(device, readback, rmem, 0));
 
-  VkShaderModuleCreateInfo vs_ci = {.sType =
-                                        VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                    .codeSize = (large ? kWidgetLargeVertSpv_word_count : kWidgetVertSpv_word_count) * 4,
-                                    .pCode = large ? kWidgetLargeVertSpv : kWidgetVertSpv};
-  VkShaderModuleCreateInfo fs_ci = {.sType =
-                                        VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                    .codeSize = (large ? kWidgetLargeFragSpv_word_count : kWidgetFragSpv_word_count) * 4,
-                                    .pCode = large ? kWidgetLargeFragSpv : kWidgetFragSpv};
-  VkShaderModule vs, fs;
-  CHECK(p_vkCreateShaderModule(device, &vs_ci, NULL, &vs));
-  CHECK(p_vkCreateShaderModule(device, &fs_ci, NULL, &fs));
-  VkDescriptorSetLayoutBinding bind = {
-      .binding = 0,
-      .descriptorType = descriptor_type,
-      .descriptorCount = 1,
-      .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT};
-  VkDescriptorSetLayoutCreateInfo sl_ci = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .bindingCount = 1,
-      .pBindings = &bind};
-  VkDescriptorSetLayout set_layout;
-  CHECK(p_vkCreateDescriptorSetLayout(device, &sl_ci, NULL, &set_layout));
-  VkPipelineLayoutCreateInfo pl_ci = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-      .setLayoutCount = 1,
-      .pSetLayouts = &set_layout};
-  VkPipelineLayout pipeline_layout;
-  CHECK(p_vkCreatePipelineLayout(device, &pl_ci, NULL, &pipeline_layout));
-  VkAttachmentDescription att = {.format = VK_FORMAT_R8G8B8A8_UNORM,
-                                 .samples = VK_SAMPLE_COUNT_1_BIT,
-                                 .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                 .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                                 .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                 .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                 .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                 .finalLayout =
-                                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL};
-  VkAttachmentReference color_ref = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-  VkSubpassDescription sub = {.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              .colorAttachmentCount = 1,
-                              .pColorAttachments = &color_ref};
-  VkSubpassDependency to_copy = {
-      .srcSubpass = 0, .dstSubpass = VK_SUBPASS_EXTERNAL,
-      .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      .dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-      .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT};
-  VkRenderPassCreateInfo rp_ci = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-                                  .dependencyCount = 1,
-                                  .pDependencies = &to_copy,
-                                  .attachmentCount = 1,
-                                  .pAttachments = &att,
-                                  .subpassCount = 1,
-                                  .pSubpasses = &sub};
-  VkRenderPass rp = VK_NULL_HANDLE;
-  if (!render_family) CHECK(p_vkCreateRenderPass(device, &rp_ci, NULL, &rp));
-  VkFramebufferCreateInfo fb_ci = {.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                                   .renderPass = rp,
-                                   .attachmentCount = 1,
-                                   .pAttachments = &view,
-                                   .width = kWidgetImage,
-                                   .height = kWidgetImage,
-                                   .layers = 1};
-  VkFramebuffer fb = VK_NULL_HANDLE;
-  if (!render_family) CHECK(p_vkCreateFramebuffer(device, &fb_ci, NULL, &fb));
-  VkPipelineShaderStageCreateInfo stages[2] = {
-      {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-       .stage = VK_SHADER_STAGE_VERTEX_BIT,
-       .module = vs,
-       .pName = "main"},
-      {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-       .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-       .module = fs,
-       .pName = "main"}};
-  VkPipelineVertexInputStateCreateInfo vi = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-  VkPipelineInputAssemblyStateCreateInfo ia = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
-  VkViewport vp = {0, 0, (float)kWidgetImage, (float)kWidgetImage, 0, 1};
-  VkRect2D sc = {{0, 0}, {kWidgetImage, kWidgetImage}};
-  VkPipelineViewportStateCreateInfo vps = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-      .viewportCount = 1,
-      .pViewports = &vp,
-      .scissorCount = 1,
-      .pScissors = &sc};
-  VkPipelineRasterizationStateCreateInfo rs = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-      .polygonMode = VK_POLYGON_MODE_FILL,
-      .cullMode = VK_CULL_MODE_NONE,
-      .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-      .lineWidth = 1};
-  VkPipelineMultisampleStateCreateInfo ms = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
-  VkPipelineColorBlendAttachmentState cba = {.colorWriteMask = 0xf};
-  VkPipelineColorBlendStateCreateInfo blend = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-      .attachmentCount = 1,
-      .pAttachments = &cba};
-  VkGraphicsPipelineCreateInfo gp = {
-      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-      .stageCount = 2,
-      .pStages = stages,
-      .pVertexInputState = &vi,
-      .pInputAssemblyState = &ia,
-      .pViewportState = &vps,
-      .pRasterizationState = &rs,
-      .pMultisampleState = &ms,
-      .pColorBlendState = &blend,
-      .layout = pipeline_layout,
-      .renderPass = rp};
-  VkFormat color_format = VK_FORMAT_R8G8B8A8_UNORM;
-  VkPipelineRenderingCreateInfo rendering_pipeline = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-      .colorAttachmentCount = 1, .pColorAttachmentFormats = &color_format};
-  if (render_family) gp.pNext = &rendering_pipeline;
-  VkPipeline pipeline;
-  CHECK(p_vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gp, NULL,
-                                    &pipeline));
-  VkDescriptorPoolSize pool_size = {descriptor_type, 1};
+  struct widget_pipeline prepared;
+  int pipeline_result = widget_pipeline_create(gip, instance, device, view,
+      large, multi, descriptor_type, render_family, &prepared);
+  if (pipeline_result) return pipeline_result;
+  VkShaderModule vs = prepared.vs, fs = prepared.fs;
+  VkDescriptorSetLayout *set_layouts = prepared.set_layouts;
+  VkDescriptorSetLayout set_layout = set_layouts[0];
+  VkPipelineLayout pipeline_layout = prepared.layout;
+  VkPipeline pipeline = prepared.pipeline;
+  VkRenderPass rp = prepared.render_pass;
+  VkFramebuffer fb = prepared.framebuffer;
+  VkDescriptorPoolSize pool_size = {descriptor_type, multi ? 4 : 1};
   VkDescriptorPoolCreateInfo pool_ci = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .maxSets = 1,
+      .maxSets = multi ? 2 : 1,
       .poolSizeCount = 1,
       .pPoolSizes = &pool_size};
   VkDescriptorPool pool;
@@ -476,10 +362,11 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   VkDescriptorSetAllocateInfo sa = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
       .descriptorPool = pool,
-      .descriptorSetCount = 1,
-      .pSetLayouts = &set_layout};
-  VkDescriptorSet set;
-  CHECK(p_vkAllocateDescriptorSets(device, &sa, &set));
+      .descriptorSetCount = multi ? 2 : 1,
+      .pSetLayouts = set_layouts};
+  VkDescriptorSet sets[2];
+  CHECK(p_vkAllocateDescriptorSets(device, &sa, sets));
+  VkDescriptorSet set = sets[0];
   VkDescriptorBufferInfo dbi = {.buffer = !dynamic && inject_wrong_binding ? ubo_bad
                                                                : ubo_good,
                                 .offset = dynamic ? stride : 0,
@@ -508,6 +395,16 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
         .templateType = VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET,
         .descriptorSetLayout = set_layout};
     CHECK(p_vkCreateDescriptorUpdateTemplate(device, &template_ci, NULL, &update_template));
+  } else if (multi) {
+    VkDescriptorBufferInfo infos[4];
+    const unsigned bases[4] = {1, 2, 1, 3};
+    for (unsigned i = 0; i < 4; ++i)
+      infos[i] = (VkDescriptorBufferInfo){ubo_good, stride * bases[i], ubo_bytes};
+    VkWriteDescriptorSet writes[3] = {write, write, write};
+    writes[0].dstBinding = 3; writes[0].descriptorCount = 2; writes[0].pBufferInfo = &infos[1];
+    writes[1].pBufferInfo = &infos[0];
+    writes[2].dstSet = sets[1]; writes[2].dstBinding = 1; writes[2].pBufferInfo = &infos[3];
+    p_vkUpdateDescriptorSets(device, 3, writes, 0, NULL);
   } else p_vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
   printf("DRAW set=%p layout=%p pipeline=%p buffer=%p range=%u inject=%d\n",
          (void *)set, (void *)pipeline_layout, (void *)pipeline,
@@ -580,8 +477,13 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
       if (render_family) render_path_begin(&path, cb, image, view, kWidgetImage, kWidgetImage);
       else p_vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
       p_vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+      uint32_t multi_offsets[4] = {(uint32_t)(stride * 2), (uint32_t)(stride * 3),
+          (uint32_t)(stride * (inject_wrong_binding ? 5 : 6)), (uint32_t)(stride * 8)};
       p_vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout,
-                                0, 1, &set, dynamic ? 1 : 0, dynamic ? &dynamic_offset : NULL);
+                                0, multi ? 2 : 1, sets, multi ? 4 : dynamic ? 1 : 0,
+                                multi ? multi_offsets : dynamic ? &dynamic_offset : NULL);
+      if (multi) printf("UBO_MULTI stride=%llu offsets=%u,%u,%u,%u alternate_set=0 binding=3 element=1\n",
+          (unsigned long long)stride, multi_offsets[0], multi_offsets[1], multi_offsets[2], multi_offsets[3]);
       p_vkCmdBindIndexBuffer(cb, ibo, 0, VK_INDEX_TYPE_UINT16);
       p_vkCmdDrawIndexed(cb, kWidgetIndexCount, 1, 0, 0, 0);
       if (render_family) render_path_end(&path, cb, image);
@@ -616,6 +518,14 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
            mid[3], inject_wrong_binding);
     match_good = mid[0] == 255 && mid[1] == 255 && mid[2] == 0 && mid[3] == 255;
     match_bad = mid[0] == 0 && mid[1] == 255 && mid[2] == 255 && mid[3] == 0;
+    if (multi) {
+      const uint8_t expected[2][4] = {{255, 255, 0, 255}, {0, 255, 255, 0}};
+      unsigned mismatches = 0;
+      for (unsigned pixel = 0; pixel < kWidgetImage * kWidgetImage; ++pixel)
+        mismatches += memcmp(pixels + 4 * pixel, expected[inject_wrong_binding], 4) != 0;
+      printf("UBO_MULTI pixels=%u mismatches=%u\n", kWidgetImage * kWidgetImage, mismatches);
+      pixels_failed |= mismatches != 0;
+    }
     const char *dump_dir = getenv("PROBE_WIDGET_DUMP_DIR");
     if (dump_dir) {
       char path[4096];
@@ -646,6 +556,7 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   if (templated) destroy_template(device, update_template, NULL);
   p_vkDestroyDescriptorPool(device, pool, NULL);
   p_vkDestroyDescriptorSetLayout(device, set_layout, NULL);
+  if (multi) p_vkDestroyDescriptorSetLayout(device, set_layouts[1], NULL);
   p_vkDestroyShaderModule(device, vs, NULL);
   p_vkDestroyShaderModule(device, fs, NULL);
   p_vkDestroyImageView(device, view, NULL);
@@ -755,4 +666,12 @@ int ubo_render_probe(int family, int route, int validate) {
       if (result) return result;
     }
   return 0;
+}
+
+int ubo_multi_draw(int alternate, int validate) {
+  return ubo_draw_internal(alternate, validate, 2, 0, 0, 0, 0);
+}
+int ubo_multi_probe(int validate) {
+  int result = ubo_multi_draw(0, validate);
+  return result ? result : ubo_multi_draw(1, validate);
 }

@@ -281,7 +281,7 @@ it does not provide slot reclamation, IE first-touch or signal reentrancy.
 | G03 | Partial | Observe TLS allocation/destruction and generation handling; exercise GLES multiple contexts and cross-thread teardown. |
 | G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Fixed headless widget capture/replay now matches all RGBA bytes. The ICD Wayland window probe now also passes Khronos VVL+SyncVal create/render/resize/retirement/destroy and GFXReconstruct virtual-swapchain copy dumps on OnePlus 8T and Mali; still need arbitrary application coverage. |
 | G05 | Partial | Machine-readable raw/effective features2, limits/extensions/format queries and corresponding CreateDevice behavior. |
-| G06 | Partial | Associate an injected wrong binding with the first wrong draw and effective descriptor/resource generation. |
+| G06 | Partial | Fixed captures now reconstruct four dynamic UBOs across two sets and an array and identify the changed descriptor/first divergent draw. General history and runtime resource generations remain open; see the multi-descriptor evidence. |
 | G07 | Open | Default-off BC1–BC5 image operations have independent native sampling/byte references, mip/layer/subregion and retirement probes. BC4/BC5 include UNORM16/SNORM16 sampling, filtering and border/default-channel checks. Native RGB8 fixes the tested Mali BC1 RGB border case; Redmi remains FAIL. BC6–BC7 and complete format/copy/view/aliasing semantics remain open; see the BC image scope. |
 | G08 | Open | Fixed SPIR-V tooling, reflection/hash/specialization records, before/after semantic evidence for each transform. |
 | G09 | Open | Noncoherent/staging/reuse and queue ordering cases; validate emulation against completion and memory visibility. |
@@ -1022,3 +1022,23 @@ The six independent decoder routes pass 1,344 readbacks, including RGB8 packing.
 Pixel verification was separated from Vulkan recording into `bc_image_verify.h`.
 [Evidence, hashes and limits](tests/baseline/bc-rgb8.md) retain the before/after
 results. The Redmi correction, remaining sampler semantics and G07 stay open.
+
+### Multiple dynamic UBO capture (2026-09-08)
+
+The fixed G06 widget fixture now reads four dynamic descriptors across two sets
+and a two-element array, with interleaved binding numbers, reversed declaration
+order and distinct dynamic offsets. Native/frontend/ICD and standard validation
+pass on Redmi and Mali. The capture audit reconstructs every effective range,
+checks both stages' complete UBO dumps and shader hashes, and identifies only
+set 0 / binding 3 / element 1 at the first differing draw 62. Ordinary and
+single-dynamic capture gates remain. Pipeline creation and descriptor auditing
+were separated into their own files; the main widget probe shrank from 758 to
+677 lines. No unit-test suite or runtime tracing framework was added.
+
+The clean build and final matrices are recorded in
+[widget-multi.md](tests/baseline/widget-multi.md): Redmi 28 PASS / 18 UNSUPPORTED,
+Mali 43 PASS / 3 UNSUPPORTED, plus BC-force regressions. The latter retain
+Redmi's BC1 RGB pixel FAIL while both ordinary/multi-widget validations pass.
+Twenty-two altered saved evidence inputs are rejected and four harmless order
+changes accepted. Runtime generations, arbitrary descriptor history, partial
+rebinding and WSI lineage remain open; this does not close G06 or G07.

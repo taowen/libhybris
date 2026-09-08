@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 enum {
   kWidgetUboBytes = 272,
@@ -89,6 +90,22 @@ static uint32_t widget_fixture_data(int large, int dynamic,
   *good_out = large_good;
   *bad_out = large_bad;
   return ubo_bytes;
+}
+
+/* Distinct tags identify every descriptor's actual range. Unselected slots
+ * retain a poison tag, with a valid identity matrix so mistakes remain visible. */
+static void widget_multi_data(void *mapped, uint64_t stride,
+                              const struct widget_ubo *good, const struct widget_ubo *bad) {
+  memset(mapped, 0, (size_t)(stride * 11 + sizeof(*good)));
+  const unsigned slots[4] = {3, 5, 7, 11};
+  for (unsigned slot = 0; slot < 12; ++slot) {
+    struct widget_ubo value = *good;
+    value.parameters[1][0] = -1;
+    for (unsigned i = 0; i < 4; ++i)
+      if (slot == slots[i]) value.parameters[1][0] = 101 + i;
+    if (slot == 6) { value = *bad; value.parameters[1][0] = 103; }
+    memcpy((char *)mapped + stride * slot, &value, sizeof(value));
+  }
 }
 
 #endif
