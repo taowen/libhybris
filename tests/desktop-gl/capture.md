@@ -47,9 +47,10 @@ is reported only as initialization, never as the actual draw count.
 This establishes CPU-upload and recorded-copy provenance. It does not observe
 GPU argument contents, exclude shader/aliased writes, resolve cross-queue
 ordering, or simulate resource history. The vertex index therefore still marks
-indirect GPU arguments as not decoded. Linked pipeline-library state, shader
-objects and secondary command-buffer execution also remain unresolved; unknown
-linked/shader-object state is marked incomplete. The full standard capture and
+indirect GPU arguments as not decoded. Pipeline-library vertex input is now
+resolved at creation, as described below. Other library state, shader objects
+and secondary command-buffer execution remain outside this index; missing or
+ambiguous vertex sources are marked incomplete. The full standard capture and
 converted calls remain available for further analysis. Desktop replay is an
 explicit option, with the bounded comparison and current failures described below.
 
@@ -322,3 +323,41 @@ packed-image mismatch. Results are retained in `capture/packed-image-integrity.j
 The original evidence was unchanged. Python compilation and diff checks also
 passed. This closes the fixed probe's unsaved packed-image gap, not arbitrary
 application draw/attachment lineage or G04/G06/G10/G12 acceptance.
+
+### Pipeline-library vertex input provenance
+
+`pipeline_vertex.py` resolves the vertex-input subset separately from draw-state
+tracking. It follows captured linked libraries when each pipeline is created,
+records library handles/create indices and the vertex-input provider, and saves
+the resolved state before libraries can be destroyed. It follows the Vulkan
+[graphics pipeline subset rules](https://docs.vulkan.org/refpages/latest/refpages/source/VkGraphicsPipelineLibraryCreateInfoEXT.html),
+including the implicit empty subset when linking without an explicit subset.
+An absent dependency or multiple vertex-input providers keeps the draw
+incomplete. Dynamic attributes/strides are then read from recorded command
+state using the provider's dynamic-state declarations.
+
+Previously all 50 Turnip draws were marked incomplete because the final linked
+pipeline had no local vertex-input state. Reanalysis of
+`20260908T185957-6cf94932` resolves all 50; the corresponding Mali capture
+retains its 27 complete records. Reanalysis files are retained separately as
+`vertex-libraries-reanalysis.json` without replacing the original summaries.
+
+The final Python modules were byte-compiled and exercised by fresh device
+capture/replay with the existing verified C probe/runtime:
+
+| Run | Vertex-state index | Rendering / replay |
+| --- | --- | --- |
+| `20260908T190556-276762f8` — Turnip | 50/50 complete; first draw's vertex provider is pipeline 43, create call 380; linked library creates are 380/379/381 | Both PASS; 50/50 images match |
+| `20260908T190556-bb8da642` — Mali | 27/27 complete; ordinary pipeline state remains directly sourced | Rendering FAIL with existing attribute errors; replay PASS, 27/27 images match |
+
+The run records include the new helper's hash. Temporary mutations of the
+preceding real Turnip capture `20260908T190431-46a3f20b` made a linked library
+missing or duplicated the vertex provider; both produced incomplete state.
+Inserting library destruction after linking preserved the first draw's saved
+provider and bindings. Results are retained in `pipeline-library-integrity.json`.
+These are evidence-integrity checks, not driver acceptance of invalid pipelines.
+Nested library chains and Flags2 handling have code/byte-compilation coverage
+only. This index does not reconstruct shader/descriptor state, vertex-buffer
+contents, all dynamic-state invalidation rules, GPU indirect arguments or
+secondary command buffers. Complete vertex-input metadata is not complete
+pipeline execution evidence, and G06 remains open.

@@ -1,6 +1,7 @@
 """Index recorded vertex input state in GFXReconstruct JSONL; not a replay engine."""
 import copy
 import json
+from pipeline_vertex import pipeline_vertex
 
 
 def vertex_draws(path):
@@ -17,7 +18,9 @@ def vertex_draws(path):
         if name == 'vkCreateGraphicsPipelines':
             for handle, info in zip(args['pPipelines'], args['pCreateInfos']):
                 if handle:
-                    pipelines[handle] = (index, info)
+                    pipelines[handle] = pipeline_vertex(handle, index, info, pipelines)
+        elif name == 'vkDestroyPipeline':
+            pipelines.pop(args['pipeline'], None)
         elif name == 'vkBeginCommandBuffer' and function.get('return') == 'VK_SUCCESS':
             buffers[args['commandBuffer']] = {'begin': index, 'vertices': {}, 'draws': []}
         elif name == 'vkCmdBindPipeline' and args['pipelineBindPoint'] == 'VK_PIPELINE_BIND_POINT_GRAPHICS':
@@ -43,15 +46,12 @@ def vertex_draws(path):
         elif name.startswith('vkCmdDraw'):
             state = buffers[args['commandBuffer']]
             handle = state.get('pipeline')
-            creation, info = pipelines.get(handle, (None, {}))
-            complete = handle in pipelines
-            node = info.get('pNext')
-            while node:
-                if node['sType'] == 'VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR' and node.get('libraryCount'):
-                    complete = False
-                node = node.get('pNext')
-            dynamic = (info.get('pDynamicState') or {}).get('pDynamicStates') or []
-            vi = info.get('pVertexInputState') or {}
+            resolved = pipelines.get(handle, {})
+            sources = resolved.get('vertex_sources', [])
+            complete = len(sources) == 1 and not resolved.get('unresolved_libraries')
+            source = sources[0] if complete else {}
+            dynamic = source.get('dynamic', [])
+            vi = source.get('state', {})
             descriptions = vi.get('pVertexBindingDescriptions') or []
             attributes = vi.get('pVertexAttributeDescriptions') or []
             divisors = {}
@@ -81,7 +81,11 @@ def vertex_draws(path):
                     value['stride'] = value['dynamic_stride']
                 bindings.append(value)
             draw = {'index': index, 'name': name, 'parameters': args,
-                    'begin_index': state['begin'], 'pipeline': handle, 'pipeline_create_index': creation,
+                    'begin_index': state['begin'], 'pipeline': handle, 'pipeline_create_index': resolved.get('create_index'),
+                    'vertex_input_source': {k: source[k] for k in ('pipeline', 'create_index') if k in source},
+                    'pipeline_libraries': resolved.get('libraries', []),
+                    'unresolved_libraries': resolved.get('unresolved_libraries', []),
+                    'vertex_input_source_count': len(sources),
                     'bindings': bindings, 'attributes': attributes, 'submit_indices': [],
                     'vertex_state_complete': complete}
             if 'Indirect' in name:
@@ -102,4 +106,4 @@ def vertex_draws(path):
     return {'function_calls': calls, 'recorded_draws': len(draws),
             'submitted_draws': sum(bool(d['submit_indices']) for d in draws),
             'unexpanded_commands': unexpanded, 'draws': draws,
-            'scope': 'recorded vertex input state and direct submit references; indirect arguments, pipeline libraries and secondary execution are not decoded'}
+            'scope': 'recorded vertex input state and direct submit references; pipeline-library vertex input is resolved at creation; indirect arguments and secondary execution are not decoded'}

@@ -65,6 +65,7 @@ if a.capture_tools:
     capture_metadata['capture_evidence_sha256']={
         'capture.py':sha(Path(__file__).with_name('capture.py')),
         'vertex_capture.py':sha(Path(__file__).with_name('vertex_capture.py')),
+        'pipeline_vertex.py':sha(Path(__file__).with_name('pipeline_vertex.py')),
         'capture_files.py':sha(Path(__file__).with_name('capture_files.py')),
         'indirect_uploads.py':sha(Path(__file__).with_name('indirect_uploads.py')),
         'replay.py':sha(Path(__file__).with_name('replay.py')),
