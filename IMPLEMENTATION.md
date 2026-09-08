@@ -113,7 +113,7 @@ upload/readback memory and tests partial flush/invalidate with nonzero buffer
 binding offsets. Four rounds update a subrange, reuse one command buffer and
 check the copied data plus unchanged neighbors. Mali native/frontend/ICD and
 standard validation pass; atom size 64, binding offset 64 and partial ranges
-are recorded in the baseline README. Adreno vendor lacks a compatible
+are recorded in [memory and synchronization](tests/baseline/memory-sync.md). Adreno vendor lacks a compatible
 non-coherent host-visible type and all four paths report unsupported. This
 adds successful finite-range coverage, not allocation-end/partial-mapping or
 concurrent-atom coverage; G09 remains partial.
@@ -129,7 +129,7 @@ exposes only one queue and rejects this workload before submission.
 The independent transfer helper is separate from timeline setup/host-command
 coverage. Partial-range flushes, cross-family ownership and concurrent host
 submissions remain outside this batch; G09 is still partial. Exact records and
-limits are in the baseline README.
+limits are in [memory and synchronization](tests/baseline/memory-sync.md).
 
 The allocator workload now lives in `tests/baseline/probe_alloc.c`, separate
 from concurrent first-initialization code. Direct ICD enumeration refuses
@@ -138,7 +138,7 @@ allocation and creates/destroys a device from the recovered handle. Ordinary,
 core group and KHR group routes each return OUT_OF_HOST_MEMORY with one
 attempt and unchanged live allocation count on Adreno 650 and Mali-G1-Ultra;
 all three rounds end with zero live callback allocations. Each device passes
-nine selected initialization/allocator cases. See the baseline README for
+nine selected initialization/allocator cases. See [ICD lifecycle](tests/baseline/icd-lifecycle.md) for
 run IDs and limitations; G03 remains partial.
 
 The relative condition wait validates seconds/nanoseconds and checked deadline
@@ -281,7 +281,7 @@ it does not provide slot reclamation, IE first-touch or signal reentrancy.
 
 | Gap | State | Next concrete evidence |
 |---|---|---|
-| G01 | AArch64 baseline verified | Standalone default build, fixed inputs/toolchain, library/probe hashes and sampled runtime mappings verified on two devices; see baseline README. |
+| G01 | AArch64 baseline verified | Standalone default build, fixed inputs/toolchain, library/probe hashes and sampled runtime mappings verified on two devices; see [build evidence](tests/baseline/build.md). |
 | G02 | Partial | 726-command pinned registry query table and four-route transfer workload verified; core/KHR memory2 calls verified. Still need per-object dispatch/compat state and broader enabled-feature semantics. |
 | G03 | Partial | Observe TLS allocation/destruction and generation handling; exercise GLES multiple contexts and cross-thread teardown. |
 | G04 | Partial | Standard-loader → vendor-HAL ICD headless path passes eight cases on both devices. Standard glibc VVL legal/illegal lifecycle cases also pass on both devices. Fixed headless widget capture/replay now matches all RGBA bytes. The ICD Wayland window probe now also passes Khronos VVL+SyncVal create/render/resize/retirement/destroy and GFXReconstruct virtual-swapchain copy dumps on OnePlus 8T and Mali; still need arbitrary application coverage. |
@@ -315,7 +315,7 @@ their upstream structure unless a concrete fix requires changing them.
 ## Device coverage
 
 Currently connected: 29854870 (M2012K11AC) and 192.168.1.28:5555 (KB2000),
-both Android SDK 33. Both now have standalone smoke results in the baseline README.
+both Android SDK 33. Both have dated standalone smoke results in [the build evidence](tests/baseline/build.md).
 Neither is the original Mali-G1-Ultra or Adreno 830 Blender failure device.
 Work independent of those devices continues; their absence does not justify
 claiming the application regressions are fixed.
@@ -687,7 +687,7 @@ around allocation and host errno is restored. The pthread shadow includes
 the tid prefix needed by inlined bionic mutex paths. The fast path only checks
 slot 1, so late module initializer replay remains the hook/TLSDESC resolver's
 responsibility. Reservation and allocation use HYBRIS_TLS_THUNK_SIZE (80).
-The first-touch probe and full Redmi/X300 results are in the baseline README;
+The first-touch probe and dated Redmi/X300 results are in [TLS evidence](tests/baseline/tls.md);
 X300 initialization/TLS passes, but ICD graphics pipelines still crash.
 Signal/fork, SVE/SME and arbitrary Android pthread layouts are not covered.
 
@@ -698,7 +698,7 @@ uses either API 1.3 core names or API 1.1 with the KHR extensions and their
 promoted dependencies, and exercises begin/end rendering, image/host barriers
 and queue submit2. GIPA, GDPA, ELF dlsym and linked weak symbols are separate
 routes. Missing optional ELF exports report UNSUPPORTED; exported frontend
-stubs that abort remain CRASH. See the baseline README for device results.
+stubs that abort remain CRASH. See [dispatch evidence](tests/baseline/dispatch.md) for device results.
 The readback oracle checks the existing widget's center pixel for both known
 UBO bindings; these cases do not establish arbitrary shader/rendering semantics
 or capture/replay of dynamic rendering. The existing capture-dynamic workload

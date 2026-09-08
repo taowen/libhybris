@@ -32,7 +32,7 @@ field by field. For an audited run, add:
 ```
 
 Use `force` for the Mali conversion control. Include the appropriate device,
-HAL and standard-loader options from the baseline README. The runner writes
+HAL and standard-loader options from [the loader guide](loader-tools.md). The runner writes
 format decisions under `formats` in each scaled shader evidence JSON.
 `format_evidence.py` checks format identities, raw-to-effective changes, reasons,
 mask, and the values observed by the application. If the corresponding native

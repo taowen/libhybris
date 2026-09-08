@@ -66,7 +66,7 @@ was added.
 
 ## Reproduction
 
-Build the library and probes using the baseline README. To regenerate the new
+Build the library and probes using [the build guide](build.md). To regenerate the new
 embedded shaders, run `python3 tests/baseline/shaders/generate-widget-multi.py`;
 it compiles and validates Vulkan 1.0 SPIR-V.
 

@@ -44,7 +44,7 @@ For example, add these cases to the standard runner's loader/HAL options:
 ```
 
 Select the other suffixes separately. Validation cases require the layer,
-layer JSON and build manifest described in the baseline README. Use
+layer JSON and build manifest described in [the loader guide](loader-tools.md). Use
 `--scaled-vertex-compat missing` for the Adreno fallback; the Mali forced
 conversion control uses `force` and the existing scoped loader quirk.
 The shader auditor verifies capabilities, the full case/divisor/draw sequence,
