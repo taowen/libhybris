@@ -102,3 +102,32 @@ kernel routes: 344 readbacks per route, 2,752 total, zero differences and
 validation errors. Caps and caps2 pass. Native/frontend/ICD image controls each
 query all sixteen formats and return UNSUPPORTED; they provide query/control
 evidence, not pixel coverage.
+
+## Unified backend filter input diagnosis (2026-09-09)
+
+The existing image probe now prints four encoded binary16 input texels,
+coordinates, sampler/view selection, output pair, exact quarter-sum and
+maximum input magnitude for its first three failing BC6H filtered words per
+readback. Inputs are logged before the recorded view swizzle. This makes
+the ideal-filter arithmetic independently reproducible; comparisons, bounds,
+fixtures and shaders are unchanged. No new unit tests were added.
+
+The AArch64 glibc, linked and NDK probe bundle built successfully. With the
+previously built unified compatibility layer `ed268fbb…`, Turnip run
+`20260909T221032-2db7531b` still fails with 12,524 differences; Mali control
+`20260909T221108-a1c35510` passes. Both perform 384 readbacks, 64 copy2 and
+64 synchronization2 cases, and report zero validation errors. These runs use
+the product Turnip backend on Redmi, not its original proprietary HAL.
+
+One Turnip UFLOAT result at (0,0), layer 0, sampler 1 has green half inputs
+`3ad2,3a8c,3a8c,3b61`. Python's independent `struct.unpack('<e', ...)`
+decoding gives `0.8525390625,0.818359375,0.818359375,0.92236328125`.
+Their exact average is `0.8529052734375`; nearest binary16 is `3ad3`
+(`0.85302734375`), while the native reference returns `3ad2`
+(`0.8525390625`). The error is 0.75 binary16 ULP, above this probe's
+ideal nearest-rounding bound. This observation does not establish the
+backend's internal filtering algorithm or a conformance violation, and does
+not close the border-alpha or filtering failures. No acceptance threshold
+was relaxed. Full local logs and manifests are in
+`/tmp/libhybris-bc-half-results/`; bundle in
+`/tmp/libhybris-bc-half-diagnostic/bundle`.

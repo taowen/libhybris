@@ -123,6 +123,7 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                 matches = actual[word] == expected;
             } else if (f >= 14) {
                 int64_t sums[4] = {0}, maximum[4] = {0};
+                uint64_t texels[4];
                 for (unsigned dy = 0; dy < 2; ++dy) for (unsigned dx = 0; dx < 2; ++dx) {
                     unsigned sx = x + dx < width ? x + dx : width - 1;
                     unsigned sy = y + dy < height ? y + dy : height - 1;
@@ -130,6 +131,7 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                     uint64_t rgba = reference_pixels[at] | ((uint64_t)reference_pixels[at + 1] << 32);
                     if (sampler_choice >= 2 && (x + dx >= width || y + dy >= height))
                         rgba = sampler_choice == 2 ? UINT64_C(0x3c003c003c003c00) : UINT64_C(0x3c00000000000000);
+                    texels[2 * dy + dx] = rgba;
                     for (unsigned c = 0; c < 4; ++c) {
                         unsigned channel = shape_index && c != 1 && c != 3 ? 2 - c : c;
                         int64_t value = bc_half_units((uint16_t)(rgba >> (16 * channel)));
@@ -146,6 +148,13 @@ static unsigned bc_verify_image_readback(const struct bc_image_readback *check)
                     if (channel == 3 ? got != want : !bc_half_filtered_matches(got, sums[channel], maximum[channel])) matches = 0;
                     expected |= (uint32_t)want << (16 * c);
                 }
+                if (!matches && filtered_bad < 3)
+                    printf("BC_IMAGES_HALF_FILTER_INPUT format=%u word=%u xy=%u,%u layer=%u swizzle=%u sampler=%u pair=%u texels=%016llx,%016llx,%016llx,%016llx actual=%08x expected=%08x sums=%lld,%lld,%lld,%lld maximum=%lld,%lld,%lld,%lld\n",
+                        bc_formats[f], word, x, y, z, shape_index, sampler_choice, sample_word & 1,
+                        (unsigned long long)texels[0], (unsigned long long)texels[1],
+                        (unsigned long long)texels[2], (unsigned long long)texels[3], actual[word], expected,
+                        (long long)sums[0], (long long)sums[1], (long long)sums[2], (long long)sums[3],
+                        (long long)maximum[0], (long long)maximum[1], (long long)maximum[2], (long long)maximum[3]);
             } else if (f >= 12) {
                 /* Independent four-texel average of the uploaded BC7 golden.
                  * Convert sRGB before filtering. The byte EOTF lookup adds
