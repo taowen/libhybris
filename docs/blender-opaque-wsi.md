@@ -44,8 +44,15 @@ bytes are unchanged from the rendering-segment fix.
   Fixed-driver ordinary run `20260909T175153-a90da292` passes; SyncVal run
   `20260909T175439-b78aa1b5` passes with zero errors. The prior descriptor-fixed
   driver passes raw readback but fails the physical window check at epoch zero.
+- A malformed-flags request initially left its native-handle FDs queued for the
+  next request: the following opaque patch read 112/16/24 instead of 224/32/48,
+  and the restored-alpha phase also failed (`20260909T180811-146fc480`). Xwayland
+  now registers the FD count before flag validation so DIX discards rejected
+  handles. `20260909T181116-509fc977` verifies BadValue followed by correct
+  opaque and restored-alpha frames; all six phases pass.
 - After product deployment, both GLX and Wayland EGL teapot create/render/resize
-  gates pass: `20260909T180115-3ec24b9e`.
+  gates pass: `20260909T180115-3ec24b9e`. After installing and restarting the
+  final component APK, both pass again in `20260909T181336-897045fc`.
 
 The probe requires advertised OPAQUE support instead of falling back to INHERIT;
 its independent screenshot checker still expects opaque RGB while verifying
@@ -63,21 +70,26 @@ layer without adding the Android Vulkan frontend to the library search path.
 Other driver profiles pass through. Existing explicitly ordered layer lists
 retain their order when the compatibility layer is already present.
 
-The Redmi test APK was made from the installed APK, changing only
-`lib/arm64-v8a/libxwayland.so` and retaining the same signing certificate.
-The actual overlay staging script supplied the product Mesa and layer; those
-and the launcher were deployed with backups. This is a tested component update,
-not a full Gradle APK rebuild. Maps and device hashes confirm the final live
-Blender uses `rootfs/usr/lib/mesa` and `rootfs/usr/lib/ardesk/vulkan`, without a
-staged driver override. The final screenshot shows `interactive.blend` in the
-3D viewport with no terminal text leaking through it.
+The final Redmi test APK is derived from the installed APK and changes exactly
+four payload entries: Xwayland, the Qualcomm GPU archive and its ID, and the
+Blender launcher asset. The signing certificate is unchanged. The overlay uses
+the actual staging script's Mesa, shared layer and dependencies. The startup
+installer's overlay ID and the launcher hash are verified after restarting the
+app; updating the asset matters because startup recopies the launcher.
+This is a tested component APK update, not a full Gradle rebuild or fresh-install
+qualification. Backups of the earlier APK and manual deployment are retained.
+Maps and device hashes confirm live Blender uses `rootfs/usr/lib/mesa` and
+`rootfs/usr/lib/ardesk/vulkan`, without a staged driver override. The final
+screenshot shows `interactive.blend` in the 3D viewport with no terminal text
+leaking through it.
 
 A fresh default-size product launch still displays no window. The below-layer
 capture ends at call 206, `vkAcquireNextImageKHR`, returning
 `VK_ERROR_OUT_OF_DATE_KHR` for swapchain 10 and fence 14. The process remains in
 `futex_wait_queue_me`. Blender 4.3.2's `GHOST_ContextVK::swapBuffers()` discards
 the acquire result and then waits on that fence. The capture does not record a
-completed subsequent wait. No fake successful acquire or premature fence signal
+completed subsequent wait. The final component APK also reproduces the absent
+default-size window and futex wait. No fake successful acquire or premature fence signal
 has been introduced to mask this application failure.
 
 ## Build and artifact identities
@@ -86,8 +98,10 @@ has been introduced to mask this application failure.
   `ce43f4f4eb4096389f00b36896efd92171f4ffdf34ee018739d3a180ee49cfb0`.
   Product RPATH staging produces
   `466bd4d6762e91c2df2644936968dfbdc7f6581b539190f126c7f2382dc2989e`.
-- Xwayland source: `cc88c97e1`; initial and final rebuilds have identical SHA-256
+- Initial Xwayland source: `cc88c97e1`, with SHA-256
   `643d50a85a8c4b34b5810add4a7eaae5af993a2b4a855f8617d018d9315bc982`.
+  The FD-rejection fix is `dd0a97353`, final SHA-256
+  `bcc695f39a2ca3141517a085817847f20dd2e943360ebb126df7c57a49cc729d`.
 - Unchanged compatibility layer:
   `1e8ad39ac9a574e7d118fc47fc21f9446e7d3f0f6aeb42cb0355056b1df8de23`.
 
