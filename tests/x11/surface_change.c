@@ -5,9 +5,9 @@
 #define V(name) PFN_##name name = (PFN_##name)gip(instance, #name); if (!name) return 2
 #define OK(call) do { VkResult r = (call); if (r != VK_SUCCESS) { printf("X11_RESIZE_ERROR %s result=%d\n", #call, r); return 2; } } while (0)
 
-/* Keep an acquired image across a real X resize or native-window destruction. A rejected present must
- * consume its semaphore before that same binary semaphore can be signaled
- * again. Wait for the rejected present queue operations before re-signaling;
+/* Keep an acquired image across a real X resize or native-window destruction.
+ * Both suboptimal and rejected presents must consume their semaphore before
+ * that same binary semaphore can be signaled again. Wait for the rejected present queue operations before re-signaling;
  * an empty submit with a fence then bounds the independent reuse check. */
 int x11_surface_change(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhysicalDevice physical,
     VkDevice device, VkQueue queue, xcb_connection_t *connection, xcb_window_t *window,
@@ -40,7 +40,7 @@ int x11_surface_change(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhy
     OK(vkQueueSubmit(queue, 1, &submit, fence));
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 2000000000ull));
     OK(vkResetFences(device, 1, &fence));
-    VkResult expected = lost ? VK_ERROR_SURFACE_LOST_KHR : VK_ERROR_OUT_OF_DATE_KHR;
+    VkResult expected = lost ? VK_ERROR_SURFACE_LOST_KHR : VK_SUBOPTIMAL_KHR;
     uint32_t dimensions[] = {width, height};
     xcb_generic_error_t *error = xcb_request_check(connection,
         lost ? xcb_destroy_window_checked(connection, *window) :
@@ -54,7 +54,15 @@ int x11_surface_change(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhy
     uint32_t untouched = UINT32_MAX;
     VkResult acquired = vkAcquireNextImageKHR(device, *chain, 0, VK_NULL_HANDLE, fence, &untouched);
     printf("X11_RESIZE_ACQUIRE epoch=%u result=%d index=%u\n", epoch, acquired, untouched);
-    if (acquired != expected || untouched != UINT32_MAX || vkGetFenceStatus(device, fence) != VK_NOT_READY) return 2;
+    if (!lost && acquired == VK_ERROR_OUT_OF_DATE_KHR) expected = acquired;
+    if (acquired != expected) return 2;
+    if (acquired == VK_SUBOPTIMAL_KHR) {
+        if (untouched >= count || untouched == held) return 2;
+        OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 2000000000ull));
+        OK(vkResetFences(device, 1, &fence));
+        /* This acquired image has no GPU use and may remain acquired until
+         * swapchain destruction. The originally held image is presented. */
+    } else if (untouched != UINT32_MAX || vkGetFenceStatus(device, fence) != VK_NOT_READY) return 2;
     VkResult per_chain = VK_SUCCESS;
     VkPresentInfoKHR present = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1, .pWaitSemaphores = &ready, .swapchainCount = 1,
@@ -87,6 +95,7 @@ int x11_surface_change(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhy
     for (unsigned i = 0; i < count; ++i) if (old_images[i] != images[i]) return 2;
     vkDestroySwapchainKHR(device, *chain, NULL);
     *chain = replacement; sw->oldSwapchain = VK_NULL_HANDLE;
-    printf("X11_RESIZE epoch=%u size=%ux%u out_of_date=1 fence_unsignaled=1 present_wait_idle=1 semaphore_reused=1 old_images_preserved=1\n", epoch, width, height);
+    printf("X11_RESIZE epoch=%u size=%ux%u status=%s acquire_sync_checked=1 present_wait_idle=1 semaphore_reused=1 old_images_preserved=1\n", epoch, width, height,
+        expected == VK_SUBOPTIMAL_KHR ? "SUBOPTIMAL" : "OUT_OF_DATE");
     return 0;
 }

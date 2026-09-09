@@ -126,7 +126,8 @@ static int dequeue(hybris_icd_window *base, int64_t timeout, ANativeWindowBuffer
     for (;;) {
         drain(o);
         if (xcb_connection_has_error(o->connection)) { error = -EPIPE; break; }
-        if ((o->width && o->width != o->pool_width) || (o->height && o->height != o->pool_height)) { error = -ESTALE; break; }
+        /* Configure events change the surface size, not the allocation or
+         * release status of this pool. WSI reports SUBOPTIMAL to the caller. */
         for (unsigned i = 0; i < o->count; ++i) {
             if (!o->pool[i]->held) {
                 o->pool[i]->held = true; *buffer = o->pool[i];

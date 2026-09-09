@@ -80,3 +80,11 @@ check between `resize` and `surface-lost`. The latter destroys the real native
 window while keeping its Vulkan surface/swapchain alive, then checks surface
 loss and ordinary Vulkan cleanup. It is not a compositor shutdown or concurrent
 destruction test. Both cases run through the common WSI backend selector.
+
+The resized-pool WSI now permits SUBOPTIMAL presentation. The resize probe checks
+both legal acquisition outcomes: SUBOPTIMAL must return a new image and complete
+its fence; OUT_OF_DATE must leave the index untouched and fence unsignaled.
+The hybris runner specifically requires SUBOPTIMAL for these live resize cases.
+It counts the two extra presents and retains exact pixel, semaphore reuse and
+buffer-release checks. Surface loss continues to require its original error
+and synchronization behavior. See [original Blender evidence](../../docs/native-blender-resize.md).

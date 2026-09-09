@@ -414,3 +414,14 @@ descriptor 需在实际使用时重建有效状态：普通 set、copy/update te
 当前不宜承诺的结果：完整 OpenGL 4.x/Vulkan 1.3+、任意 app 都正确、所有 GPU 黑屏自动诊断根因、纯 libhybris 修复 Turnip 内核/编译器缺陷。先建立能定位与验证的兼容平台，再逐项扩大支持面。
 
 逐日实验记录与 run ID 见 [实施状态](IMPLEMENTATION.md) 和各 `tests/` 文档，不在本清单后续写。
+
+### Original Debian Blender after desktop resize (2026-09-09)
+
+The original Debian Blender 4.3.2 package now completed the Mali Vulkan model,
+save, fullscreen/restore and reopen workflow in Ardesk's desktop session. The
+fix keeps live resized X11 buffers presentable with SUBOPTIMAL and real acquire
+synchronization; it does not alter Blender or skip fence waits. An independent
+resize run passed exact frames/screenshots, release ordering and validation.
+Process identity/debugger tooling exposed additional gaps during diagnosis.
+See [failure chain, implementation and limits](docs/native-blender-resize.md).
+The broader lifecycle, diagnostics and application gates remain open.

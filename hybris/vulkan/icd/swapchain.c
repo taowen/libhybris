@@ -381,7 +381,10 @@ static VkResult presentation_status(struct swapchain_state *state)
         state->presentation_status = VK_ERROR_SURFACE_LOST_KHR;
     else if ((width && width != state->extent.width) ||
              (height && height != state->extent.height))
-        state->presentation_status = VK_ERROR_OUT_OF_DATE_KHR;
+        /* The native pool still contains valid presentable images. Report
+         * the size mismatch without retiring the swapchain; the application
+         * can finish this frame and choose when to rebuild the pool. */
+        return VK_SUBOPTIMAL_KHR;
     return state->presentation_status;
 }
 
@@ -428,8 +431,9 @@ static VkResult VKAPI_CALL acquire_next_image(VkDevice device, VkSwapchainKHR sw
     struct swapchain_state *state = find_swapchain(swapchain);
     if (!state || state->device != device || state->retired)
         return VK_ERROR_OUT_OF_DATE_KHR;
-    VkResult result = presentation_status(state);
-    if (result != VK_SUCCESS) return result;
+    VkResult status = presentation_status(state);
+    if (status != VK_SUCCESS && status != VK_SUBOPTIMAL_KHR) return status;
+    VkResult result;
     int native_fence = -1;
     uint32_t slot = 0;
     result = acquire_slot(state, dequeue_timeout(timeout), &slot, &native_fence);
@@ -445,7 +449,7 @@ static VkResult VKAPI_CALL acquire_next_image(VkDevice device, VkSwapchainKHR sw
     if (result != VK_SUCCESS) return result;
     state->images[slot].state = IMAGE_ACQUIRED;
     *index = slot;
-    return VK_SUCCESS;
+    return status;
 }
 
 static VkResult VKAPI_CALL acquire_next_image2(VkDevice device,
@@ -542,11 +546,10 @@ static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
         if (fence >= 0) close(fence);
         return result;
     }
-    /* Even a rejected present consumes its semaphore waits and releases the
-     * image acquisition. The Android release above supplies that dependency;
-     * cancellation consumes its fence without sending an obsolete-size frame. */
+    /* A resized surface can still consume the old pool's image. Fatal
+     * statuses cancel it after consuming the application's semaphore waits. */
     result = presentation_status(state);
-    if (result != VK_SUCCESS) {
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         state->window->ops->cancel(state->window, state->images[index].native, fence);
         state->images[index].state = IMAGE_FREE;
         return result;
@@ -555,7 +558,7 @@ static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
     // The native queue wrapper consumes the FD on every return path.
     if (error) return VK_ERROR_SURFACE_LOST_KHR;
     state->images[index].state = IMAGE_PRESENTED;
-    return VK_SUCCESS;
+    return result;
 }
 
 static VkResult VKAPI_CALL queue_present(VkQueue queue, const VkPresentInfoKHR *info)
@@ -612,7 +615,8 @@ static VkResult VKAPI_CALL queue_present(VkQueue queue, const VkPresentInfoKHR *
         VkResult result = present_one(&context, queue, &ready, i);
         if (info->pResults) info->pResults[i] = result;
         if (worst == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST ||
-            (result == VK_ERROR_SURFACE_LOST_KHR && worst != VK_ERROR_DEVICE_LOST))
+            (result == VK_ERROR_SURFACE_LOST_KHR && worst != VK_ERROR_DEVICE_LOST) ||
+            (result < 0 && worst == VK_SUBOPTIMAL_KHR))
             worst = result;
     }
     free(signals);
