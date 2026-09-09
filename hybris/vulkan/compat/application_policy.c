@@ -24,6 +24,11 @@ unsigned hybris_application_device_policy(unsigned policy, const VkDeviceCreateI
         "VK_KHR_swapchain", "VK_KHR_dynamic_rendering",
         "VK_EXT_dynamic_rendering_unused_attachments", "VK_KHR_maintenance4",
         "VK_KHR_fragment_shader_barycentric", "VK_EXT_debug_marker",
+        /* Replay enables external synchronization without changing rendering
+         * semantics. Explicit depth/stencil resolve is already core in the
+         * matched API 1.2 application and uses the attachment resolve fields. */
+        "VK_KHR_external_fence_fd", "VK_KHR_external_semaphore_fd",
+        "VK_KHR_depth_stencil_resolve",
     };
     for (uint32_t i = 0; i < info->enabledExtensionCount; ++i) {
         int known = 0;

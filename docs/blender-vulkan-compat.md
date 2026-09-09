@@ -238,3 +238,53 @@ log/line references, and forces the final status to FAIL even after successful
 exit. The real `134109` replay verifies this path: exit 0, two recorded faults,
 final FAIL. This is an observed-message rejection rule, not a complete GPU
 health detector; absence of matching messages never establishes acceptance.
+
+### Verified replay profile difference
+
+`replay-outline-devicecapture-134734` captures the replayer's actual API calls.
+It preserves Blender's application signature, but adds
+`VK_KHR_external_fence_fd`, `VK_KHR_external_semaphore_fd` and
+`VK_KHR_depth_stencil_resolve`. These disabled the former strict profile.
+They now remain eligible: external synchronization does not alter rendering
+segment semantics, and explicit depth/stencil resolve is already core in the
+matched API 1.2 and represented by the existing attachment resolve fields.
+Other unknown extensions still disable the profile.
+
+After the actual ICD rebuild (`replay-profile-runtime-build.log`), isolated
+`replay-outline-profile-135100` reports profile flags 0x3 and completes the same
+frame-3 state restoration and three resource dumps without a recorded fault.
+The preceding `134909` attempt used an unchanged ICD after rebuilding only the
+probe bundle; it is not evidence for the new runtime.
+
+The frame-3 indirect parameters nevertheless remain zero. A fresh capture from
+startup (`blender-overlay-check-product-only-outline-capture-135218`, frames
+1–3) retains the compute work generating them. Its rebind resource replay
+`replay-outline-startup-135648` reads indexCount 36, instanceCount 1,
+firstInstance 2 at prepass draw 4860 and nonzero ID, detection and composite
+attachments at draws 4860/4868/4892 in submit 5054. Plain replays without
+resource dumps, `replay-outline-plain-rebind-135752` and
+`replay-outline-plain-default-135816`, also record no fault. These are replay
+observations, not proof that the live application's fault is fixed.
+
+The captured replay device also enables timelineSemaphore and sampler YCbCr
+conversion; capture/replay alters buffer usages for readback. Those differences,
+memory restoration, and submission scheduling remain relevant to fidelity.
+Do not infer a shader defect from the earlier zero indirect parameters or
+infer application stability from successful replay.
+
+### Direct interactive check
+
+The product session `build/blender-vulkan/x300-interactive-continue.log` was
+operated through Android input, without a Blender Python test script. Keyboard
+commands moved the cube to X=3 m, rotated Z=45 degrees, scaled all axes to 1.5,
+entered Edit Mode and extruded the selected mesh along Z. Screenshots under
+`build/blender-vulkan/interactive-evidence/` show the changed transforms and
+geometry. During these operations the driver reported three tiler heap OOMs
+and three timeouts; grid/selection overlays disappeared and later returned.
+Input and editing work, but interactive rendering acceptance remains FAIL.
+The application is left open with the unsaved diagnostic scene.
+
+The previous Quick Setup window disappeared after Continue and its old PID
+was absent. Its log contains no conclusive exit cause; this observation alone
+does not establish a reproducible Continue crash. The fresh launch opened the
+ordinary splash and allowed the interactions above.
