@@ -4,9 +4,9 @@ X300 / Mali-G1-Ultra, Blender 4.3.2, 2026-09-09. **Whole-application acceptance
 remains open.** The default scene, splash, text and toolbar now render, but
 repeated scene updates still produce Mali queue timeout messages. The large
 window run also reports a tiler heap OOM. Correct screenshots and successful
-Vulkan return codes do not override these failures. Android screen captures
-also show a partially transparent viewport background over the terminal,
-whereas Blender's own readback is opaque; composition acceptance remains open.
+Vulkan return codes do not override these failures. The RGBA opaque-presentation
+correction below removes the transparent viewport background in Android screen
+captures; the remaining GPU faults still prevent application acceptance.
 
 ## Separate causes and evidence
 
@@ -183,3 +183,13 @@ Acquire, resize, release and destruction synchronization were not changed.
 The earlier transparency observations remain the pre-fix control. GPU timeout
 and tiler heap errors still require diagnosis; this correction does not close
 the application or complete WSI acceptance gates.
+
+The ordinary product launch `build/blender-vulkan/x300-opaque-live-1323`
+(parent repository) remains open at Quick Setup, with the scene, toolbar and
+opaque background visible in its Android screenshot. Its `.maps` file confirms
+the product runtime loaded by PID 17223. This launch uses `--debug-gpu` and no
+Python script or Blender screenshot/readback operation. Its `.log` nevertheless
+records `GROUP_ERROR_TILER_HEAP_OOM` during a submitted workload's fence wait,
+followed by a successful wait and further presentation. Thus the diagnostic
+screenshot script is not necessary to trigger the heap fault, and subsequent
+successful presentation does not establish fault-free operation.
