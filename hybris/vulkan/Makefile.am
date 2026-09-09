@@ -41,6 +41,7 @@ libhybris_vulkan_icd_la_SOURCES = icd/icd.c icd/instance.c icd/instance.h icd/de
     compat/point_size.c compat/point_size.h \
     compat/spirv_inout.c compat/spirv_inout.h \
     compat/spirv_image_bounds.c compat/spirv_image_bounds.h \
+    compat/clip_distance.c compat/clip_distance.h compat/spirv_clip.c \
     compat/shader_policy.c compat/shader_policy.h \
     compat/shader_cleanup.c compat/shader_cleanup.h compat/spirv_builtins.c compat/spirv_builtins.h \
     compat/spirv_decorations.c compat/spirv_decorations.h compat/spirv_constants.c compat/spirv_constants.h compat/spirv_aggregate.c compat/spirv_aggregate.h compat/spirv_entry.c compat/spirv_entry.h compat/spirv_results.inc compat/spirv_literals.inc compat/scaled_dump.c compat/shader_dispatch.c compat/shader_dispatch.h compat/scaled_formats.c compat/scaled_formats.h compat/scaled_spirv.c compat/scaled_vertex.h

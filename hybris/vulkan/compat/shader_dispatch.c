@@ -10,6 +10,8 @@
 #include "point_size.h"
 #include "spirv_inout.h"
 #include "spirv_image_bounds.h"
+#include "clip_distance.h"
+#include "spirv_builtins.h"
 #include "shader_policy.h"
 #include <stdatomic.h>
 #include <pthread.h>
@@ -35,6 +37,7 @@ struct shader_device {
     int point_size;
     int inout;
     int image_bounds;
+    int clip;
     VkAllocationCallbacks allocator;
     int custom;
     struct shader *shaders;
@@ -46,7 +49,7 @@ static _Atomic unsigned point_reports;
 int hybris_shader_enabled(void)
 {
     return hybris_scaled_enabled() || hybris_point_size_enabled() ||
-        hybris_inout_enabled() || hybris_image_bounds_enabled();
+        hybris_inout_enabled() || hybris_image_bounds_enabled() || hybris_clip_enabled();
 }
 static struct shader_device *find_device(VkDevice handle)
 {
@@ -81,6 +84,7 @@ VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
     device->point_size = hybris_point_size_enabled();
     device->inout = hybris_inout_enabled();
     device->image_bounds = hybris_image_bounds_enabled();
+    device->clip = hybris_clip_active(physical);
     pthread_mutex_lock(&guard);
     device->next = devices;
     devices = device;
@@ -114,7 +118,8 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
 {
     struct shader_device *device = find_device(handle);
     if (!device) return VK_ERROR_INITIALIZATION_FAILED;
-    if (!device->mask && !device->point_size && !device->inout && !device->image_bounds)
+    if (!device->mask && !device->point_size && !device->inout && !device->image_bounds &&
+        !device->clip)
         return device->create_shader(handle, info, allocator, module);
     struct shader *shader = hybris_scaled_alloc(allocator, sizeof(*shader), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!shader) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -138,8 +143,24 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
         created.pCode = bounded;
         created.codeSize = bounded_size;
     }
+    uint32_t *cleaned = NULL;
+    size_t cleaned_size = 0;
+    unsigned removed = 0;
+    if (result == VK_SUCCESS && device->clip && !info->pNext)
+        result = hybris_spirv_unused_builtins(created.pCode, created.codeSize, allocator,
+            &cleaned, &cleaned_size, &removed);
+    if (result != VK_SUCCESS) {
+        hybris_scaled_free(allocator, bounded);
+        free_shader(shader);
+        return result;
+    }
+    if (cleaned) {
+        created.pCode = cleaned;
+        created.codeSize = cleaned_size;
+    }
     result = device->create_shader(handle, &created, allocator, module);
     hybris_scaled_free(allocator, bounded);
+    hybris_scaled_free(allocator, cleaned);
     if (result != VK_SUCCESS) { free_shader(shader); return result; }
     shader->handle = *module;
     pthread_mutex_lock(&guard);
@@ -179,6 +200,8 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
      * variants, which this experimental pipeline-only fallback cannot supply. */
     int point = device->point_size && hybris_point_size_pipeline(info);
     int inout = device->inout && hybris_inout_pipeline(info);
+    int clip = device->clip && hybris_clip_pipeline(info);
+    uint32_t clip_location = 0, clip_count = 0;
     if (info->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR) {
         *reason = "vertex format conversion does not support graphics pipeline libraries";
         return device->mask ? VK_ERROR_UNKNOWN : VK_SUCCESS;
@@ -197,7 +220,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
     if (input) for (uint32_t j = 0; j < input->vertexAttributeDescriptionCount; ++j)
         for (unsigned i = 0; i < HYBRIS_SCALED_FORMAT_COUNT; ++i)
             if ((device->mask & (1u << i)) && input->pVertexAttributeDescriptions[j].format == hybris_scaled_formats[i].scaled) ++count;
-    if (!count && !point && !inout) return VK_SUCCESS;
+    if (!count && !point && !inout && !clip) return VK_SUCCESS;
     /* Scaled and integer fetch use the same bytes and binding cadence. Keep
      * the divisor chain (EXT/KHR aliases) intact for the backend; reject other
      * vertex-input extensions whose interaction has not been established. */
@@ -226,24 +249,42 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
                 break;
             }
     result = VK_SUCCESS;
+    if (clip) {
+        struct shader *vs = NULL, *fs = NULL;
+        pthread_mutex_lock(&guard);
+        for (uint32_t s = 0; s < info->stageCount; ++s) {
+            struct shader *found = device->shaders;
+            while (found && found->handle != info->pStages[s].module) found = found->next;
+            if (info->pStages[s].stage == VK_SHADER_STAGE_VERTEX_BIT) vs = found;
+            if (info->pStages[s].stage == VK_SHADER_STAGE_FRAGMENT_BIT) fs = found;
+        }
+        pthread_mutex_unlock(&guard);
+        if (vs && fs && !vs->extensions && !fs->extensions)
+            result = hybris_spirv_clip_plan(vs->code, vs->size, fs->code, fs->size,
+                &clip_location, &clip_count);
+        if (result != VK_SUCCESS) goto done;
+    }
     for (uint32_t j = 0; j < info->stageCount; ++j) {
         VkPipelineShaderStageCreateInfo *stage = &copy->stages[j];
         int vertex = stage->stage == VK_SHADER_STAGE_VERTEX_BIT;
+        int fragment = stage->stage == VK_SHADER_STAGE_FRAGMENT_BIT;
         pthread_mutex_lock(&guard);
         struct shader *shader = device->shaders;
         while (shader && shader->handle != stage->module) shader = shader->next;
         pthread_mutex_unlock(&guard);
+        int stage_clip = clip && clip_count && (vertex || fragment) && shader && !shader->extensions;
         /* Module destruction is externally synchronized against pipeline use. */
-        if (!vertex && !inout && (!count || !shader || !hybris_spirv_multiple(shader->code, shader->size))) continue;
-        if ((!shader || stage->pNext) && !count && !inout) continue;
+        if (!vertex && !inout && !stage_clip &&
+            (!count || !shader || !hybris_spirv_multiple(shader->code, shader->size))) continue;
+        if ((!shader || stage->pNext) && !count && !inout && !stage_clip) continue;
         if (!shader || stage->pNext) {
             *reason = "stage conversion requires a captured module without stage extensions";
             result = VK_ERROR_UNKNOWN;
             goto done;
         }
         int stage_point = point && !shader->extensions;
-        int stage_inout = inout && stage->stage == VK_SHADER_STAGE_FRAGMENT_BIT && !shader->extensions;
-        if (!count && !stage_point && !stage_inout) continue;
+        int stage_inout = inout && fragment && !shader->extensions;
+        if (!count && !stage_point && !stage_inout && !stage_clip) continue;
         uint32_t *code = NULL;
         size_t size = 0;
         if (vertex && count) result = hybris_scaled_spirv(shader->code, shader->size, stage->pName, attrs, count,
@@ -254,7 +295,10 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
             result = model < 5 ? hybris_spirv_entry(shader->code, shader->size, model,
                 stage->pName, allocator, &code, &size, reason) : VK_ERROR_UNKNOWN;
         }
-        if (result == VK_ERROR_UNKNOWN && !count && !stage_inout) { result = VK_SUCCESS; continue; }
+        if (result == VK_ERROR_UNKNOWN && !count && !stage_inout && !stage_clip) {
+            result = VK_SUCCESS;
+            continue;
+        }
         if (result != VK_SUCCESS) goto done;
         if (vertex && stage_point) {
             uint32_t *trimmed = NULL;
@@ -269,7 +313,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
                     removed, info->pInputAssemblyState->topology, size, trimmed_size);
                 else if (slot == 128) fprintf(stderr, "HYBRIS_POINT_SIZE truncated\n");
                 hybris_scaled_free(allocator, code); code = trimmed; size = trimmed_size;
-            } else if (!count) { hybris_scaled_free(allocator, code); continue; }
+            } else if (!count && !stage_clip) { hybris_scaled_free(allocator, code); continue; }
         }
         if (stage_inout) {
             struct shader *vs = NULL;
@@ -292,7 +336,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
             result = hybris_spirv_inout(vs->code, vs->size, code, size, allocator, &wide, &wide_size, &widened);
             if (result != VK_SUCCESS) { hybris_scaled_free(allocator, code); goto done; }
             if (wide) { hybris_scaled_free(allocator, code); code = wide; size = wide_size; }
-            else if (!count && !stage_point) { hybris_scaled_free(allocator, code); continue; }
+            else if (!count && !stage_point && !stage_clip) { hybris_scaled_free(allocator, code); continue; }
         }
         if (hybris_shader_cleanup_enabled()) {
             uint32_t *clean = NULL;
@@ -310,6 +354,24 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
             if (result != VK_SUCCESS) { hybris_scaled_free(allocator, code); goto done; }
             if (bounded) { hybris_scaled_free(allocator, code); code = bounded; size = bounded_size; }
         }
+        if (stage_clip) {
+            uint32_t *clipped = NULL;
+            size_t clipped_size = 0;
+            unsigned made = 0;
+            const uint32_t *src = code ? code : shader->code;
+            size_t src_size = code ? size : shader->size;
+            result = vertex ? hybris_spirv_clip_vertex(src, src_size, clip_location, allocator,
+                    &clipped, &clipped_size, &made) :
+                hybris_spirv_clip_fragment(src, src_size, clip_location, clip_count, allocator,
+                    &clipped, &clipped_size, &made);
+            if (result != VK_SUCCESS) { hybris_scaled_free(allocator, code); goto done; }
+            if (clipped) {
+                hybris_scaled_free(allocator, code);
+                code = clipped;
+                size = clipped_size;
+            }
+        }
+        if (!code) continue;
         hybris_scaled_dump(shader->code, shader->size, code, size, vertex ? attrs : NULL, vertex ? count : 0, stage->pSpecializationInfo);
         VkShaderModuleCreateInfo module = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = size, .pCode = code };
         result = device->create_shader(device->handle, &module, allocator, &copy->temporary[j]);
@@ -336,7 +398,7 @@ static VkResult VKAPI_CALL create_pipelines(VkDevice handle, VkPipelineCache cac
 {
     struct shader_device *device = find_device(handle);
     if (!device) return VK_ERROR_INITIALIZATION_FAILED;
-    if (!device->mask && !device->point_size && !device->inout)
+    if (!device->mask && !device->point_size && !device->inout && !device->clip)
         return device->create_pipelines(handle, cache, count, infos, allocator, pipelines);
     VkGraphicsPipelineCreateInfo *changed = hybris_scaled_alloc(allocator, count * sizeof(*changed), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
     struct pipeline_copy *copies = hybris_scaled_alloc(allocator, count * sizeof(*copies), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);

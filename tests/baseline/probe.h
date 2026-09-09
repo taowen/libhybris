@@ -66,6 +66,7 @@ int tls_probe(void);
 int tls_bounds_probe(void);
 int tls_destructor_probe(void);
 int caps_probe(int check_wsi_guard);
+int blender_vk_probe(void);
 int caps2_probe(void);
 int vertex_policy_probe(int direct, int restricted);
 int native_buffer_probe(void);

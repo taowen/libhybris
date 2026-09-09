@@ -9,6 +9,7 @@
 #include "../compat/shader_cleanup.h"
 #include "../compat/shader_policy.h"
 #include "../compat/bc_policy.h"
+#include "../compat/clip_distance.h"
 #include <pthread.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -377,6 +378,8 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     if (swapchain) return swapchain;
     PFN_vkVoidFunction bc = backend ? hybris_bc_proc(name) : NULL;
     if (bc) return bc;
+    PFN_vkVoidFunction clip = backend ? hybris_clip_policy_proc(name) : NULL;
+    if (clip) return clip;
     PFN_vkVoidFunction shader_policy = backend ? hybris_shader_policy_proc(name) : NULL;
     if (shader_policy) return shader_policy;
     bc = backend ? hybris_bc_policy_proc(name) : NULL;

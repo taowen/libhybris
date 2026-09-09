@@ -7,6 +7,7 @@
 #include "../compat/shader_policy.h"
 #include "../compat/shader_cleanup.h"
 #include "../compat/bc_policy.h"
+#include "../compat/clip_distance.h"
 #include "../compat/bc_context.h"
 #include <pthread.h>
 #include <inttypes.h>
@@ -115,12 +116,18 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     state->generation = ++next_generation;
     pthread_mutex_unlock(&device_guard);
     VkDeviceCreateInfo filtered = *info;
+    VkPhysicalDeviceFeatures clip_features;
     const char **wsi_names = NULL;
     VkResult prepared = hybris_icd_prepare_device(physical, NULL, VK_NULL_HANDLE, info,
         &filtered, &wsi_names, &state->swapchain_enabled);
     if (prepared != VK_SUCCESS) {
         free_state(state);
         return prepared;
+    }
+    if (filtered.pEnabledFeatures && hybris_clip_active(physical)) {
+        clip_features = *filtered.pEnabledFeatures;
+        hybris_clip_filter_features(physical, &clip_features);
+        filtered.pEnabledFeatures = &clip_features;
     }
     VkResult result = create(physical, &filtered, allocator, device);
     hybris_icd_finish_device(wsi_names);
