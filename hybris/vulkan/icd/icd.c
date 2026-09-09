@@ -9,6 +9,11 @@
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <hybris/common/dlfcn.h>
+/* Android API availability annotations do not apply to this glibc adapter. */
+#ifndef __INTRODUCED_IN
+#define __INTRODUCED_IN(api)
+#endif
+#include <android/dlext.h>
 #include "hwvulkan.h"
 #include "instance.h"
 #include "wsi.h"
@@ -31,7 +36,19 @@ static void initialize_hal(void)
     const hw_module_t *module = NULL;
     const char *path = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_VULKAN_HAL");
     if (path && path[0]) {
-        void *handle = hybris_dlopen(path, RTLD_NOW | RTLD_LOCAL);
+        /* With Android's generated namespace config, a system executable's
+         * default namespace cannot open vendor HALs. Use the exported SP-HAL
+         * namespace just as Android's Vulkan loader does. Older/no-config
+         * linkers have no such namespace and retain their ordinary path. */
+        void *vendor_namespace = NULL;
+        if (!strncmp(path, "/vendor/", 8) || !strncmp(path, "/odm/", 5) ||
+            !strncmp(path, "/system/vendor/", 15))
+            vendor_namespace = hybris_get_exported_namespace("sphal");
+        android_dlextinfo ext = {.flags = ANDROID_DLEXT_USE_NAMESPACE,
+            .library_namespace = vendor_namespace};
+        void *handle = vendor_namespace
+            ? hybris_dlopen_ext(path, RTLD_NOW | RTLD_LOCAL, &ext)
+            : hybris_dlopen(path, RTLD_NOW | RTLD_LOCAL);
         if (!handle) {
             fprintf(stderr, "hybris ICD: cannot load HAL %s: %s\n", path, hybris_dlerror());
             return;

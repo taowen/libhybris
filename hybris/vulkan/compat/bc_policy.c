@@ -3,7 +3,7 @@
 #define VK_NO_PROTOTYPES
 #include "bc_policy.h"
 #include "bc_context.h"
-#include "../icd/wsi.h"
+#include "../layer/layer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/auxv.h>
@@ -27,8 +27,8 @@ int hybris_bc_enabled(void)
  * no vendor name or assumed hardware format support is used. */
 static unsigned physical_rgb_mask(VkPhysicalDevice physical)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return 0;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return 0;
     PHYSICAL_PROC(GetPhysicalDeviceFormatProperties);
     const VkFormat formats[3] = {VK_FORMAT_R8G8B8_UNORM, VK_FORMAT_R8G8B8_SRGB, VK_FORMAT_R16G16B16_SFLOAT};
     VkFormatFeatureFlags required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
@@ -43,8 +43,8 @@ static unsigned physical_rgb_mask(VkPhysicalDevice physical)
 }
 unsigned hybris_bc_physical_mask(VkPhysicalDevice physical)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_bc_enabled() || !hybris_icd_lookup_physical(physical, &context) ||
+    struct hybris_layer_physical context;
+    if (!hybris_bc_enabled() || !hybris_layer_lookup_physical(physical, &context) ||
         context.api_version < VK_API_VERSION_1_1) return 0;
     PHYSICAL_PROC(GetPhysicalDeviceProperties); PHYSICAL_PROC(GetPhysicalDeviceQueueFamilyProperties);
     PHYSICAL_PROC(GetPhysicalDeviceFormatProperties);
@@ -91,8 +91,8 @@ static int emulates(VkPhysicalDevice physical, VkFormat format)
 int hybris_bc_format_properties(VkPhysicalDevice physical, VkFormat format, VkFormatProperties *properties)
 {
     if (!emulates(physical, format)) return 0;
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return 0;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return 0;
     PHYSICAL_PROC(GetPhysicalDeviceFormatProperties);
     VkFormatProperties decoded;
     GetPhysicalDeviceFormatProperties(physical, hybris_bc_image_format(format, physical_rgb_mask(physical)), &decoded);
@@ -162,8 +162,8 @@ VkResult hybris_bc_attach_device(VkDevice device, VkPhysicalDevice physical,
     PFN_vkGetDeviceProcAddr resolver, const VkAllocationCallbacks *allocator)
 {
     if (!hybris_bc_enabled()) return VK_SUCCESS;
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return VK_ERROR_INITIALIZATION_FAILED;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return VK_ERROR_INITIALIZATION_FAILED;
     PHYSICAL_PROC(GetPhysicalDeviceProperties); PHYSICAL_PROC(GetPhysicalDeviceMemoryProperties);
     VkPhysicalDeviceProperties properties;
     VkPhysicalDeviceMemoryProperties memory;
@@ -174,8 +174,8 @@ VkResult hybris_bc_attach_device(VkDevice device, VkPhysicalDevice physical,
 static void VKAPI_CALL queue_properties(VkPhysicalDevice physical, uint32_t *count,
     VkQueueFamilyProperties *out)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return;
     PHYSICAL_PROC(GetPhysicalDeviceQueueFamilyProperties);
     GetPhysicalDeviceQueueFamilyProperties(physical, count, out);
     if (out && hybris_bc_physical_mask(physical))
@@ -184,8 +184,8 @@ static void VKAPI_CALL queue_properties(VkPhysicalDevice physical, uint32_t *cou
 static void queue_properties2(VkPhysicalDevice physical, uint32_t *count,
     VkQueueFamilyProperties2 *out, const char *name)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return;
     PFN_vkGetPhysicalDeviceQueueFamilyProperties2 query =
         (PFN_vkGetPhysicalDeviceQueueFamilyProperties2)context.resolver(context.instance, name);
     query(physical, count, out);
@@ -198,16 +198,16 @@ static void VKAPI_CALL queue_properties2_khr(VkPhysicalDevice physical, uint32_t
 { queue_properties2(physical, count, out, "vkGetPhysicalDeviceQueueFamilyProperties2KHR"); }
 static void VKAPI_CALL features(VkPhysicalDevice physical, VkPhysicalDeviceFeatures *out)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return;
     PHYSICAL_PROC(GetPhysicalDeviceFeatures);
     GetPhysicalDeviceFeatures(physical, out);
     if (hybris_bc_physical_mask(physical)) out->pipelineStatisticsQuery = out->textureCompressionBC = VK_FALSE;
 }
 static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out, const char *name)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return;
     PFN_vkGetPhysicalDeviceFeatures2 query = (PFN_vkGetPhysicalDeviceFeatures2)context.resolver(context.instance, name);
     query(physical, out);
     if (!hybris_bc_physical_mask(physical)) return;
@@ -230,8 +230,8 @@ static void VKAPI_CALL sparse_properties(VkPhysicalDevice physical, VkFormat for
     VkImageTiling tiling, uint32_t *count, VkSparseImageFormatProperties *out)
 {
     if (emulates(physical, format)) { *count = 0; return; }
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return;
     PHYSICAL_PROC(GetPhysicalDeviceSparseImageFormatProperties);
     GetPhysicalDeviceSparseImageFormatProperties(physical, format, type, samples, usage, tiling, count, out);
 }
@@ -239,8 +239,8 @@ static void sparse_properties2(VkPhysicalDevice physical, const VkPhysicalDevice
     uint32_t *count, VkSparseImageFormatProperties2 *out, const char *name)
 {
     if (emulates(physical, info->format)) { *count = 0; return; }
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return;
     PFN_vkGetPhysicalDeviceSparseImageFormatProperties2 query =
         (PFN_vkGetPhysicalDeviceSparseImageFormatProperties2)context.resolver(context.instance, name);
     query(physical, info, count, out);
@@ -260,8 +260,8 @@ static int image_supported(VkImageType type, VkImageTiling tiling, VkImageUsageF
 static VkResult VKAPI_CALL image_properties(VkPhysicalDevice physical, VkFormat format, VkImageType type,
     VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags, VkImageFormatProperties *out)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return VK_ERROR_INITIALIZATION_FAILED;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return VK_ERROR_INITIALIZATION_FAILED;
     PHYSICAL_PROC(GetPhysicalDeviceImageFormatProperties);
     if (emulates(physical, format)) {
         if (!image_supported(type, tiling, usage, flags)) { *out = (VkImageFormatProperties){0}; return VK_ERROR_FORMAT_NOT_SUPPORTED; }
@@ -275,8 +275,8 @@ static VkResult VKAPI_CALL image_properties(VkPhysicalDevice physical, VkFormat 
 static VkResult image_properties2(VkPhysicalDevice physical, const VkPhysicalDeviceImageFormatInfo2 *info,
     VkImageFormatProperties2 *out, const char *name)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return VK_ERROR_INITIALIZATION_FAILED;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return VK_ERROR_INITIALIZATION_FAILED;
     PFN_vkGetPhysicalDeviceImageFormatProperties2 query =
         (PFN_vkGetPhysicalDeviceImageFormatProperties2)context.resolver(context.instance, name);
     if (!emulates(physical, info->format)) return query(physical, info, out);

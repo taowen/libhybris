@@ -91,21 +91,21 @@ def _transfer_commands(docs, expected_indexes):
     return [by_index[index] for index in expected_indexes]
 
 
-def preserve_capture(app, remote, out, timeout=30):
+def preserve_capture(app, remote, out, timeout=30, name='window.gfxr'):
     """Keep the replay input even when conversion, replay or the client fails."""
     evidence = out / 'capture'
     evidence.mkdir(exist_ok=True)
-    path = evidence / 'window.gfxr'
+    path = evidence / name
     with path.open('wb') as stream:
-        value = app('cat ' + shlex.quote(remote + '/window.gfxr'),
+        value = app('cat ' + shlex.quote(remote + '/' + name),
                     stdout=stream, stderr=subprocess.PIPE, timeout=timeout)
     if value.returncode or not path.stat().st_size:
-        raise ValueError('missing or unreadable window.gfxr')
+        raise ValueError('missing or unreadable ' + name)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    device = app('sha256sum ' + shlex.quote(remote + '/window.gfxr'),
+    device = app('sha256sum ' + shlex.quote(remote + '/' + name),
                  capture_output=True, text=True, check=True, timeout=timeout)
     if not device.stdout.split() or device.stdout.split()[0] != digest:
-        raise ValueError('saved window.gfxr hash differs from device')
+        raise ValueError('saved capture hash differs from device')
     (evidence / 'capture-input.json').write_text(json.dumps({
         'file': path.name, 'bytes': path.stat().st_size, 'sha256': digest}, indent=2) + '\n')
     return digest

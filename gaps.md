@@ -4,7 +4,7 @@
 范围：评估把本仓库扩展为同进程的 GLES / 桌面 OpenGL / Vulkan 兼容栈；借鉴 Vortek、Gladio 的能力，不照搬它们的命令 IPC。
 本文最初为调研建议，现作为持续实施的验收清单；阶段进度见 [实施状态](IMPLEMENTATION.md)。下文目标结构和完整兼容层尚未完成。Mali Blender 已有实际抓帧、修复与建模工作流证据，完整应用验收和另一 Turnip 故障闭环仍未完成。
 
-## 当前产品栈与统一状态（2026-09-08）
+## 当前产品栈与统一状态（2026-09-09）
 
 现行 compositor 入口为已安装的 `io.taowen.ardesk`；Xwayland 由 Ardesk
 构建，libhybris 只构建客户端。后文 `io.taowen.hybriswsitest` 等名称属于
@@ -17,6 +17,14 @@ ICD 所需的 native-window 实现移至 `vulkan/icd/`。
 两条产品 Vulkan 后端已共用窗口探针、标准 layer/capture 和屏幕证据门，
 见[共同窗口证据](tests/wsi/product-backends.md)；应用及故障竞态门仍需验收。
 已统一项与剩余分叉见[产品栈清单](docs/stack-consolidation.md)。
+
+通用兼容现已归并到 `VK_LAYER_HYBRIS_compat`；HAL ICD 与 Turnip 共用
+层、生命周期诊断、后端部署和应用观察入口。兼容转换后的应用 VVL 检查
+在 Mali 暴露 `VUID-RuntimeSpirv-OpVariable-08746`：顶点输出清理后与几何
+输入的 BuiltIn block 不匹配；此项保留 FAIL。Turnip 强制 BC 图像用例的
+12,524 个比较错误也未关闭。两端 Blender 启动截图与转换前后 capture
+文件不代替应用建模/保存/resize 或 capture replay 验收。
+
 
 ## 官方 Mesa 切换时的历史记录（2026-09-07）
 

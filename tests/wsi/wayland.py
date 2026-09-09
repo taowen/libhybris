@@ -6,7 +6,8 @@ import shlex
 import shutil
 import subprocess
 from manifest import sha256_file
-from backend import stage_backend, verify_backend_maps
+from vulkan_backend import stage_backend, verify_backend_maps
+from vulkan_layers import add_layer, stage_validation
 from screen_evidence import verify_screen
 from diagnostics import Diagnostics
 from capture import preserve_capture, stage_tools, verify_window_capture
@@ -31,29 +32,15 @@ def run(a, host, out):
     layer_meta = {}
     if a.swapchain_review: env['HYBRIS_WSI_SWAPCHAIN_REVIEW'] = '1'
     libraries = backend['library_path']
-    layer_dirs = []
     if a.validation_layer:
-        (stage / 'layers').mkdir()
-        shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
-        layer_meta['validation_layer_sha256'] = sha256_file(a.validation_layer)
-        layer_meta['validation_manifest_sha256'] = sha256_file(a.validation_manifest)
-        shutil.copy2(a.validation_manifest, out / 'validation-original.json')
-        layer_json = json.loads(a.validation_manifest.read_text())
-        if layer_json['layer']['name'] != 'VK_LAYER_KHRONOS_validation':
-            raise SystemExit('expected Khronos validation layer manifest')
-        layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
-        (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
+        layer_meta.update(stage_validation(a.validation_layer, a.validation_manifest, stage, remote, env))
         env['HYBRIS_WSI_VALIDATION'] = '1'
-        layer_dirs.append(remote + '/layers')
     if a.capture_tools:
         stage_tools(a.capture_tools, stage, layer_meta, sha256_file)
-        env['VK_INSTANCE_LAYERS'] = 'VK_LAYER_LUNARG_gfxreconstruct'
+        add_layer(env, 'VK_LAYER_LUNARG_gfxreconstruct', remote + '/capture-tools')
         env['GFXRECON_CAPTURE_FILE'] = remote + '/window.gfxr'
         env['GFXRECON_CAPTURE_FILE_TIMESTAMP'] = 'false'
-        layer_dirs.append(remote + '/capture-tools')
         libraries += ':./capture-tools:./capture-tools/runtime'
-    if layer_dirs:
-        env['VK_LAYER_PATH'] = ':'.join(layer_dirs)
     if a.trace: env.update(HYBRIS_TRACE='1', HYBRIS_LOGGING_LEVEL='warn')
     command = ' '.join(k + '=' + shlex.quote(v) for k, v in env.items())
     command += ' ./glibc/ld-linux-aarch64.so.1 --library-path ' + libraries + ' ./' + probe_name

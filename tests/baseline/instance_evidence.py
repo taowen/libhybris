@@ -2,14 +2,14 @@
 from collections import Counter
 
 
-def instance_evidence(output: str) -> dict:
+def instance_evidence(output: str, prefix='HYBRIS_ICD') -> dict:
     live = {}
     created = set()
     handles = Counter()
     peak = 0
     destroyed = 0
     for line in output.splitlines():
-        if not line.startswith('HYBRIS_ICD_INSTANCE '):
+        if not line.startswith(prefix + '_INSTANCE '):
             continue
         parts = line.split()
         if len(parts) != 4 or parts[1] not in ('create', 'destroy'):
@@ -36,4 +36,4 @@ def instance_evidence(output: str) -> dict:
         raise ValueError(f'expected four simultaneously live instances, got {peak}')
     return dict(created=len(created), destroyed=destroyed, remaining=len(live),
                 peak_live=peak, reused_handles=sum(count > 1 for count in handles.values()),
-                scope='ICD instance records only; not device/resource ownership')
+                scope=prefix + ' instance records only; not device/resource ownership')

@@ -32,12 +32,11 @@ unsigned hybris_application_device_policy(unsigned policy, const VkDeviceCreateI
         "VK_KHR_depth_stencil_resolve",
     };
     for (uint32_t i = 0; i < info->enabledExtensionCount; ++i) {
-        /* Redmi's rendering-only layer profile additionally observes shader
-         * stencil export. It changes shader output, not segment load/store or
-         * resolve semantics. Do not extend the HAL upload/readback profiles
-         * to this extension set without their separate evidence. */
-        int known = policy == HYBRIS_APP_RENDERING_SEGMENTS &&
-            !strcmp(info->ppEnabledExtensionNames[i], "VK_EXT_shader_stencil_export");
+        /* The observed stencil-export extension set has rendering evidence,
+         * but no validated upload/readback profile. Select its bounded policy
+         * here for all drivers instead of a separate Turnip-only layer path. */
+        int known = !strcmp(info->ppEnabledExtensionNames[i], "VK_EXT_shader_stencil_export");
+        if (known) policy &= HYBRIS_APP_RENDERING_SEGMENTS;
         for (size_t j = 0; j < sizeof(rendering_extensions) / sizeof(*rendering_extensions); ++j)
             if (!strcmp(info->ppEnabledExtensionNames[i], rendering_extensions[j])) { known = 1; break; }
         if (!known) return 0;

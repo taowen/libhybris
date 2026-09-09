@@ -95,12 +95,13 @@ outside this evidence.
 
 `tools/install-guest-gpu.sh` packages the standard layer in
 `usr/lib/ardesk/vulkan` for both GPU overlays. It takes the supplied libhybris
-library directory, or `HYBRIS_COMPAT_LAYER_DIR`. The Blender launcher enables the
-layer without adding the Android Vulkan frontend to the library search path.
-Other driver profiles pass through. Existing explicitly ordered layer lists
-retain their order when the compatibility layer is already present.
+library directory. The common glibc runtime now enables the same compatibility
+layer for both ICDs and all applications, without adding the Android Vulkan
+frontend to the library search path. Existing explicitly ordered layer lists
+retain their order when the compatibility layer is already present. The separate
+`HYBRIS_COMPAT_LAYER_DIR` override and Blender-only setup have been removed.
 
-The final Redmi test APK is derived from the installed APK and changes exactly
+The earlier Redmi test APK described below is derived from the installed APK and changes exactly
 four payload entries: Xwayland, the Qualcomm GPU archive and its ID, and the
 Blender launcher asset. The signing certificate is unchanged. The overlay uses
 the actual staging script's Mesa, shared layer and dependencies. The startup

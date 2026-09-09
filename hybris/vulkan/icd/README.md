@@ -29,12 +29,13 @@ and destruction stay in the adapter. The resolver still does not scan the ICD
 ELF export table. Device/resource state beyond this local swapchain and the replacement
 libvulkan frontend are not covered by this table.
 
-`HYBRIS_ICD_INSTANCE_TRACE=1` emits create/destroy generation and raw HAL handle
-records to stderr. It is ignored in secure execution, disabled by default and
-capped at 256 records plus a truncation marker. The destroy event denotes
-removal from the adapter table before backend destruction, not GPU completion.
-`icd-vk-init` checks the 16 matched lifetimes from its four workers; this is not
-an arbitrary application resource trace or proof of full driver unloading.
+Lifecycle diagnostics now belong to the shared compatibility layer:
+`HYBRIS_VULKAN_TRACE=1` emits bounded instance/device create and destroy
+records for both this ICD and Turnip. The layer records its own handles and
+parent generations, not raw HAL handles. Its code remains loaded until process
+exit so generations do not restart when the loader drops its last instance.
+Adapter generations remain private WSI ownership checks. The old separate
+ICD instance/device trace switches have been removed.
 
 Interface version 5 is required. Instance version discovery uses the HAL query
 when available and otherwise Vulkan's 1.0 fallback. The physical-device resolver

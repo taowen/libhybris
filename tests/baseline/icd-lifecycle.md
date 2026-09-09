@@ -2,7 +2,17 @@
 
 Instance, physical-device and device records; allocation refusal and recovery. These tests do not establish lifetime tracking for every Vulkan resource.
 
-## Concurrent instance ownership
+## Current shared-layer diagnostics (2026-09-09)
+
+`icd-vk-init` and `icd-life` now use `HYBRIS_VULKAN_TRACE=1` through the same
+compatibility layer for both `--backend turnip` and the HAL backend. The
+existing checks still require 16 complete instance lifetimes with four live
+at once, and 19 complete device lifetimes with live instance parents. Runs
+`20260909T194036-fde7cc09` (Turnip) and `20260909T194036-3736031a` (Mali)
+pass both workloads and the shared restricted vertex policy check. These
+measure layer ownership; adapter WSI generations are separate internal state.
+
+## Historical adapter instance ownership
 
 ICD instance ownership regression: `icd-vk-init` enables the bounded
 `HYBRIS_ICD_INSTANCE_TRACE=1` diagnostic and validates 16 unique generations,

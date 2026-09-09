@@ -3,7 +3,7 @@
 #include "shader_policy.h"
 #include "scaled_formats.h"
 #include "bc_policy.h"
-#include "../icd/wsi.h"
+#include "../layer/layer.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -13,8 +13,8 @@
  * needs conversion (or conversion is explicitly forced). */
 unsigned hybris_shader_physical_mask(VkPhysicalDevice physical)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_scaled_enabled() || !hybris_icd_lookup_physical(physical, &context)) return 0;
+    struct hybris_layer_physical context;
+    if (!hybris_scaled_enabled() || !hybris_layer_lookup_physical(physical, &context)) return 0;
     PFN_vkGetPhysicalDeviceFormatProperties query = (PFN_vkGetPhysicalDeviceFormatProperties)
         context.resolver(context.instance, "vkGetPhysicalDeviceFormatProperties");
     return hybris_scaled_physical_mask(physical, query);
@@ -56,8 +56,8 @@ VkResult hybris_shader_prepare_device(VkPhysicalDevice physical, const VkDeviceC
 }
 static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out, const char *name)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return;
     /* Compose with BC's filtering when both experimental policies are active;
      * it in turn resolves the original physical-device query. */
     PFN_vkGetPhysicalDeviceFeatures2 query = (PFN_vkGetPhysicalDeviceFeatures2)hybris_bc_policy_proc(name);
@@ -89,8 +89,8 @@ static void VKAPI_CALL features2_khr(VkPhysicalDevice physical, VkPhysicalDevice
  * EXT or promising EXT's nonzero-firstInstance behavior. */
 static void properties2(VkPhysicalDevice physical, VkPhysicalDeviceProperties2 *out, const char *name)
 {
-    struct hybris_icd_physical context;
-    if (!hybris_icd_lookup_physical(physical, &context)) return;
+    struct hybris_layer_physical context;
+    if (!hybris_layer_lookup_physical(physical, &context)) return;
     PFN_vkGetPhysicalDeviceProperties2 query = (PFN_vkGetPhysicalDeviceProperties2)context.resolver(context.instance, name);
     query(physical, out);
     VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT *legacy = NULL;

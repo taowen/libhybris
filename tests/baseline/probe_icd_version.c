@@ -3,7 +3,7 @@
 /* Query the adapter directly: the standard loader's version describes itself,
  * and a 1.0 JSON seed prevents it from querying the driver's version at all. */
 int icd_version_probe(void) {
-  void *h = dlopen("libhybris-vulkan-icd.so.0", RTLD_NOW | RTLD_LOCAL);
+  void *h = dlopen(getenv("PROBE_ICD") ? getenv("PROBE_ICD") : "libhybris-vulkan-icd.so.0", RTLD_NOW | RTLD_LOCAL);
   if (!h) { printf("ICD dlopen: %s\n", dlerror()); return 2; }
   VkResult (*negotiate)(uint32_t *) = sym(h, "vk_icdNegotiateLoaderICDInterfaceVersion");
   PFN_vkGetInstanceProcAddr gip = sym(h, "vk_icdGetInstanceProcAddr");

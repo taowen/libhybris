@@ -3,7 +3,7 @@
 #include "readback.h"
 #include "memory_visibility.h"
 #include "scaled_vertex.h"
-#include "../icd/commands.h"
+#include "../layer/layer.h"
 #include <pthread.h>
 #include <string.h>
 
@@ -55,14 +55,14 @@ static VkResult remember(VkCommandBuffer command, const struct hybris_readback_r
 {
     struct recording *r = find(command);
     if (!r) {
-        struct hybris_icd_device device;
-        if (!hybris_icd_command_device(command, &device)) return VK_ERROR_INITIALIZATION_FAILED;
+        struct hybris_layer_device device;
+        if (!hybris_layer_command_device(command, &device)) return VK_ERROR_INITIALIZATION_FAILED;
         VkAllocationCallbacks allocator;
-        int custom = hybris_icd_command_allocator(command, &allocator);
+        int custom = hybris_layer_command_allocator(command, &allocator);
         r = hybris_scaled_alloc(custom ? &allocator : NULL, sizeof(*r), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
         if (!r) return VK_ERROR_OUT_OF_HOST_MEMORY;
         *r = (struct recording){.command = command, .device = device.handle,
-            .pool = hybris_icd_command_pool(command), .custom = custom};
+            .pool = hybris_layer_command_pool(command), .custom = custom};
         if (custom) r->allocator = allocator;
         pthread_mutex_lock(&guard);
         r->next = recordings;
@@ -110,75 +110,75 @@ void hybris_readback_reset_command(VkCommandBuffer command)
 void hybris_readback_reset_pool(VkDevice device, VkCommandPool pool)
 { forget(VK_NULL_HANDLE, device, pool); }
 
-static void write_buffer(const struct hybris_icd_device *device, VkCommandBuffer command,
+static void write_buffer(const struct hybris_layer_device *device, VkCommandBuffer command,
     VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size)
 {
     struct hybris_readback_range range;
     VkResult result = hybris_memory_visibility_readback_range(device, buffer, offset, size, &range);
     if (result == VK_SUCCESS && range.memory) result = remember(command, &range);
-    if (result != VK_SUCCESS) hybris_icd_command_error(command, result);
+    if (result != VK_SUCCESS) hybris_layer_command_error(command, result);
 }
 static void VKAPI_CALL copy_buffer(VkCommandBuffer command, VkBuffer source, VkBuffer dest,
     uint32_t count, const VkBufferCopy *regions)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     for (uint32_t i = 0; i < count; ++i)
         write_buffer(&device, command, dest, regions[i].dstOffset, regions[i].size);
-    ((PFN_vkCmdCopyBuffer)hybris_icd_device_inner_proc(device.handle, "vkCmdCopyBuffer"))(
+    ((PFN_vkCmdCopyBuffer)hybris_layer_device_inner_proc(device.handle, "vkCmdCopyBuffer"))(
         command, source, dest, count, regions);
 }
 static void copy_buffer2(VkCommandBuffer command, const VkCopyBufferInfo2 *info, const char *name)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     for (uint32_t i = 0; i < info->regionCount; ++i)
         write_buffer(&device, command, info->dstBuffer, info->pRegions[i].dstOffset, info->pRegions[i].size);
-    ((PFN_vkCmdCopyBuffer2)hybris_icd_device_inner_proc(device.handle, name))(command, info);
+    ((PFN_vkCmdCopyBuffer2)hybris_layer_device_inner_proc(device.handle, name))(command, info);
 }
 static void VKAPI_CALL copy_image(VkCommandBuffer command, VkImage image, VkImageLayout layout,
     VkBuffer buffer, uint32_t count, const VkBufferImageCopy *regions)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     /* Blender allocates a dedicated logical staging buffer for each image
      * read. Its complete buffer range excludes neighbouring VMA suballocations. */
     if (count) write_buffer(&device, command, buffer, 0, VK_WHOLE_SIZE);
-    ((PFN_vkCmdCopyImageToBuffer)hybris_icd_device_inner_proc(device.handle, "vkCmdCopyImageToBuffer"))(
+    ((PFN_vkCmdCopyImageToBuffer)hybris_layer_device_inner_proc(device.handle, "vkCmdCopyImageToBuffer"))(
         command, image, layout, buffer, count, regions);
 }
 static void copy_image2(VkCommandBuffer command, const VkCopyImageToBufferInfo2 *info, const char *name)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     if (info->regionCount) write_buffer(&device, command, info->dstBuffer, 0, VK_WHOLE_SIZE);
-    ((PFN_vkCmdCopyImageToBuffer2)hybris_icd_device_inner_proc(device.handle, name))(command, info);
+    ((PFN_vkCmdCopyImageToBuffer2)hybris_layer_device_inner_proc(device.handle, name))(command, info);
 }
 static void VKAPI_CALL fill_buffer(VkCommandBuffer command, VkBuffer buffer,
     VkDeviceSize offset, VkDeviceSize size, uint32_t value)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     write_buffer(&device, command, buffer, offset, size);
-    ((PFN_vkCmdFillBuffer)hybris_icd_device_inner_proc(device.handle, "vkCmdFillBuffer"))(
+    ((PFN_vkCmdFillBuffer)hybris_layer_device_inner_proc(device.handle, "vkCmdFillBuffer"))(
         command, buffer, offset, size, value);
 }
 static void VKAPI_CALL update_buffer(VkCommandBuffer command, VkBuffer buffer,
     VkDeviceSize offset, VkDeviceSize size, const void *data)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     write_buffer(&device, command, buffer, offset, size);
-    ((PFN_vkCmdUpdateBuffer)hybris_icd_device_inner_proc(device.handle, "vkCmdUpdateBuffer"))(
+    ((PFN_vkCmdUpdateBuffer)hybris_layer_device_inner_proc(device.handle, "vkCmdUpdateBuffer"))(
         command, buffer, offset, size, data);
 }
 static void VKAPI_CALL execute_commands(VkCommandBuffer command, uint32_t count,
     const VkCommandBuffer *children)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     VkAllocationCallbacks allocator;
-    int custom = hybris_icd_command_allocator(command, &allocator);
+    int custom = hybris_layer_command_allocator(command, &allocator);
     struct hybris_readback_write *writes = NULL;
     VkResult result = VK_SUCCESS;
     for (uint32_t i = 0; i < count && result == VK_SUCCESS; ++i)
@@ -186,8 +186,8 @@ static void VKAPI_CALL execute_commands(VkCommandBuffer command, uint32_t count,
     for (const struct hybris_readback_write *w = writes; w && result == VK_SUCCESS; w = w->next)
         result = remember(command, &w->range);
     hybris_readback_free_writes(writes, custom ? &allocator : NULL);
-    if (result != VK_SUCCESS) hybris_icd_command_error(command, result);
-    ((PFN_vkCmdExecuteCommands)hybris_icd_device_inner_proc(device.handle, "vkCmdExecuteCommands"))(
+    if (result != VK_SUCCESS) hybris_layer_command_error(command, result);
+    ((PFN_vkCmdExecuteCommands)hybris_layer_device_inner_proc(device.handle, "vkCmdExecuteCommands"))(
         command, count, children);
 }
 #define COPY2(suffix) \

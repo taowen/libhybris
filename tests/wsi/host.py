@@ -10,10 +10,25 @@ import shutil
 import subprocess
 import tarfile
 import time
-from manifest import sha256_file, verify_manifest
+from manifest import sha256_file
 
 PACKAGE = 'io.taowen.ardesk'
 MALI_GPU_FAULT = re.compile(r'Received a (GROUP_(?:QUEUE_)?ERROR_[A-Z0-9_]+) error on group\(')
+VULKAN_DEVICE_LOST = re.compile(r'\b(VK_ERROR_DEVICE_LOST)\b')
+
+def owned_process_guard(remote, pid_file='runner.pid'):
+    """Bind $p to this launch even if the application changes directory."""
+    script = 'p=$(cat ' + shlex.quote(remote + '/' + pid_file) + '); '
+    script += 'case "$p" in ""|*[!0-9]*) exit 2;; esac; '
+    if pid_file == 'runner.pid':
+        script += 'saved=$(cat ' + shlex.quote(remote + '/runner.stat') + ') || exit 3; '
+        script += 'live=$(cat /proc/$p/stat) || exit 3; '
+        script += 'saved=${saved##*) }; live=${live##*) }; '
+        script += 'set -- $saved; shift 19; started=$1; set -- $live; shift 19; '
+        script += '[ -n "$started" ] && [ "$started" = "$1" ] || exit 3; '
+    else:
+        script += '[ "$(readlink /proc/$p/cwd)" = ' + shlex.quote(remote) + ' ] || exit 3; '
+    return script
 
 class Host:
     def __init__(self, serial, out, package=PACKAGE, runtime_dir=None, wayland=None):
@@ -94,13 +109,9 @@ class Host:
         finally:
             archive.unlink(missing_ok=True)
 
-    def stop_process(self, remote, pid_file='runner.pid'):
-        value = self.app('cat ' + shlex.quote(remote + '/' + pid_file), capture_output=True, text=True)
-        if value.returncode or not value.stdout.strip().isdigit(): return
-        pid = value.stdout.strip()
-        cwd = self.app('readlink /proc/' + pid + '/cwd', capture_output=True, text=True)
-        if cwd.returncode == 0 and cwd.stdout.strip() == remote:
-            self.app('kill -TERM ' + pid, capture_output=True)
+    def stop_process(self, remote, pid_file='runner.pid', signal='TERM'):
+        if signal not in ('TERM', 'KILL'): raise ValueError('unsupported client stop signal')
+        self.app(owned_process_guard(remote, pid_file) + 'kill -' + signal + ' "$p"', capture_output=True)
 
     def screenshot(self, path):
         with path.open('wb') as picture:
@@ -121,16 +132,20 @@ class Host:
         missing = [name for name in required if name not in maps]
         if missing:
             raise RuntimeError('library mappings missing: ' + ', '.join(missing))
+        self.hash_mappings(maps, out)
+        return maps
+
+    def hash_mappings(self, maps, out):
         paths = sorted({line.split(maxsplit=5)[5] for line in maps.splitlines()
             if len(line.split(maxsplit=5)) == 6 and line.split(maxsplit=5)[5].startswith('/') and '.so' in line.split(maxsplit=5)[5]})
         if paths:
             hashes = self.app('sha256sum ' + shlex.join(paths),
                               capture_output=True, text=True, check=True).stdout
             (out / 'android-library-hashes.txt').write_text(hashes)
-        return maps
 
-    def execute(self, command, remote, out, timeout, diagnostics=None, on_line=None):
-        launch = 'cd ' + shlex.quote(remote) + ' && echo $$ > runner.pid && exec env ' + command
+    def execute(self, command, remote, out, timeout, diagnostics=None, on_line=None, observe=False):
+        launch = ('cd ' + shlex.quote(remote) + ' && echo $$ > runner.pid '
+                  '&& cat /proc/$$/stat > runner.stat && exec env ' + command)
         process = subprocess.Popen(self.adb + ['shell', 'run-as ' + self.package + ' sh -c ' + shlex.quote(launch)],
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         selector = selectors.DefaultSelector(); selector.register(process.stdout, selectors.EVENT_READ)
@@ -139,7 +154,12 @@ class Host:
         try:
             with (out / 'probe.log').open('wb') as log:
                 while selector.get_map():
-                    if time.monotonic() > deadline: raise subprocess.TimeoutExpired(command, timeout)
+                    if time.monotonic() > deadline:
+                        if observe:
+                            if diagnostics: diagnostics.snapshot(remote, 'observation interval completed')
+                            self.record['client_stop_reason'] = 'observation interval completed'
+                            return None
+                        raise subprocess.TimeoutExpired(command, timeout)
                     if diagnostics and time.monotonic() - last_output > 10:
                         diagnostics.snapshot(remote, 'no client output for 10 seconds')
                     for key, _ in selector.select(.1):
@@ -150,7 +170,7 @@ class Host:
                             line, pending = pending.split(b'\n', 1)
                             line_number += 1
                             decoded = line.decode(errors='replace')
-                            fault = MALI_GPU_FAULT.search(decoded)
+                            fault = VULKAN_DEVICE_LOST.search(decoded) or MALI_GPU_FAULT.search(decoded)
                             if fault:
                                 # A successful fence/exit after GPU recovery does not
                                 # make this workload pass. Keep bounded log references.
@@ -180,14 +200,7 @@ class Host:
             if process.poll() is None:
                 self.stop_process(remote)
                 try: process.communicate(timeout=5)
-                except subprocess.TimeoutExpired: process.kill(); process.communicate()
-
-
-def stage_runtime(build, stage):
-    provenance = json.loads((build / 'manifest.json').read_text())
-    verify_manifest(provenance, build / 'install/usr/lib/hybris', build / 'runtime')
-    stage.mkdir(parents=True)
-    shutil.copytree(build / 'install/usr/lib/hybris', stage / 'hybris', symlinks=True)
-    shutil.copytree(build / 'runtime', stage / 'glibc', symlinks=True)
-    verify_manifest(provenance, stage / 'hybris', stage / 'glibc')
-    return provenance
+                except subprocess.TimeoutExpired:
+                    self.stop_process(remote, signal='KILL')
+                    self.record['client_required_sigkill'] = True
+                    process.kill(); process.communicate()

@@ -3,23 +3,11 @@
 #define VK_NO_PROTOTYPES
 #include "instance.h"
 #include "device.h"
-#include "commands.h"
-#include "../compat/application_policy.h"
-#include "../compat/memory_visibility.h"
-#include "../compat/rendering_segments.h"
 #include "wsi.h"
 #include "swapchain.h"
-#include "../compat/shader_dispatch.h"
-#include "../compat/shader_cleanup.h"
-#include "../compat/shader_policy.h"
-#include "../compat/bc_policy.h"
-#include "../compat/clip_distance.h"
 #include <pthread.h>
-#include <inttypes.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/auxv.h>
 
 /* Driver handles keep their loader-owned dispatch header untouched. */
 struct physical_state {
@@ -37,36 +25,12 @@ struct instance_state {
     int surface_enabled;
     int platforms_enabled;
     uint32_t api_version;
-    unsigned application_policy;
     struct physical_state *physical;
     struct instance_state *next;
 };
 static pthread_mutex_t instance_guard = PTHREAD_MUTEX_INITIALIZER;
 static struct instance_state *instances;
 static uint64_t next_generation;
-static pthread_once_t trace_once = PTHREAD_ONCE_INIT;
-static int trace_enabled;
-static unsigned trace_count;
-
-static void initialize_trace(void)
-{
-    const char *value = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_ICD_INSTANCE_TRACE");
-    trace_enabled = value && !strcmp(value, "1");
-}
-
-/* Caller holds the list guard, preserving create/destroy event order.
- * Debug output is bounded, disabled by default and contains no per-draw work. */
-static void trace_instance(const char *action, const struct instance_state *state)
-{
-    if (!trace_enabled) return;
-    if (trace_count < 256)
-        fprintf(stderr, "HYBRIS_ICD_INSTANCE %s generation=%" PRIu64 " handle=%p\n",
-                action, state->generation, (void *)state->handle);
-    else if (trace_count == 256)
-        fprintf(stderr, "HYBRIS_ICD_INSTANCE truncated\n");
-    if (trace_count <= 256) ++trace_count;
-}
-
 static void free_state(struct instance_state *state)
 {
     struct physical_state *physical = state->physical;
@@ -94,7 +58,6 @@ static void VKAPI_CALL destroy_instance(VkInstance instance,
     struct instance_state *state = *link;
     if (state) {
         *link = state->next;
-        trace_instance("destroy", state);
     }
     pthread_mutex_unlock(&instance_guard);
     /* Vulkan requires external synchronization for destruction. Backend and
@@ -110,7 +73,6 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
     const VkInstanceCreateInfo *info, const VkAllocationCallbacks *allocator,
     VkInstance *instance)
 {
-    pthread_once(&trace_once, initialize_trace);
     struct instance_state *state = allocator
         ? allocator->pfnAllocation(allocator->pUserData, sizeof(*state),
                                   _Alignof(struct instance_state), VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE)
@@ -142,7 +104,6 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
         return result;
     }
     state->handle = *instance;
-    state->application_policy = hybris_application_policy(info->pApplicationInfo);
     state->api_version = info->pApplicationInfo && info->pApplicationInfo->apiVersion ?
         info->pApplicationInfo->apiVersion : VK_API_VERSION_1_0;
     state->resolver = hal->GetInstanceProcAddr;
@@ -150,7 +111,6 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
     pthread_mutex_lock(&instance_guard);
     state->next = instances;
     instances = state;
-    trace_instance("create", state);
     pthread_mutex_unlock(&instance_guard);
     return result;
 }
@@ -267,12 +227,6 @@ int hybris_icd_lookup_instance_wsi(VkInstance instance, int *surface_enabled,
     return 1;
 }
 
-unsigned hybris_icd_application_policy(VkPhysicalDevice physical)
-{
-    struct instance_state *state = find_physical(physical);
-    return state ? state->application_policy : 0;
-}
-
 int hybris_icd_lookup_physical(VkPhysicalDevice physical,
     struct hybris_icd_physical *out)
 {
@@ -285,53 +239,6 @@ int hybris_icd_lookup_physical(VkPhysicalDevice physical,
     return 1;
 }
 
-static void VKAPI_CALL format_properties(VkPhysicalDevice physical, VkFormat format,
-                                         VkFormatProperties *properties)
-{
-    struct instance_state *state = find_physical(physical);
-    if (!state) return;
-    PFN_vkGetPhysicalDeviceFormatProperties query = (PFN_vkGetPhysicalDeviceFormatProperties)
-        state->resolver(state->handle, "vkGetPhysicalDeviceFormatProperties");
-    query(physical, format, properties);
-    hybris_scaled_format(query, physical, format, properties);
-    hybris_bc_format_properties(physical, format, properties);
-}
-static void format_properties2(VkPhysicalDevice physical, VkFormat format,
-                               VkFormatProperties2 *properties, const char *name)
-{
-    struct instance_state *state = find_physical(physical);
-    if (!state) return;
-    PFN_vkGetPhysicalDeviceFormatProperties2 query2 = (PFN_vkGetPhysicalDeviceFormatProperties2)
-        state->resolver(state->handle, name);
-    query2(physical, format, properties);
-    PFN_vkGetPhysicalDeviceFormatProperties query = (PFN_vkGetPhysicalDeviceFormatProperties)
-        state->resolver(state->handle, "vkGetPhysicalDeviceFormatProperties");
-    VkFormatFeatureFlags before = properties->formatProperties.bufferFeatures;
-    hybris_scaled_format(query, physical, format, &properties->formatProperties);
-    if (!(before & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT) &&
-        (properties->formatProperties.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT))
-        for (VkBaseOutStructure *next = properties->pNext; next; next = next->pNext)
-            if (next->sType == VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3)
-                ((VkFormatProperties3 *)next)->bufferFeatures |= VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
-    if (hybris_bc_format_properties(physical, format, &properties->formatProperties)) {
-        for (VkBaseOutStructure *next = properties->pNext; next; next = next->pNext) {
-            if (next->sType == VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3) {
-                VkFormatProperties3 *extended = (void *)next;
-                extended->linearTilingFeatures = extended->bufferFeatures = 0;
-                extended->optimalTilingFeatures = properties->formatProperties.optimalTilingFeatures;
-            } else if (next->sType == VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT) {
-                ((VkDrmFormatModifierPropertiesListEXT *)next)->drmFormatModifierCount = 0;
-            } else if (next->sType == VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT) {
-                ((VkDrmFormatModifierPropertiesList2EXT *)next)->drmFormatModifierCount = 0;
-            }
-        }
-    }
-}
-static void VKAPI_CALL format_properties2_core(VkPhysicalDevice physical, VkFormat format, VkFormatProperties2 *properties)
-{ format_properties2(physical, format, properties, "vkGetPhysicalDeviceFormatProperties2"); }
-static void VKAPI_CALL format_properties2_khr(VkPhysicalDevice physical, VkFormat format, VkFormatProperties2 *properties)
-{ format_properties2(physical, format, properties, "vkGetPhysicalDeviceFormatProperties2KHR"); }
-
 static VkResult VKAPI_CALL create_device(VkPhysicalDevice physical,
     const VkDeviceCreateInfo *info, const VkAllocationCallbacks *allocator, VkDevice *device)
 {
@@ -341,35 +248,7 @@ static VkResult VKAPI_CALL create_device(VkPhysicalDevice physical,
     PFN_vkGetDeviceProcAddr resolver = (PFN_vkGetDeviceProcAddr)
         state->resolver(state->handle, "vkGetDeviceProcAddr");
     if (!create || !resolver) return VK_ERROR_INITIALIZATION_FAILED;
-    PFN_vkGetPhysicalDeviceFormatProperties query = (PFN_vkGetPhysicalDeviceFormatProperties)
-        state->resolver(state->handle, "vkGetPhysicalDeviceFormatProperties");
-    return hybris_icd_create_device(create, resolver, query, state->generation, physical, info, allocator, device);
-}
-
-static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical,
-    const char *layer, uint32_t *count, VkExtensionProperties *properties)
-{
-    unsigned bc_mask = layer ? 0 : hybris_bc_physical_mask(physical);
-    unsigned shader_mask = layer ? 0 : hybris_shader_physical_mask(physical);
-    if (layer || (!bc_mask && !shader_mask))
-        return hybris_icd_enumerate_device_extensions(physical, layer, count, properties);
-    uint32_t available = 0;
-    VkResult result = hybris_icd_enumerate_device_extensions(physical, NULL, &available, NULL);
-    if (result != VK_SUCCESS) return result;
-    VkExtensionProperties *all = available ? calloc(available, sizeof(*all)) : NULL;
-    if (available && !all) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    result = hybris_icd_enumerate_device_extensions(physical, NULL, &available, all);
-    if (result != VK_SUCCESS && result != VK_INCOMPLETE) { free(all); return result; }
-    uint32_t kept = 0, written = 0, capacity = properties ? *count : 0;
-    for (uint32_t i = 0; i < available; ++i) {
-        if ((bc_mask && !hybris_bc_extension_allowed(all[i].extensionName)) ||
-            (shader_mask && !hybris_shader_extension_allowed(all[i].extensionName))) continue;
-        if (properties && written < capacity) properties[written++] = all[i];
-        ++kept;
-    }
-    free(all);
-    *count = properties ? written : kept;
-    return properties && written < kept ? VK_INCOMPLETE : VK_SUCCESS;
+    return hybris_icd_create_device(create, resolver, state->generation, physical, info, allocator, device);
 }
 
 PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *name)
@@ -380,29 +259,14 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     PFN_vkGetInstanceProcAddr resolver = state ? state->resolver : NULL;
     int surface_enabled = state ? state->surface_enabled : 0;
     int platforms_enabled = state ? state->platforms_enabled : 0;
-    unsigned application_policy = state ? state->application_policy : 0;
     pthread_mutex_unlock(&instance_guard);
     PFN_vkVoidFunction backend = resolver ? resolver(instance, name) : NULL;
-    if (backend && application_policy) {
-        PFN_vkVoidFunction function = hybris_memory_visibility_proc(name);
-        if (!function) function = hybris_icd_commands_proc(name);
-        if (!function) function = hybris_rendering_segments_proc(name);
-        if (function) return function;
-    }
     PFN_vkVoidFunction local_wsi = hybris_icd_wsi_proc(name, surface_enabled, platforms_enabled);
     if (local_wsi) return local_wsi;
     /* Device WSI entry points are adapter-owned. Enablement is checked on the
      * device object; GIPA may return the pointer before a device exists. */
     PFN_vkVoidFunction swapchain = hybris_icd_swapchain_proc(name, 1);
     if (swapchain) return swapchain;
-    PFN_vkVoidFunction bc = backend ? hybris_bc_proc(name) : NULL;
-    if (bc) return bc;
-    PFN_vkVoidFunction clip = backend ? hybris_clip_policy_proc(name) : NULL;
-    if (clip) return clip;
-    PFN_vkVoidFunction shader_policy = backend ? hybris_shader_policy_proc(name) : NULL;
-    if (shader_policy) return shader_policy;
-    bc = backend ? hybris_bc_policy_proc(name) : NULL;
-    if (bc) return bc;
     PFN_vkVoidFunction image = backend ? hybris_icd_swapchain_image_proc(name) : NULL;
     if (image) return image;
     /* Preserve the HAL's command scope and extension gating. */
@@ -417,21 +281,10 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     if (backend && !strcmp(name, "vkCreateDevice"))
         return (PFN_vkVoidFunction)create_device;
     if (backend && !strcmp(name, "vkEnumerateDeviceExtensionProperties"))
-        return (PFN_vkVoidFunction)enumerate_device_extensions;
+        return (PFN_vkVoidFunction)hybris_icd_enumerate_device_extensions;
     if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
         return (PFN_vkVoidFunction)hybris_icd_device_proc;
     if (backend && !strcmp(name, "vkDestroyDevice"))
         return (PFN_vkVoidFunction)hybris_icd_destroy_device;
-    if (backend) {
-        PFN_vkVoidFunction cleanup = hybris_shader_cleanup_proc(name);
-        if (cleanup) return cleanup;
-        PFN_vkVoidFunction shader = hybris_shader_proc(name);
-        if (shader) return shader;
-    }
-    if (backend && (hybris_scaled_enabled() || hybris_bc_enabled())) {
-        if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties")) return (PFN_vkVoidFunction)format_properties;
-        if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties2")) return (PFN_vkVoidFunction)format_properties2_core;
-        if (!strcmp(name, "vkGetPhysicalDeviceFormatProperties2KHR")) return (PFN_vkVoidFunction)format_properties2_khr;
-    }
     return backend;
 }

@@ -3,23 +3,10 @@
 #define VK_NO_PROTOTYPES
 #include "device.h"
 #include "instance.h"
-#include "commands.h"
-#include "../compat/application_policy.h"
-#include "../compat/memory_visibility.h"
-#include "../compat/rendering_segments.h"
 #include "swapchain.h"
-#include "../compat/shader_dispatch.h"
-#include "../compat/shader_policy.h"
-#include "../compat/shader_cleanup.h"
-#include "../compat/bc_policy.h"
-#include "../compat/clip_distance.h"
-#include "../compat/bc_context.h"
 #include <pthread.h>
-#include <inttypes.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/auxv.h>
 
 /* This table owns adapter metadata, never the loader's dispatch header.
  * Vulkan external synchronization still governs destruction and child use. */
@@ -30,7 +17,6 @@ struct device_state {
     PFN_vkDestroyDevice destroy;
     VkPhysicalDevice physical;
     int swapchain_enabled;
-    unsigned application_policy;
     uint32_t queue_count;
     VkQueue *queues;
     VkAllocationCallbacks allocator;
@@ -40,29 +26,6 @@ struct device_state {
 static pthread_mutex_t device_guard = PTHREAD_MUTEX_INITIALIZER;
 static struct device_state *devices;
 static uint64_t next_generation;
-static pthread_once_t trace_once = PTHREAD_ONCE_INIT;
-static int trace_enabled;
-static unsigned trace_count;
-
-static void initialize_trace(void)
-{
-    const char *value = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_ICD_DEVICE_TRACE");
-    trace_enabled = value && !strcmp(value, "1");
-}
-
-/* Called under the registry lock; bounded and absent from draw dispatch. */
-static void trace_device(const char *action, const struct device_state *state)
-{
-    if (!trace_enabled) return;
-    if (trace_count < 256)
-        fprintf(stderr, "HYBRIS_ICD_DEVICE %s generation=%" PRIu64
-                " instance=%" PRIu64 " handle=%p\n", action, state->generation,
-                state->instance_generation, (void *)state->handle);
-    else if (trace_count == 256)
-        fprintf(stderr, "HYBRIS_ICD_DEVICE truncated\n");
-    if (trace_count <= 256) ++trace_count;
-}
-
 static void free_state(struct device_state *state)
 {
     if (state->queues) {
@@ -78,8 +41,6 @@ static void free_state(struct device_state *state)
 void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCallbacks *allocator)
 {
     if (!device) return;
-    hybris_memory_visibility_release_device(device);
-    hybris_icd_commands_release_device(device);
     hybris_icd_swapchain_release_device(device);
     pthread_mutex_lock(&device_guard);
     struct device_state **link = &devices;
@@ -87,26 +48,17 @@ void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCal
     struct device_state *state = *link;
     if (state) {
         *link = state->next;
-        trace_device("destroy", state);
     }
     pthread_mutex_unlock(&device_guard);
     if (!state) return;
-    hybris_bc_device_remove(device);
-    hybris_shader_device_destroy(device);
     state->destroy(device, allocator);
     free_state(state);
 }
 
 VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProcAddr resolver,
-    PFN_vkGetPhysicalDeviceFormatProperties query,
     uint64_t instance_generation, VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
     const VkAllocationCallbacks *allocator, VkDevice *device)
 {
-    pthread_once(&trace_once, initialize_trace);
-    VkResult checked = hybris_bc_prepare_device(physical, info);
-    if (checked != VK_SUCCESS) return checked;
-    checked = hybris_shader_prepare_device(physical, info);
-    if (checked != VK_SUCCESS) return checked;
     struct device_state *state = allocator
         ? allocator->pfnAllocation(allocator->pUserData, sizeof(*state),
                                   _Alignof(struct device_state), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE)
@@ -124,18 +76,12 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     state->generation = ++next_generation;
     pthread_mutex_unlock(&device_guard);
     VkDeviceCreateInfo filtered = *info;
-    VkPhysicalDeviceFeatures clip_features;
     const char **wsi_names = NULL;
     VkResult prepared = hybris_icd_prepare_device(physical, NULL, VK_NULL_HANDLE, info,
         &filtered, &wsi_names, &state->swapchain_enabled);
     if (prepared != VK_SUCCESS) {
         free_state(state);
         return prepared;
-    }
-    if (filtered.pEnabledFeatures && hybris_clip_active(physical)) {
-        clip_features = *filtered.pEnabledFeatures;
-        hybris_clip_filter_features(physical, &clip_features);
-        filtered.pEnabledFeatures = &clip_features;
     }
     VkResult result = create(physical, &filtered, allocator, device);
     hybris_icd_finish_device(wsi_names);
@@ -144,9 +90,6 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
         return result;
     }
     state->handle = *device;
-    state->application_policy = hybris_application_device_policy(hybris_icd_application_policy(physical), info);
-    if (state->application_policy)
-        fprintf(stderr, "HYBRIS_APPLICATION_POLICY flags=0x%x\n", state->application_policy);
     state->physical = physical;
     state->instance_generation = instance_generation;
     state->resolver = resolver;
@@ -182,12 +125,7 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
             }
         }
     }
-    if (result == VK_SUCCESS)
-        result = hybris_shader_device_create(*device, physical, resolver, query, allocator);
-    if (result == VK_SUCCESS)
-        result = hybris_bc_attach_device(*device, physical, resolver, allocator);
     if (result != VK_SUCCESS) {
-        hybris_shader_device_destroy(*device);
         state->destroy(*device, allocator);
         *device = VK_NULL_HANDLE;
         free_state(state);
@@ -196,15 +134,13 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     pthread_mutex_lock(&device_guard);
     state->next = devices;
     devices = state;
-    trace_device("create", state);
     pthread_mutex_unlock(&device_guard);
     return result;
 }
 
-PFN_vkVoidFunction hybris_icd_device_inner_proc(VkDevice device, const char *name)
+PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char *name)
 {
     if (!device || !name) return NULL;
-    if (!hybris_shader_device_proc_allowed(device, name)) return NULL;
     pthread_mutex_lock(&device_guard);
     const struct device_state *state = devices;
     while (state && state->handle != device) state = state->next;
@@ -214,8 +150,6 @@ PFN_vkVoidFunction hybris_icd_device_inner_proc(VkDevice device, const char *nam
     PFN_vkVoidFunction backend = resolver ? resolver(device, name) : NULL;
     PFN_vkVoidFunction local = hybris_icd_swapchain_proc(name, swapchain_enabled);
     if (local) return local;
-    PFN_vkVoidFunction bc = backend ? hybris_bc_proc(name) : NULL;
-    if (bc) return bc;
     if (backend && swapchain_enabled) {
         PFN_vkVoidFunction image = hybris_icd_swapchain_image_proc(name);
         if (image) return image;
@@ -224,38 +158,9 @@ PFN_vkVoidFunction hybris_icd_device_inner_proc(VkDevice device, const char *nam
         return (PFN_vkVoidFunction)hybris_icd_destroy_device;
     if (backend && !strcmp(name, "vkGetDeviceProcAddr"))
         return (PFN_vkVoidFunction)hybris_icd_device_proc;
-    PFN_vkVoidFunction compat = backend ? hybris_shader_cleanup_proc(name) : NULL;
-    if (!compat && backend) compat = hybris_shader_proc(name);
-    return compat ? compat : backend;
-}
-
-PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char *name)
-{
-    PFN_vkVoidFunction backend = hybris_icd_device_inner_proc(device, name);
-    struct hybris_icd_device context;
-    if (backend && hybris_icd_lookup_device(device, &context) &&
-        hybris_icd_application_policy(context.physical)) {
-        PFN_vkVoidFunction function = hybris_memory_visibility_proc(name);
-        if (!function) function = hybris_icd_commands_proc(name);
-        if (!function) function = hybris_rendering_segments_proc(name);
-        if (function) return function;
-    }
     return backend;
 }
 
-int hybris_icd_device_allocator(VkDevice device, VkAllocationCallbacks *allocator)
-{
-    int custom = 0;
-    pthread_mutex_lock(&device_guard);
-    for (const struct device_state *state = devices; state; state = state->next)
-        if (state->handle == device) {
-            custom = state->custom_allocator;
-            if (custom) *allocator = state->allocator;
-            break;
-        }
-    pthread_mutex_unlock(&device_guard);
-    return custom;
-}
 int hybris_icd_lookup_device(VkDevice device, struct hybris_icd_device *out)
 {
     if (!device || !out) return 0;
@@ -270,7 +175,6 @@ int hybris_icd_lookup_device(VkDevice device, struct hybris_icd_device *out)
         out->resolver = state->resolver;
         out->physical = state->physical;
         out->swapchain_enabled = state->swapchain_enabled;
-        out->application_policy = state->application_policy;
     }
     pthread_mutex_unlock(&device_guard);
     return found;

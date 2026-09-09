@@ -7,7 +7,8 @@ import shutil
 import subprocess
 import time
 from manifest import sha256_file
-from backend import stage_backend, verify_backend_maps
+from vulkan_backend import stage_backend, verify_backend_maps
+from vulkan_layers import stage_validation
 from screen_evidence import verify_epoch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,15 +44,10 @@ def run(a, host, out):
     if a.surface_format is not None: env['WSI_SURFACE_FORMAT'] = str(a.surface_format)
     if a.xauthority: env['XAUTHORITY'] = a.xauthority
     server = {'source': 'external-service', 'display': a.display, 'xauthority': a.xauthority}
+    layer_meta = {}
     if a.validation_layer:
-        (stage / 'layers').mkdir()
-        shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
-        layer = json.loads(a.validation_manifest.read_text())
-        if layer['layer']['name'] != 'VK_LAYER_KHRONOS_validation': raise ValueError('unexpected layer')
-        layer['layer']['library_path'] = './libVkLayer_khronos_validation.so'
-        (stage / 'layers/validation.json').write_text(json.dumps(layer))
-        shutil.copy2(a.validation_manifest, out / 'validation-original.json')
-        env['VK_LAYER_PATH'] = remote + '/layers'; env['HYBRIS_X11_VALIDATION'] = '1'
+        layer_meta = stage_validation(a.validation_layer, a.validation_manifest, stage, remote, env)
+        env['HYBRIS_X11_VALIDATION'] = '1'
     if a.api == 'xlib': env['HYBRIS_X11_XLIB'] = '1'
     prefix = ' '.join(k + '=' + shlex.quote(v) for k, v in env.items())
     client = './glibc/ld-linux-aarch64.so.1 --library-path ' + libraries + ' ./probe-xcb '
@@ -60,7 +56,7 @@ def run(a, host, out):
               'package': package, 'command': command, 'remote': remote, 'probe': probe, 'backend': backend,
               'server': server, 'apk_sha256': host.record['apk_sha256'], 'runner_sha256': sha256_file(Path(__file__)), 'checker_sha256': sha256_file(ROOT / 'tests/wsi/screen_evidence.py')}
     record['requested_surface_format'] = a.surface_format
-    if a.validation_layer: record['validation_layer_sha256'] = sha256_file(stage / 'layers/libVkLayer_khronos_validation.so')
+    record.update(layer_meta)
     code = 2
     try:
         host.upload(stage, remote)

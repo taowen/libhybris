@@ -39,10 +39,10 @@ static void release(struct submission *s)
     pthread_mutex_unlock(&guard);
     if (last) destroy(s);
 }
-static struct submission *create(const struct hybris_icd_device *device, VkQueue queue, VkFence fence)
+static struct submission *create(const struct hybris_layer_device *device, VkQueue queue, VkFence fence)
 {
     VkAllocationCallbacks allocator;
-    int custom = hybris_icd_device_allocator(device->handle, &allocator);
+    int custom = hybris_layer_device_allocator(device->handle, &allocator);
     struct submission *s = hybris_scaled_alloc(custom ? &allocator : NULL,
         sizeof(*s), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (s) {
@@ -80,12 +80,12 @@ static void submitted(struct submission *s, VkResult result)
     if (detached) release(s);
     release(s);
 }
-static int owner(const struct submission *s, const struct hybris_icd_device *device)
+static int owner(const struct submission *s, const struct hybris_layer_device *device)
 { return s->device == device->handle && s->generation == device->generation; }
 
 /* A fence covers earlier submissions to its queue, including submissions
  * without fences. It says nothing about other queues on the same device. */
-static struct submission *detach_completed(const struct hybris_icd_device *device,
+static struct submission *detach_completed(const struct hybris_layer_device *device,
     VkQueue queue, VkFence fence)
 {
     struct submission *work = NULL;
@@ -112,7 +112,7 @@ static struct submission *detach_completed(const struct hybris_icd_device *devic
     pthread_mutex_unlock(&guard);
     return work;
 }
-static VkResult invalidate_completed(const struct hybris_icd_device *device, struct submission *work)
+static VkResult invalidate_completed(const struct hybris_layer_device *device, struct submission *work)
 {
     VkResult result = VK_SUCCESS;
     while (work) {
@@ -139,10 +139,10 @@ static VkResult invalidate_completed(const struct hybris_icd_device *device, str
 }
 static VkResult complete_fences(VkDevice handle, uint32_t count, const VkFence *fences)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_lookup_device(handle, &device)) return VK_ERROR_INITIALIZATION_FAILED;
+    struct hybris_layer_device device;
+    if (!hybris_layer_lookup_device(handle, &device)) return VK_ERROR_INITIALIZATION_FAILED;
     if (!(device.application_policy & HYBRIS_APP_HOST_READBACK_INVALIDATE)) return VK_SUCCESS;
-    PFN_vkGetFenceStatus status = (PFN_vkGetFenceStatus)hybris_icd_device_inner_proc(handle, "vkGetFenceStatus");
+    PFN_vkGetFenceStatus status = (PFN_vkGetFenceStatus)hybris_layer_device_inner_proc(handle, "vkGetFenceStatus");
     VkResult result = VK_SUCCESS;
     pthread_mutex_lock(&completion_guard);
     for (uint32_t i = 0; i < count; ++i) {
@@ -154,7 +154,7 @@ static VkResult complete_fences(VkDevice handle, uint32_t count, const VkFence *
     pthread_mutex_unlock(&completion_guard);
     return result;
 }
-static VkResult complete_idle(const struct hybris_icd_device *device, VkQueue queue)
+static VkResult complete_idle(const struct hybris_layer_device *device, VkQueue queue)
 {
     pthread_mutex_lock(&completion_guard);
     VkResult result = invalidate_completed(device, detach_completed(device, queue, VK_NULL_HANDLE));
@@ -172,8 +172,8 @@ static void forget_fences(VkDevice device, uint32_t count, const VkFence *fences
 }
 void hybris_readback_release_submissions(VkDevice handle)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_lookup_device(handle, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_lookup_device(handle, &device)) return;
     /* Device destruction is externally synchronized; no driver calls here. */
     struct submission *s = detach_completed(&device, VK_NULL_HANDLE, VK_NULL_HANDLE);
     while (s) { struct submission *next = s->next; release(s); s = next; }
@@ -182,8 +182,8 @@ void hybris_readback_release_submissions(VkDevice handle)
 static VkResult VKAPI_CALL queue_submit(VkQueue queue, uint32_t count,
     const VkSubmitInfo *info, VkFence fence)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_lookup_queue(queue, &device)) return VK_ERROR_INITIALIZATION_FAILED;
+    struct hybris_layer_device device;
+    if (!hybris_layer_lookup_queue(queue, &device)) return VK_ERROR_INITIALIZATION_FAILED;
     struct submission *s = NULL;
     if ((device.application_policy & HYBRIS_APP_HOST_READBACK_INVALIDATE) && (count || fence)) {
         s = create(&device, queue, fence);
@@ -195,7 +195,7 @@ static VkResult VKAPI_CALL queue_submit(VkQueue queue, uint32_t count,
         if (result == VK_SUCCESS) result = publish(s);
         if (result != VK_SUCCESS) { destroy(s); return result; }
     }
-    VkResult result = ((PFN_vkQueueSubmit)hybris_icd_device_inner_proc(device.handle, "vkQueueSubmit"))(
+    VkResult result = ((PFN_vkQueueSubmit)hybris_layer_device_inner_proc(device.handle, "vkQueueSubmit"))(
         queue, count, info, fence);
     submitted(s, result);
     return result;
@@ -203,8 +203,8 @@ static VkResult VKAPI_CALL queue_submit(VkQueue queue, uint32_t count,
 static VkResult queue_submit2(VkQueue queue, uint32_t count, const VkSubmitInfo2 *info,
     VkFence fence, const char *name)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_lookup_queue(queue, &device)) return VK_ERROR_INITIALIZATION_FAILED;
+    struct hybris_layer_device device;
+    if (!hybris_layer_lookup_queue(queue, &device)) return VK_ERROR_INITIALIZATION_FAILED;
     struct submission *s = NULL;
     if ((device.application_policy & HYBRIS_APP_HOST_READBACK_INVALIDATE) && (count || fence)) {
         s = create(&device, queue, fence);
@@ -217,7 +217,7 @@ static VkResult queue_submit2(VkQueue queue, uint32_t count, const VkSubmitInfo2
         if (result == VK_SUCCESS) result = publish(s);
         if (result != VK_SUCCESS) { destroy(s); return result; }
     }
-    VkResult result = ((PFN_vkQueueSubmit2)hybris_icd_device_inner_proc(device.handle, name))(queue, count, info, fence);
+    VkResult result = ((PFN_vkQueueSubmit2)hybris_layer_device_inner_proc(device.handle, name))(queue, count, info, fence);
     submitted(s, result);
     return result;
 }
@@ -228,40 +228,40 @@ static VkResult VKAPI_CALL submit2_khr(VkQueue q, uint32_t n, const VkSubmitInfo
 static VkResult VKAPI_CALL wait_fences(VkDevice device, uint32_t count,
     const VkFence *fences, VkBool32 all, uint64_t timeout)
 {
-    VkResult result = ((PFN_vkWaitForFences)hybris_icd_device_inner_proc(device, "vkWaitForFences"))(
+    VkResult result = ((PFN_vkWaitForFences)hybris_layer_device_inner_proc(device, "vkWaitForFences"))(
         device, count, fences, all, timeout);
     return result == VK_SUCCESS ? complete_fences(device, count, fences) : result;
 }
 static VkResult VKAPI_CALL fence_status(VkDevice device, VkFence fence)
 {
-    VkResult result = ((PFN_vkGetFenceStatus)hybris_icd_device_inner_proc(device, "vkGetFenceStatus"))(device, fence);
+    VkResult result = ((PFN_vkGetFenceStatus)hybris_layer_device_inner_proc(device, "vkGetFenceStatus"))(device, fence);
     return result == VK_SUCCESS ? complete_fences(device, 1, &fence) : result;
 }
 static VkResult VKAPI_CALL reset_fences(VkDevice device, uint32_t count, const VkFence *fences)
 {
     VkResult result = complete_fences(device, count, fences);
     if (result != VK_SUCCESS) return result;
-    result = ((PFN_vkResetFences)hybris_icd_device_inner_proc(device, "vkResetFences"))(device, count, fences);
+    result = ((PFN_vkResetFences)hybris_layer_device_inner_proc(device, "vkResetFences"))(device, count, fences);
     if (result == VK_SUCCESS) forget_fences(device, count, fences);
     return result;
 }
 static void VKAPI_CALL destroy_fence(VkDevice device, VkFence fence, const VkAllocationCallbacks *allocator)
 {
     forget_fences(device, 1, &fence);
-    ((PFN_vkDestroyFence)hybris_icd_device_inner_proc(device, "vkDestroyFence"))(device, fence, allocator);
+    ((PFN_vkDestroyFence)hybris_layer_device_inner_proc(device, "vkDestroyFence"))(device, fence, allocator);
 }
 static VkResult VKAPI_CALL queue_idle(VkQueue queue)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_lookup_queue(queue, &device)) return VK_ERROR_INITIALIZATION_FAILED;
-    VkResult result = ((PFN_vkQueueWaitIdle)hybris_icd_device_inner_proc(device.handle, "vkQueueWaitIdle"))(queue);
+    struct hybris_layer_device device;
+    if (!hybris_layer_lookup_queue(queue, &device)) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result = ((PFN_vkQueueWaitIdle)hybris_layer_device_inner_proc(device.handle, "vkQueueWaitIdle"))(queue);
     return result == VK_SUCCESS ? complete_idle(&device, queue) : result;
 }
 static VkResult VKAPI_CALL device_idle(VkDevice handle)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_lookup_device(handle, &device)) return VK_ERROR_INITIALIZATION_FAILED;
-    VkResult result = ((PFN_vkDeviceWaitIdle)hybris_icd_device_inner_proc(handle, "vkDeviceWaitIdle"))(handle);
+    struct hybris_layer_device device;
+    if (!hybris_layer_lookup_device(handle, &device)) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result = ((PFN_vkDeviceWaitIdle)hybris_layer_device_inner_proc(handle, "vkDeviceWaitIdle"))(handle);
     return result == VK_SUCCESS ? complete_idle(&device, VK_NULL_HANDLE) : result;
 }
 PFN_vkVoidFunction hybris_readback_submit_proc(const char *name)

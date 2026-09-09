@@ -4,9 +4,9 @@ import atexit
 import hashlib
 import json
 from pathlib import Path
-import shlex
 import subprocess
 import threading
+from host import owned_process_guard
 
 
 class Diagnostics:
@@ -45,14 +45,13 @@ class Diagnostics:
         if self.snapshot_taken:
             return
         self.snapshot_taken = True
-        # PID/cwd checks bind the client snapshot to this run, including stalls
+        # PID/starttime checks bind the client snapshot to this run, including stalls
         # before Vulkan initialization. No signal or debugger attachment needed.
-        script = 'p=$(cat ' + shlex.quote(remote + '/runner.pid') + '); '
-        script += 'case "$p" in ""|*[!0-9]*) exit 2;; esac; '
-        script += '[ "$(readlink /proc/$p/cwd)" = ' + shlex.quote(remote) + ' ] || exit 3; '
+        script = owned_process_guard(remote)
         script += 'cat /proc/$p/stat /proc/$p/status; head -c 131072 /proc/$p/maps; ls -l /proc/$p/fd; '
         script += 'for t in /proc/$p/task/*; do echo "$t"; cat "$t/comm" "$t/wchan"; echo; done'
         self._save('client-snapshot.txt', script)
+        self._save('client-maps.txt', owned_process_guard(remote) + 'cat /proc/$p/maps', limit=1048576)
         if self.pid:
             base = '/proc/' + str(self.pid)
             self._save('compositor-snapshot.txt', 'cat ' + base + '/stat ' + base + '/status; '
@@ -60,15 +59,15 @@ class Diagnostics:
         self.records.append({'operation': 'snapshot', 'reason': reason})
         self.screen('diagnostic-screen.png')
 
-    def _save(self, name, script):
+    def _save(self, name, script, limit=262144):
         try:
             # Apply the byte limit on the device as well as the host timeout.
-            result = self.app('set -o pipefail; { ' + script + '; } 2>&1 | head -c 262144',
+            result = self.app('set -o pipefail; { ' + script + '; } 2>&1 | head -c ' + str(limit),
                               capture_output=True, timeout=5)
             (self.directory / name).write_bytes(result.stdout)
             self.records.append({'operation': name, 'exit_code': result.returncode,
-                                 'bytes': len(result.stdout), 'limit': 262144,
-                                 'limit_reached': len(result.stdout) == 262144})
+                                 'bytes': len(result.stdout), 'limit': limit,
+                                 'limit_reached': len(result.stdout) == limit})
         except (OSError, subprocess.SubprocessError) as error:
             self.records.append({'operation': name, 'error': str(error)})
 

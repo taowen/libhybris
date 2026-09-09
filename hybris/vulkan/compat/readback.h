@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #ifndef HYBRIS_READBACK_H
 #define HYBRIS_READBACK_H
-#include "../icd/device.h"
+#include "../layer/layer.h"
 
 /* Allocation identity and atom-aligned range captured while recording. No
  * pointer into an application mapping survives a command or submission. */

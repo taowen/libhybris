@@ -2,17 +2,17 @@
 from collections import Counter
 
 
-def device_evidence(output: str) -> dict:
+def device_evidence(output: str, prefix='HYBRIS_ICD') -> dict:
     instances = {}
     devices = {}
     generations = set()
     handles = Counter()
     peak = destroyed = 0
     for line in output.splitlines():
-        if not line.startswith(('HYBRIS_ICD_INSTANCE ', 'HYBRIS_ICD_DEVICE ')):
+        if not line.startswith((prefix + '_INSTANCE ', prefix + '_DEVICE ')):
             continue
         parts = line.split()
-        is_device = parts[0] == 'HYBRIS_ICD_DEVICE'
+        is_device = parts[0] == prefix + '_DEVICE'
         if len(parts) != (5 if is_device else 4) or parts[1] not in ('create', 'destroy'):
             raise ValueError('incomplete or truncated lifecycle trace: ' + line)
         fields = dict(part.split('=', 1) for part in parts[2:])
@@ -49,4 +49,4 @@ def device_evidence(output: str) -> dict:
         raise ValueError(f'incomplete life workload: created={len(generations)} destroyed={destroyed} peak={peak}')
     return dict(created=len(generations), destroyed=destroyed, remaining=len(devices),
                 peak_live=peak, reused_handles=sum(n > 1 for n in handles.values()),
-                scope='ICD device records and instance parents; no resource generations')
+                scope=prefix + ' device records and instance parents; no resource generations')

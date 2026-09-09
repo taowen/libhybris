@@ -21,6 +21,8 @@ from device_evidence import device_evidence
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
 from manifest import sha256_file, unexpected_platforms, verify_manifest  # noqa: E402
+from vulkan_layers import stage_compatibility, stage_validation
+from vulkan_backend import stage_mesa
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
@@ -36,36 +38,43 @@ p.add_argument('--unused-builtins', action='store_true', help='Remove provably u
 p.add_argument('--scaled-format-trace', action='store_true', help='Audit raw/effective scaled format decisions; requires scaled compatibility')
 p.add_argument('--packed-vertex-compat', choices=('missing', 'force'), help='Enable experimental packed SNORM vertex swizzle for ICD cases')
 p.add_argument('--scaled-vertex-compat', choices=('missing', 'force'), help='Enable experimental scaled vertex fallback for ICD cases')
+p.add_argument('--backend', choices=('hybris', 'turnip'), default='hybris', help='Backend for standard-loader cases')
+p.add_argument('--mesa-build', type=Path, help='Verified product Mesa runtime for --backend turnip')
 p.add_argument('--icd-hal', help='Run additional standard-loader cases with this Android Vulkan HAL path')
 p.add_argument('--icd-mali-loader-quirk', nargs='?', const='1', choices=('0', '1'), help='Override the automatic known-build Mali MMUD workaround for ICD cases: 0 disables, bare flag or 1 enables')
 p.add_argument('--vulkan-loader', type=Path, help='glibc AArch64 standard libvulkan.so.1 for --icd-hal')
 p.add_argument('--validation-build-manifest', type=Path, help='Build provenance from tools/build-validation-layer.sh')
 p.add_argument('--validation-manifest', type=Path, help='Original layer JSON matching --validation-layer')
-p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal')
-p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal')
+p.add_argument('--validation-layer', type=Path, help='glibc AArch64 libVkLayer_khronos_validation.so; requires --icd-hal or --backend turnip')
+p.add_argument('--capture-tools', type=Path, help='GFXReconstruct install from tools/build-capture-tools.sh; requires --icd-hal or --backend turnip')
 a = p.parse_args()
-if a.point_size_compat and not a.icd_hal:
-    p.error('--point-size-compat requires --icd-hal')
-if a.unused_builtins and not a.icd_hal:
-    p.error('--unused-builtins requires --icd-hal')
-if a.bc_textures and not a.icd_hal:
-    p.error('--bc-textures requires --icd-hal')
+standard_backend = bool(a.icd_hal) or a.backend == 'turnip'
+if a.backend == 'turnip' and (not a.mesa_build or a.icd_hal or a.vulkan_loader or a.icd_mali_loader_quirk):
+    p.error('Turnip requires --mesa-build and does not use --icd-hal, --vulkan-loader or the Mali loader quirk')
+if a.backend != 'turnip' and a.mesa_build:
+    p.error('--mesa-build requires --backend turnip')
+if a.point_size_compat and not standard_backend:
+    p.error('--point-size-compat requires --icd-hal or --backend turnip')
+if a.unused_builtins and not standard_backend:
+    p.error('--unused-builtins requires --icd-hal or --backend turnip')
+if a.bc_textures and not standard_backend:
+    p.error('--bc-textures requires --icd-hal or --backend turnip')
 if a.scaled_format_trace and not a.scaled_vertex_compat:
     p.error('--scaled-format-trace requires --scaled-vertex-compat')
-if a.scaled_vertex_compat and not a.icd_hal:
-    p.error('--scaled-vertex-compat requires --icd-hal')
-if a.packed_vertex_compat and not a.icd_hal:
-    p.error('--packed-vertex-compat requires --icd-hal')
+if a.scaled_vertex_compat and not standard_backend:
+    p.error('--scaled-vertex-compat requires --icd-hal or --backend turnip')
+if a.packed_vertex_compat and not standard_backend:
+    p.error('--packed-vertex-compat requires --icd-hal or --backend turnip')
 if a.icd_mali_loader_quirk and not a.icd_hal:
-    p.error('--icd-mali-loader-quirk requires --icd-hal')
+    p.error('--icd-mali-loader-quirk requires --icd-hal or --backend turnip')
 if bool(a.validation_layer) != bool(a.validation_manifest):
     p.error('--validation-layer and --validation-manifest must be supplied together')
 if a.validation_build_manifest and not a.validation_layer:
     p.error('--validation-build-manifest requires --validation-layer')
-if a.validation_layer and not a.icd_hal:
-    p.error('--validation-layer requires --icd-hal')
-if a.capture_tools and not a.icd_hal:
-    p.error('--capture-tools requires --icd-hal')
+if a.validation_layer and not standard_backend:
+    p.error('--validation-layer requires --icd-hal or --backend turnip')
+if a.capture_tools and not standard_backend:
+    p.error('--capture-tools requires --icd-hal or --backend turnip')
 if bool(a.icd_hal) != bool(a.vulkan_loader):
     p.error('--icd-hal and --vulkan-loader must be supplied together')
 here = Path(__file__).resolve().parent
@@ -294,13 +303,28 @@ for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
 cases.extend(('hybris-linked', mode, 'probe-glibc-linked')
              for mode in ('render-core13-linked', 'render-khr13-linked'))
 
-if a.icd_hal:
-    adapter = stage / 'hybris/libhybris-vulkan-icd.so.0'
-    if not adapter.is_file():
-        raise SystemExit('ICD adapter missing from hybris install')
+if standard_backend:
+    if not a.manifest:
+        raise SystemExit('standard-loader compatibility cases require --manifest')
+    compat = stage_compatibility(a.hybris_lib, provenance, stage, remote)
+    compat_env = dict(compat['env'])
+    compat_env['VK_LAYER_PATH'] += ':' + remote + '/layers'
+    metadata['compatibility'] = compat
+    driver_relative = 'hybris/libhybris-vulkan-icd.so.0'
+    loader = a.vulkan_loader
+    standard_libraries = './standard:./hybris:./glibc'
+    if a.backend == 'turnip':
+        metadata['mesa'] = stage_mesa(a.mesa_build, stage / 'mesa')
+        driver_relative = 'mesa/libvulkan_freedreno.so'
+        loader = stage / 'mesa/libvulkan.so.1'
+        standard_libraries = './standard:./mesa:./hybris:./glibc'
+    if not (stage / driver_relative).is_file():
+        raise SystemExit('selected ICD missing: ' + driver_relative)
     (stage / 'standard').mkdir()
-    shutil.copy2(a.vulkan_loader, stage / 'standard/libvulkan.so.1')
-    metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
+    shutil.copy2(loader, stage / 'standard/libvulkan.so.1')
+    metadata['standard_loader_sha256'] = sha256_file(loader)
+    metadata['standard_backend'] = a.backend
+    metadata['driver_relative'] = driver_relative
     # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
               for mode in ('version', 'egl-vulkan', 'vulkan-egl', 'vertex-policy', 'vertex-policy-direct', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'blender-readback', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
@@ -331,10 +355,7 @@ if a.icd_hal:
         cases.extend(('icd', 'scaled-vertex-builtins-' + route + '-validation', 'probe-glibc') for route in ('gdpa', 'elf'))
         cases.append(('icd-linked', 'scaled-vertex-builtins-linked-validation', 'probe-glibc-linked'))
         cases.append(('icd-linked', 'bc-images-linked-validation', 'probe-glibc-linked'))
-        (stage / 'layers').mkdir()
-        shutil.copy2(a.validation_layer, stage / 'layers/libVkLayer_khronos_validation.so')
-        metadata['validation_layer_sha256'] = sha256_file(a.validation_layer)
-        metadata['validation_manifest_sha256'] = sha256_file(a.validation_manifest)
+        metadata.update(stage_validation(a.validation_layer, a.validation_manifest, stage, remote, {}))
         if a.validation_build_manifest:
             validation_provenance = json.loads(a.validation_build_manifest.read_text())
             expected_layer = validation_provenance.get('files', {}).get('lib/libVkLayer_khronos_validation.so', {})
@@ -342,11 +363,6 @@ if a.icd_hal:
                 raise SystemExit('validation build manifest does not identify the selected layer')
             shutil.copy2(a.validation_build_manifest, a.out / 'validation-build-manifest.json')
             metadata['validation_build_manifest_sha256'] = sha256_file(a.validation_build_manifest)
-        layer_json = json.loads(a.validation_manifest.read_text())
-        if layer_json['layer']['name'] != 'VK_LAYER_KHRONOS_validation':
-            raise SystemExit('expected Khronos validation layer manifest')
-        layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
-        (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
         cases.extend(('icd', mode, 'probe-glibc') for mode in (
             'ubo-pool-reset-validation', 'ubo-pool-empty-reset-validation'))
         cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-stride', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
@@ -356,9 +372,21 @@ if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)
     stage_shader_reference(a.bundle, a.out, metadata)
 
-if a.icd_hal and a.selected_cases:
+if standard_backend and a.selected_cases:
     cases.extend(('icd', mode, 'probe-glibc') for mode in ('vertex-policy-restricted', 'vertex-policy-restricted-direct')
                  if 'icd-' + mode in a.selected_cases)
+
+if a.backend == 'turnip':
+    adapter_modes = {'egl-vulkan', 'vulkan-egl', 'native-buffer', 'icd-alloc-direct',
+                     'vertex-policy-direct', 'vertex-policy-restricted-direct'}
+    excluded = {backend + '-' + mode: ('Android ABI/HAL workload' if backend not in ('icd', 'icd-linked')
+                                     else 'explicit Android HAL or raw hybris ICD workload')
+                for backend, mode, _ in cases if backend not in ('icd', 'icd-linked') or mode in adapter_modes}
+    metadata['not_applicable_cases'] = excluded
+    requested = set(a.selected_cases or ()) & excluded.keys()
+    if requested:
+        raise SystemExit('cases do not target Turnip: ' + ', '.join(sorted(requested)))
+    cases = [case for case in cases if case[0] + '-' + case[1] not in excluded]
 
 results = []
 capabilities = {}
@@ -401,10 +429,12 @@ try:
             command = (
                 'HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker '
                 'HYBRIS_ANDROID_SDK_VERSION=' + shlex.quote(metadata['ro.build.version.sdk']) + ' '
-                'HYBRIS_VULKAN_HAL=' + shlex.quote(a.icd_hal) + ' '
-                'VK_DRIVER_FILES=$PWD/driver.json VK_LAYER_PATH=$PWD/layers '
+                + ('HYBRIS_VULKAN_HAL=' + shlex.quote(a.icd_hal) + ' ' if a.icd_hal else '')
+                + 'VK_DRIVER_FILES=$PWD/driver.json '
+                + ' '.join(k + '=' + shlex.quote(v) for k, v in compat_env.items()) + ' '
                 'PROBE_VK=$PWD/standard/libvulkan.so.1 '
-                './glibc/ld-linux-aarch64.so.1 --library-path ./standard:./hybris:./glibc ./'
+                'PROBE_ICD=$PWD/' + driver_relative + ' '
+                './glibc/ld-linux-aarch64.so.1 --library-path ' + standard_libraries + ' ./'
                 + binary + ' ')
         if backend == 'icd' and mode in {'egl-vulkan', 'vulkan-egl'}:
             command = ('HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris '
@@ -412,9 +442,9 @@ try:
         if backend in {'icd', 'icd-linked'} and a.icd_mali_loader_quirk:
             command = 'HYBRIS_MALI_MMUD_SKIP_LOADER_CHECK=' + a.icd_mali_loader_quirk + ' ' + command
         if backend == 'icd' and mode == 'vk-init':
-            command = 'HYBRIS_ICD_INSTANCE_TRACE=1 ' + command
+            command = 'HYBRIS_VULKAN_TRACE=1 ' + command
         if backend == 'icd' and mode == 'life':
-            command = 'HYBRIS_ICD_INSTANCE_TRACE=1 HYBRIS_ICD_DEVICE_TRACE=1 ' + command
+            command = 'HYBRIS_VULKAN_TRACE=1 ' + command
         if backend in {'icd', 'icd-linked'} and a.point_size_compat:
             command = 'HYBRIS_VULKAN_COMPAT_POINT_SIZE=1 ' + command
             if mode.startswith('point-size'):
@@ -521,21 +551,21 @@ try:
                 driver_json = stage / 'driver.json'
                 driver_json.write_text(json.dumps({
                     'file_format_version': '1.0.0',
-                    'ICD': {'library_path': remote + '/hybris/libhybris-vulkan-icd.so.0',
+                    'ICD': {'library_path': remote + '/' + driver_relative,
                             'api_version': versions[0]}}))
                 subprocess.run(adb + ['push', str(driver_json), remote + '/driver.json'],
                                check=True, stdout=subprocess.DEVNULL, timeout=30)
 
         if backend == 'icd' and mode == 'vk-init' and code == 0:
             try:
-                evidence = instance_evidence(decoded)
+                evidence = instance_evidence(decoded, 'HYBRIS_VULKAN')
                 (a.out / (name + '-instances.json')).write_text(json.dumps(evidence, indent=2) + '\n')
             except (ValueError, KeyError) as exc:
                 print(name, 'instance evidence failed:', exc, flush=True)
                 code = 2
         if backend == 'icd' and mode == 'life' and code == 0:
             try:
-                evidence = device_evidence(decoded)
+                evidence = device_evidence(decoded, 'HYBRIS_VULKAN')
                 (a.out / (name + '-devices.json')).write_text(json.dumps(evidence, indent=2) + '\n')
             except (ValueError, KeyError) as exc:
                 print(name, 'device evidence failed:', exc, flush=True)

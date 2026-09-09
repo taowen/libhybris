@@ -4,7 +4,7 @@
 #include "shader_cleanup.h"
 #include "spirv_builtins.h"
 #include "shader_dispatch.h"
-#include "../icd/device.h"
+#include "../layer/layer.h"
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -27,8 +27,8 @@ int hybris_shader_cleanup_enabled(void)
 VkResult VKAPI_CALL hybris_shader_cleanup_create(VkDevice device, const VkShaderModuleCreateInfo *info,
     const VkAllocationCallbacks *allocator, VkShaderModule *module)
 {
-    struct hybris_icd_device context;
-    if (!hybris_icd_lookup_device(device, &context)) return VK_ERROR_INITIALIZATION_FAILED;
+    struct hybris_layer_device context;
+    if (!hybris_layer_lookup_device(device, &context)) return VK_ERROR_INITIALIZATION_FAILED;
     PFN_vkCreateShaderModule create = (PFN_vkCreateShaderModule)context.resolver(device, "vkCreateShaderModule");
     if (!create) return VK_ERROR_INITIALIZATION_FAILED;
     /* Extension-bearing creation requests keep their original semantics. */

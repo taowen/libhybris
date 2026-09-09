@@ -23,6 +23,8 @@ extern "C" {
 #endif
 
 void *hybris_dlopen(const char *filename, int flag);
+void *hybris_dlopen_ext(const char *filename, int flag, const void *extinfo);
+void *hybris_get_exported_namespace(const char *name);
 void *hybris_dlsym(void *handle, const char *symbol);
 int   hybris_dlclose(void *handle);
 char *hybris_dlerror(void);

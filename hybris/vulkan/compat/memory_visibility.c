@@ -4,8 +4,7 @@
 #include "readback.h"
 #include "application_policy.h"
 #include "scaled_vertex.h"
-#include "../icd/commands.h"
-#include "../icd/wsi.h"
+#include "../layer/layer.h"
 #include <pthread.h>
 #include <string.h>
 
@@ -41,14 +40,14 @@ static pthread_mutex_t cache_guard = PTHREAD_MUTEX_INITIALIZER;
 static struct allocation *allocations;
 static struct buffer *buffers;
 static uint64_t next_generation;
-static struct allocation *find_memory(const struct hybris_icd_device *device, VkDeviceMemory memory)
+static struct allocation *find_memory(const struct hybris_layer_device *device, VkDeviceMemory memory)
 {
     for (struct allocation *a = allocations; a; a = a->next)
         if (a->device == device->handle && a->device_generation == device->generation && a->memory == memory)
             return a;
     return NULL;
 }
-static struct buffer *find_buffer(const struct hybris_icd_device *device, VkBuffer handle)
+static struct buffer *find_buffer(const struct hybris_layer_device *device, VkBuffer handle)
 {
     for (struct buffer *b = buffers; b; b = b->next)
         if (b->device == device->handle && b->device_generation == device->generation && b->handle == handle)
@@ -59,7 +58,7 @@ static VkResult cache_memory(VkDevice device, uint32_t count,
     const VkMappedMemoryRange *ranges, const char *name)
 {
     pthread_mutex_lock(&cache_guard);
-    VkResult result = ((PFN_vkFlushMappedMemoryRanges)hybris_icd_device_inner_proc(device, name))(
+    VkResult result = ((PFN_vkFlushMappedMemoryRanges)hybris_layer_device_inner_proc(device, name))(
         device, count, ranges);
     pthread_mutex_unlock(&cache_guard);
     return result;
@@ -68,7 +67,7 @@ static VkResult VKAPI_CALL flush_memory(VkDevice device, uint32_t count, const V
 { return cache_memory(device, count, ranges, "vkFlushMappedMemoryRanges"); }
 static VkResult VKAPI_CALL invalidate_memory(VkDevice device, uint32_t count, const VkMappedMemoryRange *ranges)
 { return cache_memory(device, count, ranges, "vkInvalidateMappedMemoryRanges"); }
-VkResult hybris_memory_visibility_readback_range(const struct hybris_icd_device *device,
+VkResult hybris_memory_visibility_readback_range(const struct hybris_layer_device *device,
     VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, struct hybris_readback_range *range)
 {
     *range = (struct hybris_readback_range){0};
@@ -97,7 +96,7 @@ done:
     pthread_mutex_unlock(&guard);
     return result;
 }
-VkResult hybris_memory_visibility_invalidate(const struct hybris_icd_device *device,
+VkResult hybris_memory_visibility_invalidate(const struct hybris_layer_device *device,
     const struct hybris_readback_range *range)
 {
     VkResult result = VK_SUCCESS;
@@ -117,9 +116,9 @@ VkResult hybris_memory_visibility_invalidate(const struct hybris_icd_device *dev
 static VkResult VKAPI_CALL allocate_memory(VkDevice handle, const VkMemoryAllocateInfo *info,
     const VkAllocationCallbacks *allocator, VkDeviceMemory *out)
 {
-    struct hybris_icd_device device;
-    struct hybris_icd_physical physical;
-    if (!hybris_icd_lookup_device(handle, &device) || !hybris_icd_lookup_physical(device.physical, &physical))
+    struct hybris_layer_device device;
+    struct hybris_layer_physical physical;
+    if (!hybris_layer_lookup_device(handle, &device) || !hybris_layer_lookup_physical(device.physical, &physical))
         return VK_ERROR_INITIALIZATION_FAILED;
     struct allocation *a = hybris_scaled_alloc(allocator, sizeof(*a), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!a) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -143,7 +142,7 @@ static VkResult VKAPI_CALL allocate_memory(VkDevice handle, const VkMemoryAlloca
     }
     a->generation = ++next_generation;
     pthread_mutex_unlock(&guard);
-    VkResult result = ((PFN_vkAllocateMemory)hybris_icd_device_inner_proc(handle,
+    VkResult result = ((PFN_vkAllocateMemory)hybris_layer_device_inner_proc(handle,
         "vkAllocateMemory"))(handle, info, allocator, out);
     if (result != VK_SUCCESS) { hybris_scaled_free(allocator, a); return result; }
     a->memory = *out;
@@ -160,16 +159,16 @@ static void VKAPI_CALL free_memory(VkDevice handle, VkDeviceMemory memory, const
     for (struct allocation **p = &allocations; *p; p = &(*p)->next)
         if ((*p)->device == handle && (*p)->memory == memory) { removed = *p; *p = removed->next; break; }
     pthread_mutex_unlock(&guard);
-    ((PFN_vkFreeMemory)hybris_icd_device_inner_proc(handle, "vkFreeMemory"))(handle, memory, allocator);
+    ((PFN_vkFreeMemory)hybris_layer_device_inner_proc(handle, "vkFreeMemory"))(handle, memory, allocator);
     if (removed) hybris_scaled_free(removed->custom_allocator ? &removed->allocator : NULL, removed);
 }
 static VkResult VKAPI_CALL map_memory(VkDevice handle, VkDeviceMemory memory, VkDeviceSize offset,
     VkDeviceSize size, VkMemoryMapFlags flags, void **out)
 {
-    VkResult result = ((PFN_vkMapMemory)hybris_icd_device_inner_proc(handle,
+    VkResult result = ((PFN_vkMapMemory)hybris_layer_device_inner_proc(handle,
         "vkMapMemory"))(handle, memory, offset, size, flags, out);
-    struct hybris_icd_device device;
-    if (result == VK_SUCCESS && hybris_icd_lookup_device(handle, &device)) {
+    struct hybris_layer_device device;
+    if (result == VK_SUCCESS && hybris_layer_lookup_device(handle, &device)) {
         pthread_mutex_lock(&guard);
         struct allocation *a = find_memory(&device, memory);
         if (a) { a->mapped = 1; a->map_offset = offset; a->map_size = size == VK_WHOLE_SIZE ? a->size - offset : size; }
@@ -179,26 +178,26 @@ static VkResult VKAPI_CALL map_memory(VkDevice handle, VkDeviceMemory memory, Vk
 }
 static void VKAPI_CALL unmap_memory(VkDevice handle, VkDeviceMemory memory)
 {
-    struct hybris_icd_device device;
-    if (hybris_icd_lookup_device(handle, &device)) {
+    struct hybris_layer_device device;
+    if (hybris_layer_lookup_device(handle, &device)) {
         pthread_mutex_lock(&guard);
         struct allocation *a = find_memory(&device, memory);
         if (a) a->mapped = 0;
         pthread_mutex_unlock(&guard);
     }
-    ((PFN_vkUnmapMemory)hybris_icd_device_inner_proc(handle, "vkUnmapMemory"))(handle, memory);
+    ((PFN_vkUnmapMemory)hybris_layer_device_inner_proc(handle, "vkUnmapMemory"))(handle, memory);
 }
 static VkResult VKAPI_CALL create_buffer(VkDevice handle, const VkBufferCreateInfo *info,
     const VkAllocationCallbacks *allocator, VkBuffer *out)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_lookup_device(handle, &device)) return VK_ERROR_INITIALIZATION_FAILED;
+    struct hybris_layer_device device;
+    if (!hybris_layer_lookup_device(handle, &device)) return VK_ERROR_INITIALIZATION_FAILED;
     struct buffer *b = hybris_scaled_alloc(allocator, sizeof(*b), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!b) return VK_ERROR_OUT_OF_HOST_MEMORY;
     *b = (struct buffer){.device = handle, .device_generation = device.generation,
         .size = info->size, .usage = info->usage, .custom_allocator = allocator != NULL};
     if (allocator) b->allocator = *allocator;
-    VkResult result = ((PFN_vkCreateBuffer)hybris_icd_device_inner_proc(handle,
+    VkResult result = ((PFN_vkCreateBuffer)hybris_layer_device_inner_proc(handle,
         "vkCreateBuffer"))(handle, info, allocator, out);
     if (result != VK_SUCCESS) { hybris_scaled_free(allocator, b); return result; }
     b->handle = *out;
@@ -215,13 +214,13 @@ static void VKAPI_CALL destroy_buffer(VkDevice handle, VkBuffer buffer, const Vk
     for (struct buffer **p = &buffers; *p; p = &(*p)->next)
         if ((*p)->device == handle && (*p)->handle == buffer) { removed = *p; *p = removed->next; break; }
     pthread_mutex_unlock(&guard);
-    ((PFN_vkDestroyBuffer)hybris_icd_device_inner_proc(handle, "vkDestroyBuffer"))(handle, buffer, allocator);
+    ((PFN_vkDestroyBuffer)hybris_layer_device_inner_proc(handle, "vkDestroyBuffer"))(handle, buffer, allocator);
     if (removed) hybris_scaled_free(removed->custom_allocator ? &removed->allocator : NULL, removed);
 }
 static void bound(VkDevice handle, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_lookup_device(handle, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_lookup_device(handle, &device)) return;
     pthread_mutex_lock(&guard);
     struct allocation *a = find_memory(&device, memory);
     struct buffer *b = find_buffer(&device, buffer);
@@ -230,14 +229,14 @@ static void bound(VkDevice handle, VkBuffer buffer, VkDeviceMemory memory, VkDev
 }
 static VkResult VKAPI_CALL bind_buffer(VkDevice handle, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset)
 {
-    VkResult result = ((PFN_vkBindBufferMemory)hybris_icd_device_inner_proc(handle,
+    VkResult result = ((PFN_vkBindBufferMemory)hybris_layer_device_inner_proc(handle,
         "vkBindBufferMemory"))(handle, buffer, memory, offset);
     if (result == VK_SUCCESS) bound(handle, buffer, memory, offset);
     return result;
 }
 static VkResult bind_buffers(VkDevice handle, uint32_t count, const VkBindBufferMemoryInfo *infos, const char *name)
 {
-    VkResult result = ((PFN_vkBindBufferMemory2)hybris_icd_device_inner_proc(handle, name))(handle, count, infos);
+    VkResult result = ((PFN_vkBindBufferMemory2)hybris_layer_device_inner_proc(handle, name))(handle, count, infos);
     if (result == VK_SUCCESS)
         for (uint32_t i = 0; i < count; ++i) bound(handle, infos[i].buffer, infos[i].memory, infos[i].memoryOffset);
     return result;
@@ -247,7 +246,7 @@ static VkResult VKAPI_CALL bind_core(VkDevice d, uint32_t n, const VkBindBufferM
 static VkResult VKAPI_CALL bind_khr(VkDevice d, uint32_t n, const VkBindBufferMemoryInfo *p)
 { return bind_buffers(d, n, p, "vkBindBufferMemory2KHR"); }
 
-static void flush_upload(VkCommandBuffer command, const struct hybris_icd_device *device, VkBuffer source, int upload_kind)
+static void flush_upload(VkCommandBuffer command, const struct hybris_layer_device *device, VkBuffer source, int upload_kind)
 {
     if (!(device->application_policy & HYBRIS_APP_HOST_UPLOAD_FLUSH)) return;
     VkMappedMemoryRange range = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
@@ -283,27 +282,27 @@ static void flush_upload(VkCommandBuffer command, const struct hybris_icd_device
     /* Never invoke driver code or application allocation callbacks under guard. */
     if (range.memory)
         result = flush_memory(device->handle, 1, &range);
-    if (result != VK_SUCCESS) hybris_icd_command_error(command, result);
+    if (result != VK_SUCCESS) hybris_layer_command_error(command, result);
 }
 static void VKAPI_CALL bind_vertices(VkCommandBuffer command, uint32_t first, uint32_t count,
     const VkBuffer *buffers, const VkDeviceSize *offsets)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     for (uint32_t i = 0; i < count; ++i)
         if (buffers[i]) flush_upload(command, &device, buffers[i], 1);
-    ((PFN_vkCmdBindVertexBuffers)hybris_icd_device_inner_proc(device.handle,
+    ((PFN_vkCmdBindVertexBuffers)hybris_layer_device_inner_proc(device.handle,
         "vkCmdBindVertexBuffers"))(command, first, count, buffers, offsets);
 }
 static void bind_vertices2(VkCommandBuffer command, uint32_t first, uint32_t count,
     const VkBuffer *buffers, const VkDeviceSize *offsets, const VkDeviceSize *sizes,
     const VkDeviceSize *strides, const char *name)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     for (uint32_t i = 0; i < count; ++i)
         if (buffers[i]) flush_upload(command, &device, buffers[i], 1);
-    ((PFN_vkCmdBindVertexBuffers2)hybris_icd_device_inner_proc(device.handle,
+    ((PFN_vkCmdBindVertexBuffers2)hybris_layer_device_inner_proc(device.handle,
         name))(command, first, count, buffers, offsets, sizes, strides);
 }
 static void VKAPI_CALL vertices_core(VkCommandBuffer c, uint32_t f, uint32_t n,
@@ -315,18 +314,18 @@ static void VKAPI_CALL vertices_ext(VkCommandBuffer c, uint32_t f, uint32_t n,
 static void VKAPI_CALL copy_buffer_image(VkCommandBuffer command, VkBuffer source,
     VkImage image, VkImageLayout layout, uint32_t count, const VkBufferImageCopy *regions)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     flush_upload(command, &device, source, 0);
-    ((PFN_vkCmdCopyBufferToImage)hybris_icd_device_inner_proc(device.handle,
+    ((PFN_vkCmdCopyBufferToImage)hybris_layer_device_inner_proc(device.handle,
         "vkCmdCopyBufferToImage"))(command, source, image, layout, count, regions);
 }
 static void copy2(VkCommandBuffer command, const VkCopyBufferToImageInfo2 *info, const char *name)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     flush_upload(command, &device, info->srcBuffer, 0);
-    ((PFN_vkCmdCopyBufferToImage2)hybris_icd_device_inner_proc(device.handle, name))(command, info);
+    ((PFN_vkCmdCopyBufferToImage2)hybris_layer_device_inner_proc(device.handle, name))(command, info);
 }
 static void VKAPI_CALL copy_core(VkCommandBuffer c, const VkCopyBufferToImageInfo2 *i)
 { copy2(c, i, "vkCmdCopyBufferToImage2"); }
@@ -337,19 +336,19 @@ static void VKAPI_CALL copy_khr(VkCommandBuffer c, const VkCopyBufferToImageInfo
 static void VKAPI_CALL draw_indirect(VkCommandBuffer command, VkBuffer buffer,
     VkDeviceSize offset, uint32_t count, uint32_t stride)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     if (count) flush_upload(command, &device, buffer, 2);
-    ((PFN_vkCmdDrawIndirect)hybris_icd_device_inner_proc(device.handle,
+    ((PFN_vkCmdDrawIndirect)hybris_layer_device_inner_proc(device.handle,
         "vkCmdDrawIndirect"))(command, buffer, offset, count, stride);
 }
 static void VKAPI_CALL draw_indexed_indirect(VkCommandBuffer command, VkBuffer buffer,
     VkDeviceSize offset, uint32_t count, uint32_t stride)
 {
-    struct hybris_icd_device device;
-    if (!hybris_icd_command_device(command, &device)) return;
+    struct hybris_layer_device device;
+    if (!hybris_layer_command_device(command, &device)) return;
     if (count) flush_upload(command, &device, buffer, 2);
-    ((PFN_vkCmdDrawIndexedIndirect)hybris_icd_device_inner_proc(device.handle,
+    ((PFN_vkCmdDrawIndexedIndirect)hybris_layer_device_inner_proc(device.handle,
         "vkCmdDrawIndexedIndirect"))(command, buffer, offset, count, stride);
 }
 void hybris_memory_visibility_release_device(VkDevice device)

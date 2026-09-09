@@ -4,18 +4,18 @@
 #include "clip_distance.h"
 #include "shader_policy.h"
 #include "bc_policy.h"
-#include "../icd/wsi.h"
+#include "../layer/layer.h"
 #include <string.h>
 
 int hybris_clip_enabled(void) { return 1; }
 
 int hybris_clip_active(VkPhysicalDevice physical)
 {
-    struct hybris_icd_physical context;
+    struct hybris_layer_physical context;
     VkPhysicalDeviceFeatures features;
     PFN_vkGetPhysicalDeviceFeatures query;
     if (!hybris_clip_enabled()) return 0;
-    if (!hybris_icd_lookup_physical(physical, &context)) return 0;
+    if (!hybris_layer_lookup_physical(physical, &context)) return 0;
     query = (PFN_vkGetPhysicalDeviceFeatures)context.resolver(context.instance, "vkGetPhysicalDeviceFeatures");
     if (!query) return 0;
     query(physical, &features);
@@ -46,9 +46,9 @@ void hybris_clip_filter_features(VkPhysicalDevice physical, VkPhysicalDeviceFeat
 
 static PFN_vkVoidFunction backend_proc(VkPhysicalDevice physical, const char *name)
 {
-    struct hybris_icd_physical context;
+    struct hybris_layer_physical context;
     PFN_vkVoidFunction inner;
-    if (!hybris_icd_lookup_physical(physical, &context)) return NULL;
+    if (!hybris_layer_lookup_physical(physical, &context)) return NULL;
     inner = hybris_shader_policy_proc(name);
     if (inner) return inner;
     inner = hybris_bc_policy_proc(name);

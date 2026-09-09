@@ -7,11 +7,24 @@ lib_LTLIBRARIES = \
 
 # Explicit loader layer, independent of Android linker/HAL/WSI libraries.
 # Its manifest is colocated with the DSO; opt in using VK_LAYER_PATH.
-libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/commands.c layer/layer.h \
-    compat/rendering_segments.c compat/rendering_segments.h \
-    compat/application_policy.c compat/application_policy.h compat/scaled_vertex.h
+libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/device.c layer/physical.c layer/commands.c layer/layer.h \
+    compat/bc_decode.c compat/bc_decode.h compat/shaders/bc_decode.inc \
+    compat/bc_image.c compat/bc_image.h compat/bc_command_state.c compat/bc_command_state.h compat/bc_transfer.c compat/bc_transfer.h \
+    compat/bc_context.c compat/bc_context.h compat/bc_commands.c compat/bc_resources.c compat/bc_record.c compat/bc_barriers.c compat/bc_image_copy.c compat/bc_policy.c compat/bc_policy.h \
+    compat/application_policy.c compat/application_policy.h \
+    compat/memory_visibility.c compat/memory_visibility.h compat/rendering_segments.c compat/rendering_segments.h \
+    compat/readback_record.c compat/readback_submit.c compat/readback.h \
+    compat/point_size.c compat/point_size.h \
+    compat/spirv_inout.c compat/spirv_inout.h \
+    compat/spirv_image_bounds.c compat/spirv_image_bounds.h \
+    compat/clip_distance.c compat/clip_distance.h compat/spirv_clip.c \
+    compat/shader_policy.c compat/shader_policy.h \
+    compat/shader_cleanup.c compat/shader_cleanup.h compat/spirv_builtins.c compat/spirv_builtins.h \
+    compat/spirv_decorations.c compat/spirv_decorations.h compat/spirv_constants.c compat/spirv_constants.h compat/spirv_aggregate.c compat/spirv_aggregate.h compat/spirv_entry.c compat/spirv_entry.h compat/spirv_results.inc compat/spirv_literals.inc compat/scaled_dump.c compat/shader_dispatch.c compat/shader_dispatch.h compat/scaled_formats.c compat/scaled_formats.h compat/scaled_spirv.c compat/scaled_vertex.h
 libVkLayer_hybris_compat_la_CFLAGS = -fvisibility=hidden
-libVkLayer_hybris_compat_la_LDFLAGS = -module -avoid-version -no-undefined -pthread
+# Keep process-wide policy initialization and lifetime generations across the
+# loader unloading its last instance. All per-instance/device state is freed.
+libVkLayer_hybris_compat_la_LDFLAGS = -module -avoid-version -no-undefined -pthread -Wl,-z,nodelete
 layerdir = $(libdir)
 layer_DATA = layer/VkLayer_hybris_compat.json
 
@@ -45,20 +58,7 @@ libvulkan_la_LDFLAGS = \
 	-version-info 3:183:2
 
 # Optional standard-loader backend; no default ICD JSON is installed.
-libhybris_vulkan_icd_la_SOURCES = icd/icd.c icd/instance.c icd/instance.h icd/device.c icd/device.h icd/wsi.c icd/wsi.h icd/swapchain.c icd/swapchain.h icd/vk_android_native_buffer.h icd/hwvulkan.h icd/physical_commands.inc \
-    compat/bc_decode.c compat/bc_decode.h compat/shaders/bc_decode.inc \
-    compat/bc_image.c compat/bc_image.h compat/bc_command_state.c compat/bc_command_state.h compat/bc_transfer.c compat/bc_transfer.h \
-    compat/bc_context.c compat/bc_context.h compat/bc_commands.c compat/bc_resources.c compat/bc_record.c compat/bc_barriers.c compat/bc_image_copy.c compat/bc_policy.c compat/bc_policy.h \
-    icd/commands.c icd/commands.h icd/rendering.c compat/application_policy.c compat/application_policy.h \
-    compat/memory_visibility.c compat/memory_visibility.h compat/rendering_segments.c compat/rendering_segments.h \
-    compat/readback_record.c compat/readback_submit.c compat/readback.h \
-    compat/point_size.c compat/point_size.h \
-    compat/spirv_inout.c compat/spirv_inout.h \
-    compat/spirv_image_bounds.c compat/spirv_image_bounds.h \
-    compat/clip_distance.c compat/clip_distance.h compat/spirv_clip.c \
-    compat/shader_policy.c compat/shader_policy.h \
-    compat/shader_cleanup.c compat/shader_cleanup.h compat/spirv_builtins.c compat/spirv_builtins.h \
-    compat/spirv_decorations.c compat/spirv_decorations.h compat/spirv_constants.c compat/spirv_constants.h compat/spirv_aggregate.c compat/spirv_aggregate.h compat/spirv_entry.c compat/spirv_entry.h compat/spirv_results.inc compat/spirv_literals.inc compat/scaled_dump.c compat/shader_dispatch.c compat/shader_dispatch.h compat/scaled_formats.c compat/scaled_formats.h compat/scaled_spirv.c compat/scaled_vertex.h
+libhybris_vulkan_icd_la_SOURCES = icd/icd.c icd/instance.c icd/instance.h icd/device.c icd/device.h icd/wsi.c icd/wsi.h icd/swapchain.c icd/swapchain.h icd/vk_android_native_buffer.h icd/hwvulkan.h icd/physical_commands.inc
 EXTRA_DIST = compat/shaders/bc7.glsl compat/shaders/bc6h.glsl compat/shaders/LICENSE.bcdec icd/README.md compat/shaders/bc_decode.comp compat/shaders/generate-bc.py layer/VkLayer_hybris_compat.json
 libhybris_vulkan_icd_la_CFLAGS = $(libvulkan_la_CFLAGS) -fvisibility=hidden
 libhybris_vulkan_icd_la_CXXFLAGS = $(libvulkan_la_CXXFLAGS) -fvisibility=hidden

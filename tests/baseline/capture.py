@@ -63,9 +63,10 @@ def run_capture(shell, adb, remote, out, command, metadata, kill_remote, dynamic
               folder + '/captured ' + remote + '/' + folder + '/replay', check=True, timeout=10)
         probe = command.removesuffix('ubo') + ('ubo-multi-' if multi else 'ubo-dynamic-' if dynamic else 'ubo-') + binding
         run('reference-' + binding, 'PROBE_WIDGET_DUMP_DIR=$PWD/' + folder + '/reference ' + probe)
-        captured = probe.replace('VK_LAYER_PATH=$PWD/layers', 'VK_LAYER_PATH=$PWD/capture-tools')
+        captured = probe.replace('VK_LAYER_PATH=', 'VK_LAYER_PATH=$PWD/capture-tools:')
+        captured = captured.replace('VK_INSTANCE_LAYERS=VK_LAYER_HYBRIS_compat',
+                                    'VK_INSTANCE_LAYERS=VK_LAYER_HYBRIS_compat:VK_LAYER_LUNARG_gfxreconstruct')
         run('capture-' + binding, 'PROBE_WIDGET_DUMP_DIR=$PWD/' + folder + '/captured '
-            'VK_INSTANCE_LAYERS=VK_LAYER_LUNARG_gfxreconstruct '
             'GFXRECON_CAPTURE_FILE=$PWD/' + folder + '/widget.gfxr '
             'GFXRECON_CAPTURE_FILE_TIMESTAMP=false ' + captured)
         run('convert-' + binding, tool_env + tool_launch + './capture-tools/gfxrecon-convert '
