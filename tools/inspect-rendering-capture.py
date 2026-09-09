@@ -240,14 +240,60 @@ def inspect(path, registry):
     return result
 
 
+def dump_request(report, requested_draws, submit_index=None):
+    selected = {}
+    for batch in report['submissions']:
+        if submit_index is not None and batch['queue_submit_index'] != submit_index:
+            continue
+        for scope in batch['renderings']:
+            for draw in scope['draws']:
+                index = draw['index']
+                if index not in requested_draws:
+                    continue
+                if index in selected:
+                    raise ValueError(f'draw {index} has multiple executions; select --dump-submit')
+                if not batch['complete_primary_recordings'] or 'end_index' not in scope:
+                    raise ValueError(f'draw {index} does not have complete primary recording evidence')
+                recording = next(r for r in batch['recordings']
+                                 if r['command_buffer'] == scope['command_buffer'])
+                selected[index] = (batch, scope, recording)
+    missing = requested_draws - selected.keys()
+    if missing:
+        raise ValueError(f'draw indices not found in selected submissions: {sorted(missing)}')
+    groups = {}
+    for index in sorted(selected):
+        batch, scope, recording = selected[index]
+        key = (batch['queue_submit_index'], recording['begin_index'])
+        group = groups.setdefault(key, {'draws': [], 'scopes': set()})
+        group['draws'].append(index)
+        group['scopes'].add((scope['begin_index'], scope['end_index']))
+    keys = sorted(groups)
+    return {'BeginCommandBuffer': [key[1] for key in keys],
+            'Draw': [groups[key]['draws'] for key in keys],
+            'RenderPass': [[list(pair) for pair in sorted(groups[key]['scopes'])] for key in keys],
+            'QueueSubmit': [key[0] for key in keys],
+            'DumpResourcesOptions': {'DumpRawImages': True, 'DumpDepth': True,
+                                     'DumpAllDescriptors': True, 'DumpVertexIndexBuffer': True}}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('capture', type=Path, help='gfxrecon-convert --format jsonl output')
     parser.add_argument('--registry', required=True, type=Path, help='pinned Vulkan-Headers registry/vk.xml')
     parser.add_argument('--output', type=Path, help='write JSON here; default is stdout')
+    parser.add_argument('--dump-draw', action='append', type=int, default=[], help='draw call index; repeat as needed')
+    parser.add_argument('--dump-submit', type=int, help='select execution when a recording is submitted repeatedly')
+    parser.add_argument('--dump-request', type=Path, help='write a standard GFXReconstruct resource-dump request')
     args = parser.parse_args()
+    if bool(args.dump_draw) != bool(args.dump_request):
+        parser.error('--dump-draw and --dump-request must be supplied together')
+    if args.dump_submit is not None and not args.dump_request:
+        parser.error('--dump-submit requires --dump-request')
     try:
         report = inspect(args.capture, args.registry)
+        if args.dump_request:
+            request = dump_request(report, set(args.dump_draw), args.dump_submit)
+            args.dump_request.write_text(json.dumps(request, indent=2) + '\n')
         data = json.dumps(report, indent=2) + '\n'
         if args.output:
             args.output.write_text(data)

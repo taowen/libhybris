@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${1:-$root/tests/baseline/build/gfxreconstruct}"
 repository=https://github.com/taowen/gfxreconstruct.git
-revision=ab565b2792f98c6e0deebf182604f830d6deaed2
+revision=bac419e7e87133e45e3bf72ba056b3ce9b97f8c9
 engine="${CONTAINER_ENGINE:-podman}"
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"

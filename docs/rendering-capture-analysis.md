@@ -42,6 +42,56 @@ marked partial. Zero findings do not prove correct pixels or complete Vulkan
 validity. Swapchain image creation may be absent from the image table because
 those images are returned by enumeration rather than `vkCreateImage`.
 
+## Generate a draw-resource request
+
+Choose draw indices from the report, then generate the converter's standard
+resource request with its command-buffer, render-segment and submit boundaries:
+
+```sh
+python3 tools/inspect-rendering-capture.py calls.jsonl \
+  --registry tests/baseline/build/validation-build/src/Vulkan-Headers/registry/vk.xml \
+  --output rendering-analysis.json \
+  --dump-draw 1494 --dump-draw 1505 --dump-draw 4939 \
+  --dump-request draw-resources.json
+gfxrecon-replay --swapchain offscreen --screenshots 2 \
+  --dump-resources draw-resources.json --dump-resources-dir resources application.gfxr
+```
+
+Creating a request does not suppress the inspector's exit 1 for sequence
+findings. A repeated recording needs `--dump-submit` to select an unambiguous
+execution. Missing draws or incomplete primary recordings are rejected.
+The generated request enables raw attachments, depth, bound descriptors and
+vertex/index-buffer dumps. The indices above belong to the Blender capture
+below, not arbitrary captures. Replay still requires a correctly staged loader,
+ICD and dependencies; resource readback may alter scheduling and is a diagnostic
+comparison, not a substitute for uninstrumented application rendering.
+
+The first manual request omitted `RenderPass` boundaries, and the frozen
+GFXReconstruct converter/replayer build `c2ff0ee` crashed before replay. Supplying
+the boundaries fixed this configuration error. The generated request was run
+on X300 in `replay-blender-resources-111645` under the same parent investigation
+directory. The replay's maps identify the frozen diagnostic ICD/common from
+`blender-phi-fix-small-105844` and the product's standard Vulkan loader.
+The three selected draws produced attachment dumps plus font/splash textures,
+font/splash vertex buffers and the widget's 272-byte UBO. That UBO matches the
+captured `vkCmdUpdateBuffer` at index 1477 byte for byte; this is GPU buffer
+readback, not proof of the shader's effective UBO reads. The no-vertex-attribute
+widget's index buffer was still absent from this tool build's report and remains
+a diagnostic gap. These replay records use the identified frozen tool build,
+not the newer revision currently selected by `build-capture-tools.sh`.
+
+A subsequent fork fix (`bac419e7`, now pinned by `build-capture-tools.sh`) copies
+indexed-draw state before the no-vertex-attribute early return. The X300 replay
+`replay-blender-index-fixed-112611` used the same capture and frozen diagnostic
+ICD with newly staged, manifest-checked tools. It completed both frames with
+exit 0 and reported buffer 196 at draw 1505: UINT16, offset 0, 36 bytes.
+The binary contains eighteen zero indices. This closes the missing-resource
+reporting gap, but does not establish correct application data: captured
+writes, replay memory restoration and readback still need comparison. Font and
+splash attachment/texture dumps match the preceding replay byte for byte;
+the widget attachment differs. Neither successful replay nor an available
+buffer dump is a rendering pass.
+
 ## X300 Blender evidence, 2026-09-09
 
 Blender 4.3.2 on `10AFA31610002QH` reached submission after repairing the
