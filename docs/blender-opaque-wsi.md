@@ -58,8 +58,38 @@ The probe requires advertised OPAQUE support instead of falling back to INHERIT;
 its independent screenshot checker still expects opaque RGB while verifying
 alpha zero in the captured raw image. X11's existing checker default remains
 alpha 255. These are extensions of existing device workloads, not unit tests.
-The new alpha-zero Wayland gate has not yet been rerun against the hybris HAL ICD;
-its earlier alpha-one passes do not establish this added coverage.
+The alpha-zero Wayland gate also passes on the Mali X300 hybris HAL backend,
+as recorded below.
+
+### Mali alpha-zero regression
+
+X300 `10AFA31610002QH` used the running product `io.taowen.ardesk` with
+`/vendor/lib64/hw/vulkan.mali.so`. The runner staged the previously built,
+manifest-verified `/tmp/libhybris-rendering-layer-clean-build` runtime; ICD
+SHA-256 is `04e7cd84e5093bd78e95dbdaf1d86f674a87da88135532cf6905ad3ada96cda9`.
+This is an isolated runtime check against the product compositor, not a new
+installation or a rebuild of the HAL adapter.
+
+- Ordinary run `20260909T183639-299c6bd0` passes.
+- SyncVal run `20260909T183740-e2784687` passes with zero validation errors and
+  verified loader, ICD and validation-layer mappings.
+- Each run checks 24 exact readbacks and six physical screenshots over
+  320×240, 448×288 and 256×192. Frame zero in every epoch preserves green
+  `(0,255,0,0)` in GPU readback while the physical window remains opaque.
+  The screen checker compares 254,976 pixels per run and accounts for the
+  device's Display P3 screenshot profile.
+- The compositor identity is unchanged and its observed FD count is 212
+  before and after each run. These two short runs do not establish long-run
+  resource stability.
+
+The existing Wayland client was rebuilt during this regression batch. Its
+SHA-256 `7681f82b166f3acde7730c4ab4874885a6241713333f946813fb66b1e2837f19`
+is byte-identical to the client used in both runs. Artifacts are under Ardesk
+`build/blender-vulkan/mali-opaque-wayland-{results,validation,probe}` with the
+corresponding build and run logs. No unit tests or new probe cases were added.
+This closes the missing Mali Wayland alpha-zero observation only; X11
+alpha-zero presentation on Mali and full Blender application acceptance remain
+outside this evidence.
 
 ## Product integration and remaining failure
 
@@ -113,5 +143,5 @@ raw images, validation logs, API capture and final product maps. The isolated
 WSI runner manifests retain their base runtime identity and explicitly record
 the replaced Vulkan driver under `driver_override`; other dependency libraries
 were not rebuilt for that comparison. Full Gradle packaging, fractional scaling,
-other-device alpha-zero regressions and Blender's complete application gate
+Mali X11 alpha-zero regression and Blender's complete application gate
 remain unverified.
