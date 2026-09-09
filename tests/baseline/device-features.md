@@ -75,3 +75,5 @@ Local evidence: `/tmp/libhybris-features-results`,
 Ardesk `build/blender-vulkan/device-features/`. The previous failing captures and
 product results remain available. Broader gaps, including direct Vulkan Blender's
 VS/GS interface error and Turnip's forced BC image failures, remain open.
+The later [shader-interface batch](../../docs/blender-shader-interfaces.md) fixes
+that startup VS/GS error; broader application acceptance remains open.

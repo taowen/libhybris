@@ -20,8 +20,10 @@ ICD 所需的 native-window 实现移至 `vulkan/icd/`。
 
 通用兼容现已归并到 `VK_LAYER_HYBRIS_compat`；HAL ICD 与 Turnip 共用
 层、生命周期诊断、后端部署和应用观察入口。兼容转换后的应用 VVL 检查
-在 Mali 暴露 `VUID-RuntimeSpirv-OpVariable-08746`：顶点输出清理后与几何
-输入的 BuiltIn block 不匹配；此项保留 FAIL。Turnip 强制 BC 图像用例的
+曾在 Mali 暴露 `VUID-RuntimeSpirv-OpVariable-08746`：顶点输出清理后与几何
+输入的 BuiltIn block 不匹配。自动路径现保留接口声明，两端 Blender 启动
+后置 VVL 均零错误，见[着色器接口证据](docs/blender-shader-interfaces.md)。
+Turnip 强制 BC 图像用例的
 12,524 个比较错误也未关闭。两端 Blender 启动截图与转换前后 capture
 文件不代替应用建模/保存/resize 或 capture replay 验收。
 

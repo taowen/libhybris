@@ -4,6 +4,16 @@ The active objective is to complete the acceptance criteria in [gaps.md](gaps.md
 and improve maintainability without changing API/ABI contracts during structural
 refactors. A probe passing does not close an entire gap.
 
+## Blender shader interfaces (2026-09-09)
+
+Automatic ClipDistance preparation preserves shader interface declarations and
+only removes capabilities proven unused. This fixes Mali Blender's VS/GS block
+mismatch. Both drivers' startup observations now have zero post-compatibility
+VVL errors/warnings; actual captured VS/GS/FS modules match the original bytes.
+Existing device probes and rebuilt/installed product teapot regressions pass.
+[Evidence and remaining scope](docs/blender-shader-interfaces.md) distinguish
+startup observation from the unfinished acquire-fix packaging and full workflows.
+
 ## Device feature chains (2026-09-09)
 
 The shared layer now translates emulated ClipDistance requests in both legacy

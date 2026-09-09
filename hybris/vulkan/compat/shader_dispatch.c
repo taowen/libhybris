@@ -147,7 +147,7 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
     size_t cleaned_size = 0;
     unsigned removed = 0;
     if (result == VK_SUCCESS && device->clip && !info->pNext)
-        result = hybris_spirv_unused_builtins(created.pCode, created.codeSize, allocator,
+        result = hybris_spirv_unused_clip_capabilities(created.pCode, created.codeSize, allocator,
             &cleaned, &cleaned_size, &removed);
     if (result != VK_SUCCESS) {
         hybris_scaled_free(allocator, bounded);

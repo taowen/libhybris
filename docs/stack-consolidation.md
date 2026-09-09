@@ -31,7 +31,7 @@
 
 | 项 | 已确认的剩余分叉 |
 | --- | --- |
-| 窗口验证/捕获 | 两条 Vulkan 后端已接入共同窗口门。原生 scene 与产品 teapot 复用同一 Host（`tests/device_gate.py`、`Host.deploy`/`pull_maps`）。已删除 `tests/test-wsi-buffer-layout-device.sh` 这条 guest-desk + `TEAPOT_ONCE` 旁路。应用已接 VVL 和兼容前后捕获；Mali 的跨阶段 shader block 验证错误仍开放，应用回放尚未验收。desktop-gl 仍是离屏，不代替应用窗口验收 |
+| 窗口验证/捕获 | 两条 Vulkan 后端已接入共同窗口门。原生 scene 与产品 teapot 复用同一 Host（`tests/device_gate.py`、`Host.deploy`/`pull_maps`）。已删除 `tests/test-wsi-buffer-layout-device.sh` 这条 guest-desk + `TEAPOT_ONCE` 旁路。应用已接 VVL 和兼容前后捕获；Mali 启动时的跨阶段 shader block 验证错误已修复，两端后置 VVL 零错误；完整应用操作和回放尚未验收。desktop-gl 仍是离屏，不代替应用窗口验收 |
 | 历史文档 | `TAWC_FORK.md` 已把已删 Vulkan/EGL 窗口插件及旧打包入口改为退役说明；`integration-review.md` 的现行入口与旧夹具记录分段。旧 APK/hash/run ID 保持原样，不作为当前产品门的证据 |
 
 ## 构建边界与 Mali quirk
@@ -103,6 +103,11 @@ Mali `20260909T195324-9c5ecb6a` 为 FAIL，检出
 不匹配）。Mali 显式 HAL 加载已使用导出的 sphal namespace，普通观察
 `20260909T195202-dfd75d62` 可显示完整启动界面；日志仍有 mapper/GLES
 默认 namespace 的加载警告，不宣称所有 HAL namespace 调用已解决。
+
+后续自动 shader 准备已改为保留接口声明，该启动 VS/GS 错误修复。
+Mali `20260909T215607-7621e2c7` 和 Turnip `20260909T215651-e223bb44`
+均为后置 VVL 零错误、零警告。新 APK 重装后的两端产品茶壶门也通过；
+[完整证据](blender-shader-interfaces.md)保留原失败对照和未验收项。
 
 转换前/后原始应用捕获均已保存并核对设备哈希：Turnip
 `20260909T193430-33a55cb5` / `20260909T193340-df2e0080`；Mali

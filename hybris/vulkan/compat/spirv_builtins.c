@@ -15,15 +15,26 @@ static unsigned popcount(uint64_t value)
     return count;
 }
 static int clip_cull(uint32_t builtin) { return builtin == 3 || builtin == 4; }
-static uint32_t structure(const struct builtin_id *ids, uint32_t bound, uint32_t var)
+static int interface_storage(uint32_t storage, unsigned mask)
+{ return storage < 32 && (mask & (1u << storage)); }
+static uint32_t array_structure(const struct builtin_id *ids, uint32_t bound, uint32_t type)
+{
+    if (type >= bound) return 0;
+    if (ids[type].op == 28) type = ids[type].object;
+    return type < bound && ids[type].op == 30 ? type : 0;
+}
+static uint32_t structure(const struct builtin_id *ids, uint32_t bound, uint32_t var,
+    uint32_t *member_word, unsigned storage_mask)
 {
     if (var >= bound || ids[var].op != 59 || ids[var].type >= bound) return 0;
     uint32_t pointer = ids[var].type;
-    if (ids[pointer].op != 32 || ids[pointer].value != 3 || ids[pointer].object >= bound) return 0;
+    if (ids[pointer].op != 32 || !interface_storage(ids[pointer].value, storage_mask) || ids[pointer].object >= bound) return 0;
     uint32_t object = ids[pointer].object;
-    return ids[object].op == 30 ? object : 0;
+    if (member_word) *member_word = ids[object].op == 28 ? 5 : 4;
+    return array_structure(ids, bound, object);
 }
-static VkResult prune_outputs(const uint32_t *code, size_t size, unsigned builtin_mask,
+static VkResult prune_interfaces(const uint32_t *code, size_t size, unsigned builtin_mask,
+    unsigned storage_mask, int capabilities_only,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size,
     unsigned *removed)
 {
@@ -50,18 +61,19 @@ static VkResult prune_outputs(const uint32_t *code, size_t size, unsigned builti
         if (op == 10 || op == 73 || op == 74 || op == 75 || op == 332 || op == 5632 || op == 5633) goto done;
         if (op == 54) function = 1;
         if (op == 56) function = 0;
-        if (op == 21 || op == 30 || op == 32) {
+        if (op == 21 || op == 28 || op == 30 || op == 32) {
             if (count < 2 || !p[1] || p[1] >= bound) goto done;
             struct builtin_id *id = &ids[p[1]];
             id->op = op; id->at = at;
             if (op == 21) { if (count != 4) goto done; id->value = p[2]; }
+            if (op == 28) { if (count != 4 || p[2] >= bound) goto done; id->object = p[2]; }
             if (op == 30 && count - 2 > 64) id->blocked = 1;
             if (op == 32) { if (count != 4 || p[3] >= bound) goto done; id->object = p[3]; id->value = p[2]; }
         } else if (op == 43 || op == 59) {
             if (count < 4 || p[1] >= bound || !p[2] || p[2] >= bound) goto done;
             struct builtin_id *id = &ids[p[2]];
             id->op = op; id->at = at; id->type = p[1]; id->value = p[3];
-            if (op == 59) id->blocked = function || p[3] != 3 || count != 4;
+            if (op == 59) id->blocked = function || !interface_storage(p[3], storage_mask) || count != 4;
         }
         at += count;
     }
@@ -80,14 +92,16 @@ static VkResult prune_outputs(const uint32_t *code, size_t size, unsigned builti
         uint32_t count = p[0] >> 16, op = p[0] & 65535;
         uint32_t accessed = 0;
         if ((op == 65 || op == 66) && count >= 5 && p[3] < bound) {
-            uint32_t object = structure(ids, bound, p[3]);
+            uint32_t member_word = 0;
+            uint32_t object = structure(ids, bound, p[3], &member_word, storage_mask);
             if (object) {
                 accessed = p[3];
-                if (p[4] >= bound || ids[p[4]].op != 43 || ids[p[4]].type >= bound ||
-                    ids[ids[p[4]].type].op != 21 || ids[ids[p[4]].type].value != 32 ||
-                    (code[ids[p[4]].at] >> 16) != 4 || ids[p[4]].value >= 64)
+                uint32_t index = count > member_word ? p[member_word] : bound;
+                if (index >= bound || ids[index].op != 43 || ids[index].type >= bound ||
+                    ids[ids[index].type].op != 21 || ids[ids[index].type].value != 32 ||
+                    (code[ids[index].at] >> 16) != 4 || ids[index].value >= 64)
                     ids[object].blocked = 1;
-                else ids[object].used |= UINT64_C(1) << ids[p[4]].value;
+                else ids[object].used |= UINT64_C(1) << ids[index].value;
             }
         }
         /* Names, decorations and entry interfaces are rewritten below. Other
@@ -99,15 +113,19 @@ static VkResult prune_outputs(const uint32_t *code, size_t size, unsigned builti
             if (ids[id].op == 59 && !(op == 59 && i == 2)) {
                 if (!(id == accessed && i == 3)) {
                     ids[id].live = 1;
-                    uint32_t object = structure(ids, bound, id);
+                    uint32_t object = structure(ids, bound, id, NULL, storage_mask);
                     if (object) ids[object].blocked = 1;
                 }
             }
-            if (ids[id].op == 30 && !(op == 30 && i == 1) && !(op == 32 && i == 3 && p[2] == 3))
+            if (ids[id].op == 30 && !(op == 30 && i == 1) &&
+                !(op == 32 && i == 3 && interface_storage(p[2], storage_mask)) &&
+                !(capabilities_only && op == 28 && i == 2))
                 ids[id].blocked = 1;
-            if (ids[id].op == 32 && ids[id].object < bound && ids[ids[id].object].op == 30 &&
-                !(op == 32 && i == 1) && !(op == 59 && i == 1 && p[3] == 3 && count == 4))
-                ids[ids[id].object].blocked = 1;
+            uint32_t object = array_structure(ids, bound, ids[id].object);
+            if (ids[id].op == 28 && object && !(op == 28 && i == 1) &&
+                !(op == 32 && i == 3 && interface_storage(p[2], storage_mask))) ids[object].blocked = 1;
+            if (ids[id].op == 32 && object && !(op == 32 && i == 1) &&
+                !(op == 59 && i == 1 && interface_storage(p[3], storage_mask) && count == 4)) ids[object].blocked = 1;
         }
     }
     for (uint32_t id = 1; id < bound; ++id) {
@@ -124,7 +142,7 @@ static VkResult prune_outputs(const uint32_t *code, size_t size, unsigned builti
         *removed += ids[id].drop;
     }
     /* Remove each capability only after all corresponding declarations are
-     * gone. Input builtins and active outputs keep their capability intact. */
+     * gone. Active or ambiguous input/output uses keep their capability intact. */
     unsigned retained = 0, capability_changes = 0;
     for (size_t at = 5; at < words; at += code[at] >> 16) {
         const uint32_t *p = code + at;
@@ -137,6 +155,27 @@ static VkResult prune_outputs(const uint32_t *code, size_t size, unsigned builti
     for (size_t at = 5; at < words; at += code[at] >> 16) {
         const uint32_t *p = code + at;
         if (p[0] == ((2u << 16) | 17) && (p[1] == 32 || p[1] == 33) && !(retained & (1u << (p[1] - 32)))) ++capability_changes;
+    }
+    if (capabilities_only) {
+        /* Inactive BuiltIn members do not require these capabilities. Keep
+         * their declarations: independent module cleanup cannot decide which
+         * interface layout an adjacent stage needs. */
+        *removed = capability_changes;
+        if (!capability_changes) goto done;
+        result = hybris_scaled_alloc(allocator, size, VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+        if (!result) { status = VK_ERROR_OUT_OF_HOST_MEMORY; goto done; }
+        memcpy(result, code, 20);
+        size_t out = 5;
+        for (size_t at = 5; at < words; at += code[at] >> 16) {
+            const uint32_t *p = code + at;
+            uint32_t count = p[0] >> 16, op = p[0] & 65535;
+            if (op == 17 && count == 2 && (p[1] == 32 || p[1] == 33) &&
+                !(retained & (1u << (p[1] - 32)))) continue;
+            memcpy(result + out, p, count * 4);
+            out += count;
+        }
+        *output = result; *output_size = out * 4; result = NULL;
+        goto done;
     }
     if (!*removed && !capability_changes) goto done;
     result = hybris_scaled_alloc(allocator, (words * 5 + 5) * 4, VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
@@ -177,16 +216,18 @@ static VkResult prune_outputs(const uint32_t *code, size_t size, unsigned builti
         }
         memcpy(result + out, p, count * 4);
         if ((op == 65 || op == 66) && count >= 5) {
-            uint32_t object = structure(ids, bound, p[3]);
+            uint32_t member_word = 0;
+            uint32_t object = structure(ids, bound, p[3], &member_word, storage_mask);
             if (object && ids[object].candidates) {
-                uint32_t member = ids[p[4]].value;
+                uint32_t index = p[member_word];
+                uint32_t member = ids[index].value;
                 unsigned delta = popcount(ids[object].candidates & ((UINT64_C(1) << member) - 1));
                 if (delta) {
                     constants[added++] = (4u << 16) | 43;
-                    constants[added++] = ids[p[4]].type;
+                    constants[added++] = ids[index].type;
                     constants[added++] = next;
                     constants[added++] = member - delta;
-                    result[out + 4] = next++;
+                    result[out + member_word] = next++;
                 }
             }
         }
@@ -210,10 +251,16 @@ done:
 VkResult hybris_spirv_unused_builtins(const uint32_t *code, size_t size,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size, unsigned *removed)
 {
-    return prune_outputs(code, size, (1u << 3) | (1u << 4), allocator, output, output_size, removed);
+    return prune_interfaces(code, size, (1u << 3) | (1u << 4), 1u << 3, 0, allocator, output, output_size, removed);
+}
+VkResult hybris_spirv_unused_clip_capabilities(const uint32_t *code, size_t size,
+    const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size, unsigned *removed)
+{
+    return prune_interfaces(code, size, (1u << 3) | (1u << 4), (1u << 1) | (1u << 3), 1,
+        allocator, output, output_size, removed);
 }
 VkResult hybris_spirv_unused_point_size(const uint32_t *code, size_t size,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size, unsigned *removed)
 {
-    return prune_outputs(code, size, 1u << 1, allocator, output, output_size, removed);
+    return prune_interfaces(code, size, 1u << 1, 1u << 3, 0, allocator, output, output_size, removed);
 }
