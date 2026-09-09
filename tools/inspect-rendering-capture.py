@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect dynamic-rendering submission sequences in GFXReconstruct JSONL."""
+"""Inspect dynamic-rendering submissions and uncaptured-submit recordings in GFXReconstruct JSONL."""
 import argparse
 import collections
 import copy
@@ -163,7 +163,7 @@ def inspect(path, registry):
     recordings, pools, images, views = {}, {}, {}, {}
     result = {'input': str(path), 'input_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
               'registry_sha256': hashlib.sha256(registry.read_bytes()).hexdigest(),
-              'submissions': [], 'uncovered': [],
+              'submissions': [], 'recordings_without_captured_submit': [], 'uncovered': [],
               'scope': 'dynamic-rendering command order and binding call references; not Vulkan validation or a pixel verdict'}
     previous_index = -1
     for line_number, line in enumerate(path.open(), 1):
@@ -203,7 +203,8 @@ def inspect(path, registry):
         elif name == 'vkResetCommandBuffer' and successful:
             recordings.pop(args['commandBuffer'], None)
         elif name == 'vkBeginCommandBuffer' and successful:
-            recordings[args['commandBuffer']] = {'begin': index, 'end': None, 'commands': []}
+            recordings[args['commandBuffer']] = {'begin': index, 'end': None, 'commands': [],
+                                                 'captured_submit': False}
         elif name == 'vkEndCommandBuffer' and successful:
             if args['commandBuffer'] in recordings:
                 recordings[args['commandBuffer']]['end'] = index
@@ -218,13 +219,36 @@ def inspect(path, registry):
             for batch_index, batch in enumerate(args.get('pSubmits') or []):
                 handles = (batch.get('pCommandBuffers') or []) if name == 'vkQueueSubmit' else [
                     item['commandBuffer'] for item in batch.get('pCommandBufferInfos') or []]
+                for handle in handles:
+                    if handle in recordings:
+                        recordings[handle]['captured_submit'] = True
                 report = inspect_batch(index, batch_index, [(h, recordings.get(h)) for h in handles],
                                        commands, views, images)
                 report['queue'] = args['queue']
                 report['submit_result'] = function.get('return')
                 result['submissions'].append(report)
-    if not result['submissions']:
-        raise ValueError('capture contains no submission batch to inspect')
+    # A capture call is commonly written after the driver returns. A crash
+    # inside QueueSubmit can therefore leave a complete recording but no
+    # captured submit. Inspect surviving generations individually; do not
+    # invent their submission order or assume they were executed.
+    for handle, recording in recordings.items():
+        if recording['captured_submit']:
+            continue
+        if recording['end'] is None:
+            result['uncovered'].append({'command_buffer': handle, 'begin_index': recording['begin'],
+                                        'reason': 'recording has no captured end or submit'})
+            continue
+        report = inspect_batch(None, None, [(handle, recording)], commands, views, images)
+        del report['queue_submit_index'], report['batch']
+        report['submission_context'] = 'unknown; no submit captured for this surviving recording generation'
+        report['attachment_lookup'] = 'capture-end live objects; not submission-time resource evidence'
+        report['uncovered'].append({'command_buffer': handle,
+                                    'reason': 'submission, neighboring command buffers and execution are unknown'})
+        for item in report['findings']:
+            item['evidence'] = 'recording_only_no_captured_submission'
+        result['recordings_without_captured_submit'].append(report)
+    if not result['submissions'] and not result['recordings_without_captured_submit']:
+        raise ValueError('capture contains no submission batch or complete surviving recording to inspect')
     for batch in result['submissions']:
         batch['complete_primary_recordings'] = not batch['uncovered']
         # Missing/secondary recordings may contain the matching begin/end.
@@ -234,9 +258,15 @@ def inspect(path, registry):
                                 else 'partial_command_stream')
     counts = collections.Counter(f['kind'] for batch in result['submissions'] for f in batch['findings'])
     result['finding_counts'] = dict(counts)
+    recording_counts = collections.Counter(
+        f['kind'] for recording in result['recordings_without_captured_submit']
+        for f in recording['findings'])
+    result['recording_only_finding_counts'] = dict(recording_counts)
     result['uncovered_count'] = len(result['uncovered']) + sum(
-        len(batch['uncovered']) for batch in result['submissions'])
-    result['status'] = 'FINDINGS' if counts else 'NO_FINDINGS_WITHIN_SCOPE'
+        len(batch['uncovered']) for batch in result['submissions']) + sum(
+        len(recording['uncovered']) for recording in result['recordings_without_captured_submit'])
+    result['status'] = ('FINDINGS' if counts else 'RECORDING_ONLY_FINDINGS' if recording_counts
+                        else 'NO_FINDINGS_WITHIN_SCOPE')
     return result
 
 
@@ -297,13 +327,14 @@ def main():
         data = json.dumps(report, indent=2) + '\n'
         if args.output:
             args.output.write_text(data)
-            print(json.dumps({key: report[key] for key in ('status', 'finding_counts', 'uncovered_count')}))
+            print(json.dumps({key: report[key] for key in (
+                'status', 'finding_counts', 'recording_only_finding_counts', 'uncovered_count')}))
         else:
             print(data, end='')
     except (OSError, ValueError, KeyError, TypeError, ET.ParseError) as error:
         print(f'capture inspection failed: {error}', file=sys.stderr)
         return 2
-    return 1 if report['finding_counts'] else 0
+    return 1 if report['finding_counts'] or report['recording_only_finding_counts'] else 0
 
 
 if __name__ == '__main__':

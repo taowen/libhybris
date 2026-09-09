@@ -17,6 +17,8 @@ Use the pinned converter and registry from the actual tool build. The report
 retains input and registry SHA-256 hashes. Command action/state/synchronization
 categories, including aliases, come from that registry. Exit 1 means findings,
 2 means inspection failed, and 0 means no findings **within this scope**.
+Exit 1 also covers recording-only findings described below; these are not
+evidence of a captured submission or GPU execution.
 The analysis runs on the host; an AArch64 converter can run on the device with
 its staged glibc loader and dependencies, as the existing window capture runner
 does. Preserve the original `.gfxr`, converter log, JSONL, application log,
@@ -41,6 +43,34 @@ recordings appear under `uncovered`; findings involving those streams are
 marked partial. Zero findings do not prove correct pixels or complete Vulkan
 validity. Swapchain image creation may be absent from the image table because
 those images are returned by enumeration rather than `vkCreateImage`.
+
+## A crash before the submit call is captured
+
+The report also includes `recordings_without_captured_submit`: complete,
+surviving command-buffer generations that have no submit in the capture.
+GFXReconstruct can be interrupted inside the driver before writing that call;
+the same absence can also mean the application never submitted the recording.
+The inspector does not choose between those explanations. It analyzes each
+recording separately, without inventing a submission order or neighboring
+command buffers. Secondary execution remains unexpanded. Reset, freed or
+superseded generations are not retained in this section.
+
+Their findings have `evidence: recording_only_no_captured_submission` and a
+separate `recording_only_finding_counts` summary. A report with only these
+findings has status `RECORDING_ONLY_FINDINGS` and exits 1. Boundary observations
+such as a leading resume or trailing suspend require the missing batch context;
+they are not conclusive whole-batch errors. Capture-end attachment lookups are
+explicitly labeled and are not submission-time resource evidence. An incomplete
+recording is listed under `uncovered`, not analyzed as a complete command stream.
+Resource-dump requests still require a captured submission and reject draws
+found only in this section.
+
+The Redmi Blender startup crash on 2026-09-09 exercises this distinction with
+an actual capture: seven captured submissions have no sequence findings, but
+command buffer 732, begin 1371 / end 2983, has 13 interrupted suspend/resume
+chains and 81 unmatched resumes in its own recorded stream. The original
+inspector returned no findings because the crashing submit was not captured.
+See [the device evidence and remaining compatibility work](blender-turnip-redmi.md).
 
 ## Generate a draw-resource request
 

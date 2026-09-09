@@ -241,6 +241,15 @@ G09 timeline、dynamic rendering 等可能涉及大量语义，优先透传已�
 
 ### 5.1 G06 证据记录
 
+2026-09-09 Redmi 产品 Turnip 的实际 Blender 启动已接入标准 VVL、
+GFXReconstruct 和同一 rendering inspector。全尺寸启动在 acquire 返回
+OUT_OF_DATE 后等待 fence；800×600 对照进入动态渲染命令合并后崩溃。
+后者抓帧在 submit 返回前终止，分析器现单独报告没有捕获到 submit 的
+完整存活 recording：13 个被命令打断的 suspend/resume 链及 81 个无配对
+resume，明确不当作已提交执行，也不生成对应 draw-resource 请求。
+X300 已提交批次的报告和资源请求回归保持一致。两宗红米故障尚未修复，
+原 OnePlus/Adreno 830 故障未重测；详见[真机诊断与复用边界](docs/blender-turnip-redmi.md)。
+
 以下均为固定离屏 fixture 的证据，不能替代任意应用的诊断门槛。
 
 - **布局与像素**：272B std140、12 vertices / 18 indices；正确 binding 像素 `255,255,0,255`，替代 binding 为 `0,255,255,0`，color→transfer→host 同步明确。动态 UBO 使用非零 descriptor base 和 dynamic offset。实际 1232B 合成 shader block 逐项检查 14 个非对称 mat4（array stride=64、column stride=16）、尾部 vec4/vec2 和 bool/int；普通/动态两组数据经 native/frontend/ICD 得到精确预期像素，ICD VVL/SyncVal 零错误。这不是 Blender 完整 instanced widget 布局。
