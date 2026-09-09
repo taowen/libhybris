@@ -252,6 +252,12 @@ G09 timeline、dynamic rendering 等可能涉及大量语义，优先透传已�
 
 仍未覆盖非零 firstSet/部分重绑、template 数组/多入口/KHR 别名、多队列/并行提交、一般 descriptor/pipeline 状态历史重建、驱动转换后 shader 与缓存 key。捕获局部 ID 不是 runtime generation；尚不能定位任意应用的首个错误 draw，也没有 WSI attachment lineage。
 
+### 5.2 实际 Blender 抓帧诊断（X300，2026-09-09）
+
+标准 GFXReconstruct 已取得 Blender 4.3.2 的两帧应用抓帧。基于标准 JSONL 与固定 Vulkan registry 的检查器，定位到 17 组 suspend/resume 之间插入 action/synchronization 命令，以及 96 次已知提交内找不到 suspension 的 resume；保留提交、command buffer 代次、attachment 与 draw 绑定关联，并可生成标准资源转储请求。fork 已补无顶点属性 indexed draw 的索引转储，实际取得 widget 的 36B 索引和 272B UBO；后者与抓帧中的 UpdateBuffer 字节一致。详见 [渲染抓帧诊断](docs/rendering-capture-analysis.md)。
+
+另已定位诊断工具的边界：unassisted 抓帧把非 coherent 上传的 FillMemory 放在原始 flush 之后，默认回放读到全零索引；rebind 对照及标准 page_guard 重新抓帧均读回正确索引，不能把旧回放中的零数据归咎于应用或兼容层。详见 [抓帧内存可见性](docs/capture-memory-visibility.md)。实际应用和回放仍有渲染错误，临时 rendering flag/barrier 对照不算产品兼容修复；任意应用首错 draw、完整资源历史及 WSI lineage 仍未关闭。
+
 ## 6. 黑屏、贴图错误与 device lost 的诊断设计
 
 ### 6.1 三个观察边界

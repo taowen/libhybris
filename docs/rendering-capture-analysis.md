@@ -76,8 +76,7 @@ The three selected draws produced attachment dumps plus font/splash textures,
 font/splash vertex buffers and the widget's 272-byte UBO. That UBO matches the
 captured `vkCmdUpdateBuffer` at index 1477 byte for byte; this is GPU buffer
 readback, not proof of the shader's effective UBO reads. The no-vertex-attribute
-widget's index buffer was still absent from this tool build's report and remains
-a diagnostic gap. These replay records use the identified frozen tool build,
+widget's index buffer was absent from this older tool build's report. These replay records use the identified frozen tool build,
 not the newer revision currently selected by `build-capture-tools.sh`.
 
 A subsequent fork fix (`bac419e7`, now pinned by `build-capture-tools.sh`) copies
@@ -90,7 +89,9 @@ reporting gap, but does not establish correct application data: captured
 writes, replay memory restoration and readback still need comparison. Font and
 splash attachment/texture dumps match the preceding replay byte for byte;
 the widget attachment differs. Neither successful replay nor an available
-buffer dump is a rendering pass.
+buffer dump is a rendering pass. The subsequent [memory visibility comparison](capture-memory-visibility.md)
+identified a non-coherent upload restoration problem in this unassisted capture;
+a page-guard recapture reads the expected indices with the default allocator.
 
 ## X300 Blender evidence, 2026-09-09
 
