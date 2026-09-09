@@ -2,6 +2,11 @@
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
 #include "device.h"
+#include "instance.h"
+#include "commands.h"
+#include "../compat/application_policy.h"
+#include "../compat/memory_visibility.h"
+#include "../compat/rendering_segments.h"
 #include "swapchain.h"
 #include "../compat/shader_dispatch.h"
 #include "../compat/shader_policy.h"
@@ -25,6 +30,7 @@ struct device_state {
     PFN_vkDestroyDevice destroy;
     VkPhysicalDevice physical;
     int swapchain_enabled;
+    unsigned application_policy;
     uint32_t queue_count;
     VkQueue *queues;
     VkAllocationCallbacks allocator;
@@ -72,6 +78,8 @@ static void free_state(struct device_state *state)
 void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCallbacks *allocator)
 {
     if (!device) return;
+    hybris_memory_visibility_release_device(device);
+    hybris_icd_commands_release_device(device);
     hybris_icd_swapchain_release_device(device);
     pthread_mutex_lock(&device_guard);
     struct device_state **link = &devices;
@@ -136,6 +144,9 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
         return result;
     }
     state->handle = *device;
+    state->application_policy = hybris_application_device_policy(hybris_icd_application_policy(physical), info);
+    if (state->application_policy)
+        fprintf(stderr, "HYBRIS_APPLICATION_POLICY flags=0x%x\n", state->application_policy);
     state->physical = physical;
     state->instance_generation = instance_generation;
     state->resolver = resolver;
@@ -190,7 +201,7 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     return result;
 }
 
-PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char *name)
+PFN_vkVoidFunction hybris_icd_device_inner_proc(VkDevice device, const char *name)
 {
     if (!device || !name) return NULL;
     if (!hybris_shader_device_proc_allowed(device, name)) return NULL;
@@ -218,6 +229,19 @@ PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char
     return compat ? compat : backend;
 }
 
+PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char *name)
+{
+    PFN_vkVoidFunction backend = hybris_icd_device_inner_proc(device, name);
+    struct hybris_icd_device context;
+    if (backend && hybris_icd_lookup_device(device, &context) && context.application_policy) {
+        PFN_vkVoidFunction function = hybris_memory_visibility_proc(name);
+        if (!function) function = hybris_icd_commands_proc(name);
+        if (!function) function = hybris_rendering_segments_proc(name);
+        if (function) return function;
+    }
+    return backend;
+}
+
 int hybris_icd_lookup_device(VkDevice device, struct hybris_icd_device *out)
 {
     if (!device || !out) return 0;
@@ -232,6 +256,7 @@ int hybris_icd_lookup_device(VkDevice device, struct hybris_icd_device *out)
         out->resolver = state->resolver;
         out->physical = state->physical;
         out->swapchain_enabled = state->swapchain_enabled;
+        out->application_policy = state->application_policy;
     }
     pthread_mutex_unlock(&device_guard);
     return found;

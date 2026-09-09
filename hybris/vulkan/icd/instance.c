@@ -3,6 +3,10 @@
 #define VK_NO_PROTOTYPES
 #include "instance.h"
 #include "device.h"
+#include "commands.h"
+#include "../compat/application_policy.h"
+#include "../compat/memory_visibility.h"
+#include "../compat/rendering_segments.h"
 #include "wsi.h"
 #include "swapchain.h"
 #include "../compat/shader_dispatch.h"
@@ -33,6 +37,7 @@ struct instance_state {
     int surface_enabled;
     int platforms_enabled;
     uint32_t api_version;
+    unsigned application_policy;
     struct physical_state *physical;
     struct instance_state *next;
 };
@@ -137,6 +142,7 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
         return result;
     }
     state->handle = *instance;
+    state->application_policy = hybris_application_policy(info->pApplicationInfo);
     state->api_version = info->pApplicationInfo && info->pApplicationInfo->apiVersion ?
         info->pApplicationInfo->apiVersion : VK_API_VERSION_1_0;
     state->resolver = hal->GetInstanceProcAddr;
@@ -261,6 +267,12 @@ int hybris_icd_lookup_instance_wsi(VkInstance instance, int *surface_enabled,
     return 1;
 }
 
+unsigned hybris_icd_application_policy(VkPhysicalDevice physical)
+{
+    struct instance_state *state = find_physical(physical);
+    return state ? state->application_policy : 0;
+}
+
 int hybris_icd_lookup_physical(VkPhysicalDevice physical,
     struct hybris_icd_physical *out)
 {
@@ -368,8 +380,15 @@ PFN_vkVoidFunction hybris_icd_instance_proc(VkInstance instance, const char *nam
     PFN_vkGetInstanceProcAddr resolver = state ? state->resolver : NULL;
     int surface_enabled = state ? state->surface_enabled : 0;
     int platforms_enabled = state ? state->platforms_enabled : 0;
+    unsigned application_policy = state ? state->application_policy : 0;
     pthread_mutex_unlock(&instance_guard);
     PFN_vkVoidFunction backend = resolver ? resolver(instance, name) : NULL;
+    if (backend && application_policy) {
+        PFN_vkVoidFunction function = hybris_memory_visibility_proc(name);
+        if (!function) function = hybris_icd_commands_proc(name);
+        if (!function) function = hybris_rendering_segments_proc(name);
+        if (function) return function;
+    }
     PFN_vkVoidFunction local_wsi = hybris_icd_wsi_proc(name, surface_enabled, platforms_enabled);
     if (local_wsi) return local_wsi;
     /* Device WSI entry points are adapter-owned. Enablement is checked on the

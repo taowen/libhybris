@@ -8,6 +8,7 @@ struct hybris_icd_device {
     PFN_vkGetDeviceProcAddr resolver;
     VkPhysicalDevice physical;
     int swapchain_enabled;
+    unsigned application_policy;
 };
 
 VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProcAddr resolver,
@@ -16,6 +17,7 @@ VkResult hybris_icd_create_device(PFN_vkCreateDevice create, PFN_vkGetDeviceProc
     const VkAllocationCallbacks *allocator, VkDevice *device);
 PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char *name);
 void VKAPI_CALL hybris_icd_destroy_device(VkDevice device, const VkAllocationCallbacks *allocator);
+PFN_vkVoidFunction hybris_icd_device_inner_proc(VkDevice device, const char *name);
 int hybris_icd_lookup_queue(VkQueue queue, struct hybris_icd_device *out);
 int hybris_icd_lookup_device(VkDevice device, struct hybris_icd_device *out);
 #endif

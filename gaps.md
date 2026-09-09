@@ -258,6 +258,12 @@ G09 timeline、dynamic rendering 等可能涉及大量语义，优先透传已�
 
 另已定位诊断工具的边界：unassisted 抓帧把非 coherent 上传的 FillMemory 放在原始 flush 之后，默认回放读到全零索引；rebind 对照及标准 page_guard 重新抓帧均读回正确索引，不能把旧回放中的零数据归咎于应用或兼容层。详见 [抓帧内存可见性](docs/capture-memory-visibility.md)。实际应用和回放仍有渲染错误，临时 rendering flag/barrier 对照不算产品兼容修复；任意应用首错 draw、完整资源历史及 WSI lineage 仍未关闭。
 
+### 5.3 Blender Vulkan 上传与分段渲染（2026-09-09）
+
+X300 实际应用已进一步定位：旧 common 与 ICD 混装、clip 改写的 Phi 前驱与未写入 varying、非法 suspension/resumption 序列，以及纹理 staging / immediate vertex 两条路径缺少非一致性内存 flush。`tools/inspect-upload-capture.py` 从真实 page-guard JSONL 给出 buffer→allocation→写入快照→flush→submit 证据，观察到 77 个纹理 staging 和一个 immediate buffer 的覆盖缺口；普通 buffer-copy staging 没有同类候选。工具明确区分快照时间与 CPU 写入时间，不冒充完整验证器。
+
+兼容层按观察到的 Blender API signature 和扩展集合限定处理，保留真实内存属性；分别补上传可见性、将分段渲染转为保留内容的普通 rendering。默认立方体、选中轮廓、启动图、文字和工具栏已可见。**整体验收仍 FAIL**：默认窗口三次移动/旋转更新出现 tiler heap OOM 与 GPU timeout，800x600 多帧也出现 timeout。Mali 原有非一致性内存独立探针和验证层回归通过；Redmi 对同一内存类型仍为 UNSUPPORTED。多设备、所有 alias、完整 secondary/resolve、readback invalidation 与剩余 GPU 故障未验收；不关闭 G03/G08/G09 或应用门槛。详见 [诊断、修复范围与证据](docs/blender-vulkan-compat.md)。
+
 ## 6. 黑屏、贴图错误与 device lost 的诊断设计
 
 ### 6.1 三个观察边界
