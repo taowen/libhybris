@@ -233,7 +233,8 @@ PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char
 {
     PFN_vkVoidFunction backend = hybris_icd_device_inner_proc(device, name);
     struct hybris_icd_device context;
-    if (backend && hybris_icd_lookup_device(device, &context) && context.application_policy) {
+    if (backend && hybris_icd_lookup_device(device, &context) &&
+        hybris_icd_application_policy(context.physical)) {
         PFN_vkVoidFunction function = hybris_memory_visibility_proc(name);
         if (!function) function = hybris_icd_commands_proc(name);
         if (!function) function = hybris_rendering_segments_proc(name);

@@ -13,8 +13,8 @@ whereas Blender's own readback is opaque; composition acceptance remains open.
 1. A product installation mixed the current ICD with an older common library.
    The latter did not automatically activate the known-build Mali MMUD hook.
    Replacing common alone made the original first pipeline compile. The
-   isolated runtime is staged as one manifest-verified set; this does not
-   claim that the installed product libraries have been replaced.
+   isolated runtime was staged as one manifest-verified set. The product
+   installation has subsequently been updated as described below.
 2. Clip rewriting split a fragment entry block without updating existing
    `OpPhi` predecessor labels. The corrected shader passes `spirv-val`.
    Planning also used an unused ClipDistance declaration that module creation
@@ -127,3 +127,59 @@ all aliases and rendering resolve combinations need further execution coverage.
 Repeated readback invalidation is not claimed fixed. The remaining GPU faults
 must be localized independently; neither shrinking the window nor accepting
 successful return codes closes G08/G09 or the Blender application gate.
+
+
+## Product deployment and follow-up
+
+`product-deploy-130636` stages the same tested integration runtime into X300's
+actual `rootfs/usr/lib/hybris`, patches the normal guest runpaths, retains the
+whole prior directory and a local tar backup, and verifies every deployed file
+hash. Libraries used by live desktop processes are never overwritten in place.
+No APK/compositor restart or WSI source edit was performed.
+
+`blender-product-130707` uses the normal Blender launcher and product library
+search path, with no isolated ICD override. Loaded maps confirm the product
+ICD/common. Its default-window screenshot shows the splash, scene, text and
+toolbar, and it quits normally, but two GPU timeouts keep acceptance **FAIL**.
+A subsequent ordinary launch, `build/blender-vulkan/x300-compat-live-1309.log`
+in the parent repository, leaves Blender open for interaction; its Android
+screenshot records the remaining transparent viewport background.
+
+A resume-only dependency experiment (`blender-sequence-phi-fix-normal-131103`)
+still produced a tiler heap OOM; it was not promoted to the product. The tested
+rendering dependencies remain unchanged. The clean committed checkout build
+at `2cc48f9` also passes (`application-clean-checkout-build.log`).
+
+Dispatch metadata stays active for a matched instance even when an unknown
+device extension disables its compatibility operations. This keeps mixed
+GIPA/GDPA allocation and recording paths consistent; the per-device flags
+still decide whether uploads or rendering are transformed.
+
+## Opaque presentation correction
+
+The transparency has a separate cause: OPAQUE was accepted while native
+buffers remained RGBA. The Android compositor consults the imported buffer's
+format, so zero alpha in the viewport exposed the terminal underneath.
+RGBA OPAQUE swapchains now allocate RGBX backing. Vulkan retains its RGBA
+format and alpha storage behavior; the compositor ignores alpha. Actual Mali
+native import and rendering succeed with this backing. The Vulkan AHB
+[format mapping](https://docs.vulkan.org/spec/latest/chapters/memory.html#memory-external-android-hardware-buffer)
+also treats RGBA and RGBX as the same Vulkan format.
+
+Opaque backing is currently implemented for RGBA only. OPAQUE is advertised
+only when all offered surface formats are covered (the RGBA-only surface).
+BGRA formats remain available with INHERIT; opaque BGRA is not claimed.
+Acquire, resize, release and destruction synchronization were not changed.
+
+- `blender-scene-phi-fix-normal-131715`: Android screenshot now shows a fully
+  opaque viewport, with the cube and toolbar; one GPU timeout still means
+  whole-application FAIL.
+- X300 XCB resize `20260909T131946-ea9173cf`: existing independent probe PASS.
+- Redmi XCB present `20260909T132059-ce0d8443`: advertises RGBA/BGRA and INHERIT;
+  the OPAQUE-only probe correctly reports UNSUPPORTED, not a pixel pass.
+- `opaque-final-build.log`: build PASS. `product-deploy-132100`: actual product
+  updated with full file-hash verification and prior-directory backup.
+
+The earlier transparency observations remain the pre-fix control. GPU timeout
+and tiler heap errors still require diagnosis; this correction does not close
+the application or complete WSI acceptance gates.

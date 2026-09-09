@@ -492,8 +492,12 @@ VkResult hybris_icd_wsi_capabilities(VkPhysicalDevice physical,
     capabilities->maxImageArrayLayers = 1;
     capabilities->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     capabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    // Surface opacity is controlled by the native Wayland surface owner.
+    /* RGBA can use RGBX backing for OPAQUE without changing Vulkan format.
+     * BGRA has no equivalent native backing here, so do not advertise a
+     * format-independent OPAQUE guarantee when BGRA is also offered. */
     capabilities->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    if (count == 1 && formats[0].format == VK_FORMAT_R8G8B8A8_UNORM)
+        capabilities->supportedCompositeAlpha |= VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     capabilities->supportedUsageFlags = usage;
     return VK_SUCCESS;
 }

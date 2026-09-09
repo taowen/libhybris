@@ -192,6 +192,11 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
         return VK_ERROR_INITIALIZATION_FAILED;
     int pixel = hal_format(info->imageFormat);
     if (!pixel) return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    /* RGBX preserves the Vulkan RGBA image layout while making the native
+     * compositor ignore application alpha, as OPAQUE requires. */
+    if (info->compositeAlpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR &&
+        pixel == HAL_PIXEL_FORMAT_RGBA_8888)
+        pixel = HAL_PIXEL_FORMAT_RGBX_8888;
     VkInstance instance = VK_NULL_HANDLE;
     uint64_t generation = 0;
     struct hybris_icd_window *window =
