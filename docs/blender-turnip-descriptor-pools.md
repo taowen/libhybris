@@ -5,7 +5,10 @@ have a reproducible Turnip descriptor-pool defect. Fixing the driver restores
 the captured UI and permits live small-window editing, saving and OBJ export.
 **Application acceptance remains FAIL:** the physical window has transparent
 background regions and the ordinary large-window launch still does not appear.
-The product launcher and installed driver have not been replaced.
+At this stage the product launcher and installed driver had not been replaced.
+The later [opaque-composition fix](blender-opaque-wsi.md) removes transparency
+and deploys the shared layer/driver into the Redmi product; default-size startup
+still fails.
 
 ## Localization using the actual capture
 

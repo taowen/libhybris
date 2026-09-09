@@ -266,6 +266,14 @@ VMA heap 长度和分配方向在 reset 后错误。Mesa 已修复，共用 UBO 
 和默认大窗口启动仍失败，完整应用门保持 FAIL。详见
 [描述符池根因、修复及验收边界](docs/blender-turnip-descriptor-pools.md)。
 
+随后修复 OPAQUE 合成契约：TAWC-DRI 0.4 显式携带不透明属性，保留旧请求
+的半透明行为；Mesa 直接 Wayland 路径设置不透明区域。红米六阶段场景、
+三尺寸 Vulkan 的 alpha=0/1 原始像素与物理截图、SyncVal 零错误及产品
+GLX/Wayland teapot 回归通过。兼容 layer、驱动和启动脚本已部署到红米产品，
+重新打开模型后背景不再透出终端。默认尺寸启动的新抓帧仍以 acquire 返回
+OUT_OF_DATE 结束；完整应用门保持 FAIL。hybris ICD 的 alpha=0 新门槛尚未
+重测，不沿用旧 alpha=1 结果声称通过；详见[合成修复与产品证据](docs/blender-opaque-wsi.md)。
+
 以下均为固定离屏 fixture 的证据，不能替代任意应用的诊断门槛。
 
 - **布局与像素**：272B std140、12 vertices / 18 indices；正确 binding 像素 `255,255,0,255`，替代 binding 为 `0,255,255,0`，color→transfer→host 同步明确。动态 UBO 使用非零 descriptor base 和 dynamic offset。实际 1232B 合成 shader block 逐项检查 14 个非对称 mat4（array stride=64、column stride=16）、尾部 vec4/vec2 和 bool/int；普通/动态两组数据经 native/frontend/ICD 得到精确预期像素，ICD VVL/SyncVal 零错误。这不是 Blender 完整 instanced widget 布局。

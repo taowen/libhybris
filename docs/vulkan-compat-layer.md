@@ -7,8 +7,10 @@ Blender 4.3.2 small-window reproducer it passes the original
 With the original driver, the application still displays missing content/white
 regions. The [descriptor-pool follow-up](blender-turnip-descriptor-pools.md)
 fixes that driver defect in an isolated build and restores UI content; physical
-window transparency and full-size startup remain unresolved. **Application acceptance
-remains FAIL; the installed product launcher has not been changed.**
+window transparency was subsequently fixed in the
+[shared window transport](blender-opaque-wsi.md), and the layer/driver are now
+deployed through the Redmi product launcher. **Application acceptance remains
+FAIL because default-size startup and the full application gate remain open.**
 
 ## Ownership and activation
 

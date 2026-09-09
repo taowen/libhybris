@@ -289,8 +289,11 @@ int main(int argc, char **argv) {
         printf("WSI format=%u colorSpace=%u image-count-min=%u max=%u usage=0x%x advertised-formats=%u\n", format.format, format.colorSpace, caps.minImageCount, caps.maxImageCount, usage, count);
         uint32_t image_count = caps.minImageCount + 1;
         if (caps.maxImageCount && image_count > caps.maxImageCount) image_count = caps.maxImageCount;
-        VkCompositeAlphaFlagBitsKHR alpha = caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
-            ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+        if (!(caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)) {
+            printf("UNSUPPORTED composite alpha=0x%x\n", caps.supportedCompositeAlpha);
+            return 3;
+        }
+        VkCompositeAlphaFlagBitsKHR alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
         VkSwapchainCreateInfoKHR sc = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
             .surface = surface, .minImageCount = image_count, .imageFormat = format.format,
             .imageColorSpace = format.colorSpace, .imageExtent = {width, height}, .imageArrayLayers = 1,
@@ -354,7 +357,9 @@ int main(int argc, char **argv) {
                 .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
             vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                 0, 0, NULL, 0, NULL, 1, &barrier);
-            VkClearColorValue color = {.float32 = {frame & 1 ? 1 : 0, frame & 1 ? 0 : 1, 0, 1}};
+            /* OPAQUE must ignore alpha zero at composition, while raw readback
+             * must preserve the application's alpha. */
+            VkClearColorValue color = {.float32 = {frame & 1 ? 1 : 0, frame & 1 ? 0 : 1, 0, frame & 1 ? 1 : 0}};
             vkCmdClearColorImage(command, images[index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &barrier.subresourceRange);
             barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
             barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -377,7 +382,7 @@ int main(int argc, char **argv) {
             unsigned char *pixels;
             CHECK(vkMapMemory(device, memory, 0, width * height * 4, 0, (void **)&pixels));
             const unsigned char expected[4] = {frame & 1 ? (format.format == VK_FORMAT_B8G8R8A8_UNORM ? 0 : 255) : 0,
-                frame & 1 ? 0 : 255, frame & 1 && format.format == VK_FORMAT_B8G8R8A8_UNORM ? 255 : 0, 255};
+                frame & 1 ? 0 : 255, frame & 1 && format.format == VK_FORMAT_B8G8R8A8_UNORM ? 255 : 0, frame & 1 ? 255 : 0};
             unsigned mismatch = 0;
             for (uint32_t pixel = 0; pixel < width * height; ++pixel) mismatch += memcmp(pixels + pixel * 4, expected, 4) != 0;
             if (frame == 0 || frame == 7) {
@@ -406,7 +411,7 @@ int main(int argc, char **argv) {
             while (!w.frame && !w.closed) if (wl_display_dispatch(w.display) < 0) return 2;
             if (w.closed) return 2;
             printf("WSI_FRAME epoch=%u frame=%u image=%u size=%ux%u rgba=%s readback=exact callback=1\n",
-                epoch, frame, index, width, height, frame & 1 ? "255,0,0,255" : "0,255,0,255");
+                epoch, frame, index, width, height, frame & 1 ? "255,0,0,255" : "0,255,0,0");
             CHECK(vkResetFences(device, 1, &fence));
             if (frame == 0 && epoch == 0) dump_maps("frame");
             if (frame == 0 || frame == 7) sleep(2);

@@ -5,7 +5,7 @@ from pathlib import Path
 import PIL
 from PIL import Image, ImageCms
 
-def verify_epoch(directory, epoch, extent):
+def verify_epoch(directory, epoch, extent, first_alpha=255):
     directory = Path(directory)
     colors = ((0, 255, 0), (255, 0, 0))
     pictures, expected, records = [], [], []
@@ -25,7 +25,7 @@ def verify_epoch(directory, epoch, extent):
         pictures.append(picture.convert('RGB'))
         expected.append(encoded)
         raw = (directory / f'image-{epoch}-{frame}.rgba').read_bytes()
-        if raw != bytes((*color, 255)) * (extent[0] * extent[1]):
+        if raw != bytes((*color, first_alpha if frame == 0 else 255)) * (extent[0] * extent[1]):
             raise ValueError(f'frame {frame}: raw image is not the expected complete RGBA pattern')
         records.append({'frame': frame, 'screenshot_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
             'image_sha256': hashlib.sha256(raw).hexdigest(), 'color_profile': name,
@@ -48,7 +48,7 @@ def verify_epoch(directory, epoch, extent):
 def verify_screen(directory):
     # Fixed independent expectations: do not accept the dimensions the probe
     # reports as proof that it actually resized the displayed window.
-    epochs = [verify_epoch(directory, epoch, extent) for epoch, extent in
+    epochs = [verify_epoch(directory, epoch, extent, first_alpha=0) for epoch, extent in
               enumerate(((320, 240), (448, 288), (256, 192)))]
     return {'status': 'PASS', 'checker_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             'pillow': PIL.__version__, 'littlecms': ImageCms.core.littlecms_version,

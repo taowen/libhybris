@@ -172,3 +172,11 @@ fixes the Turnip allocator. Fixed-driver replay restores the UI; live small-wind
 editing, saving, reopening and OBJ export have evidence. Physical window
 transparency and default-size startup remain unresolved, so application
 acceptance stays FAIL. The installed product driver remains unchanged.
+
+## Opaque composition and product follow-up
+
+The [opaque-composition follow-up](blender-opaque-wsi.md) fixes background
+transparency through the shared window transport, verifies raw alpha zero
+against physical opaque output, and installs the layer/driver in the Redmi
+product. Default-size startup remains FAIL; a new capture records acquire
+returning OUT_OF_DATE before the process stops progressing.
