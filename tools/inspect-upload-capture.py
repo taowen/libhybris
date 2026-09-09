@@ -44,7 +44,7 @@ def inspect(path):
 
     def consume(command, handle, kind, call):
         buffer = buffers.get(handle)
-        if buffer and buffer['usage'] == (0x82 if kind == 'immediate_vertex' else 1):
+        if buffer and buffer['usage'] == ({'immediate_vertex': 0x82, 'indirect_parameters': 0x100}.get(kind, 1)):
             commands.setdefault(command, []).append((buffer, kind, call))
 
     def submit(command, call, seen=None):
@@ -171,6 +171,9 @@ def inspect(path):
             elif name in ('vkCmdBindVertexBuffers', 'vkCmdBindVertexBuffers2', 'vkCmdBindVertexBuffers2EXT'):
                 for buffer in args['pBuffers']:
                     consume(args['commandBuffer'], buffer, 'immediate_vertex', index)
+            elif name in ('vkCmdDrawIndirect', 'vkCmdDrawIndexedIndirect'):
+                if integer(args['drawCount']):
+                    consume(args['commandBuffer'], args['buffer'], 'indirect_parameters', index)
             elif name in ('vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR'):
                 counts['successful_submit_calls'] += 1
                 for info in args['pSubmits'] or []:
@@ -181,7 +184,7 @@ def inspect(path):
     return {
         'source': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
         'status': 'CAPTURE_OBSERVATIONS',
-        'scope': 'pure transfer sources and Blender immediate vertex usage (0x82)',
+        'scope': 'pure transfer sources, Blender immediate vertices (0x82) and indirect parameters (0x100)',
         'examined_host_written_noncoherent_buffers': len(examined),
         'counts': dict(counts), 'buffers_with_uncovered_snapshots': list(findings.values()),
         'limitations': sorted(limitations) + [

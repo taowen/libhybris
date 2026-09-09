@@ -260,6 +260,8 @@ G09 timeline、dynamic rendering 等可能涉及大量语义，优先透传已�
 
 ### 5.3 Blender Vulkan 上传与分段渲染（2026-09-09）
 
+后续间接绘制参数修复已在 X300 验证：实际抓帧发现纯 INDIRECT_BUFFER 的 host 写入缺少 flush，现纳入限定的上传兼容处理。部署后移动/旋转/缩放/挤出/orbit，以及螺丝刀模型创建、编辑模式、保存和重新打开通过，期间未发现显式 GPU group error；原生/frontend/ICD/验证层内存范围回归通过。以下 FAIL 是修复前记录，保留作对照；此短时工作流不能关闭完整应用门、长期稳定性或多设备验收。详见同一诊断文档末尾的后续证据。
+
 X300 实际应用已进一步定位：旧 common 与 ICD 混装、clip 改写的 Phi 前驱与未写入 varying、非法 suspension/resumption 序列，以及纹理 staging / immediate vertex 两条路径缺少非一致性内存 flush。`tools/inspect-upload-capture.py` 从真实 page-guard JSONL 给出 buffer→allocation→写入快照→flush→submit 证据，观察到 77 个纹理 staging 和一个 immediate buffer 的覆盖缺口；普通 buffer-copy staging 没有同类候选。工具明确区分快照时间与 CPU 写入时间，不冒充完整验证器。
 
 兼容层按观察到的 Blender API signature 和扩展集合限定处理，保留真实内存属性；分别补上传可见性、将分段渲染转为保留内容的普通 rendering。默认立方体、选中轮廓、启动图、文字和工具栏已可见。**整体验收仍 FAIL**：默认窗口三次移动/旋转更新出现 tiler heap OOM 与 GPU timeout，800x600 多帧也出现 timeout。Mali 原有非一致性内存独立探针和验证层回归通过；Redmi 对同一内存类型仍为 UNSUPPORTED。多设备、所有 alias、完整 secondary/resolve、readback invalidation 与剩余 GPU 故障未验收；不关闭 G03/G08/G09 或应用门槛。详见 [诊断、修复范围与证据](docs/blender-vulkan-compat.md)。

@@ -288,3 +288,56 @@ The previous Quick Setup window disappeared after Continue and its old PID
 was absent. Its log contains no conclusive exit cause; this observation alone
 does not establish a reproducible Continue crash. The fresh launch opened the
 ordinary splash and allowed the interactions above.
+
+
+### Host-written indirect parameters and live modeling (2026-09-09)
+
+The startup capture `blender-overlay-check-product-only-outline-capture-135218`
+contains another missing host flush: buffer 1546 (create 4543), usage 0x100,
+size 5120, bound to memory 190 at offset 12201984. Memory type 1 has flags
+0xb (host visible, cached, non-coherent). Snapshot 4564 writes 4096 bytes at
+that offset, consumed by indexed indirect draw 4860 in submit 5054, without
+an intervening covering flush. Blender 4.3.2 VKDrawList writes mapped draw
+parameters directly. The upload inspector now includes pure indirect buffers;
+it reports 76 buffers with uncovered snapshots, including two indirect buffers.
+Capture snapshots alone do not establish the exact timing of CPU writes.
+
+The existing Blender-scoped upload workaround now flushes mapped non-coherent
+pure INDIRECT_BUFFER allocations before nonempty DrawIndirect and
+DrawIndexedIndirect commands. It retains allocation-generation checks,
+atom alignment and mapped-range bounds. Compute-produced buffers with additional
+usage bits (including the observed 0x123 buffer) remain excluded. This is a
+workaround for the observed recording-time host writes, not general support for
+writes after recording, indirect-count aliases, GPU-written pure indirect
+buffers, or arbitrary applications matching a usage mask.
+
+`indirect-upload-build.log` records an actual incremental ICD build. Default
+three-frame application runs `blender-sequence-phi-fix-normal-141726` and the
+repeat recorded in `indirect-upload-repeat.log` completed without reported
+GPU group errors. These artifacts and the capture analysis reside under
+`build/mali-pipeline-investigation/20260909T101306/` in the parent project.
+Deployment `product-deploy-141847` verified installed library hashes.
+
+The deployed product session `build/blender-vulkan/x300-indirect-fixed-live.log`
+was operated through Android keyboard/pointer input: move X=3, rotate Z=45,
+scale 1.5, enter Edit Mode, extrude Z=1 and orbit. Grid, selection and edited
+geometry remained visible. The same live Blender then created a screwdriver
+through its Python console: 17 mesh objects, 3808 vertices, 2937 faces and six
+materials. Edit Mode was checked; the final model was saved and reopened in
+the live application. The blend, final screenshot, Edit Mode screenshot and
+creation script are in `build/blender-vulkan/screwdriver/`. No explicit GPU
+group error was found in this session log through the save/reopen check.
+This establishes this modeling workflow, not general Blender stability or
+Cycles/material-preview/render-export coverage. The earlier failing session
+above remains valid evidence of the pre-fix behavior.
+
+Independent regression `tests/baseline/build/results/20260909T143142-8c1025ea`
+passes ICD version and native/frontend/ICD non-coherent memory-range probes,
+including the ICD validation case. These probes check existing memory behavior;
+they do not independently exercise Blender's indirect-upload policy. The first
+attempt `indirect-baseline.log` omitted ICD provisioning arguments and rejected
+unknown selected cases; it provides no passing coverage. The corrected run is
+`indirect-baseline-corrected.log`. No new unit tests were added. This build also
+contains concurrent WSI/fence integration changes; the live results are not a
+clean-commit isolation test. Redmi, long-running interaction and the remaining
+application gates are still unverified for this change.

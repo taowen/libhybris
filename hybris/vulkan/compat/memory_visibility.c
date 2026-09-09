@@ -184,17 +184,17 @@ static VkResult VKAPI_CALL bind_core(VkDevice d, uint32_t n, const VkBindBufferM
 static VkResult VKAPI_CALL bind_khr(VkDevice d, uint32_t n, const VkBindBufferMemoryInfo *p)
 { return bind_buffers(d, n, p, "vkBindBufferMemory2KHR"); }
 
-static void flush_upload(VkCommandBuffer command, const struct hybris_icd_device *device, VkBuffer source, int immediate)
+static void flush_upload(VkCommandBuffer command, const struct hybris_icd_device *device, VkBuffer source, int upload_kind)
 {
     if (!(device->application_policy & HYBRIS_APP_HOST_UPLOAD_FLUSH)) return;
     VkMappedMemoryRange range = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
     VkResult result = VK_SUCCESS;
     pthread_mutex_lock(&guard);
     struct buffer *b = find_buffer(device, source);
-    /* VMA maps entire pools, including GPU-written buffers. Only the observed
-     * immediate buffer usage identifies the host-written vertex path. Never
-     * flush ordinary device vertex buffers merely because their pool is mapped. */
-    VkBufferUsageFlags host_usage = immediate ?
+    /* VMA maps entire pools, including GPU-written buffers. Match only the
+     * observed texture (0), immediate vertex (1), or indirect parameter (2)
+     * usage. A mapped pool alone does not identify host-written data. */
+    VkBufferUsageFlags host_usage = upload_kind == 2 ? VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT : upload_kind == 1 ?
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT : VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     if (b && b->usage != host_usage) {
         pthread_mutex_unlock(&guard);
@@ -270,6 +270,26 @@ static void VKAPI_CALL copy_core(VkCommandBuffer c, const VkCopyBufferToImageInf
 { copy2(c, i, "vkCmdCopyBufferToImage2"); }
 static void VKAPI_CALL copy_khr(VkCommandBuffer c, const VkCopyBufferToImageInfo2 *i)
 { copy2(c, i, "vkCmdCopyBufferToImage2KHR"); }
+/* VKDrawList writes these parameters on the host. Compute-produced indirect
+ * buffers have additional usage bits and must never be flushed here. */
+static void VKAPI_CALL draw_indirect(VkCommandBuffer command, VkBuffer buffer,
+    VkDeviceSize offset, uint32_t count, uint32_t stride)
+{
+    struct hybris_icd_device device;
+    if (!hybris_icd_command_device(command, &device)) return;
+    if (count) flush_upload(command, &device, buffer, 2);
+    ((PFN_vkCmdDrawIndirect)hybris_icd_device_inner_proc(device.handle,
+        "vkCmdDrawIndirect"))(command, buffer, offset, count, stride);
+}
+static void VKAPI_CALL draw_indexed_indirect(VkCommandBuffer command, VkBuffer buffer,
+    VkDeviceSize offset, uint32_t count, uint32_t stride)
+{
+    struct hybris_icd_device device;
+    if (!hybris_icd_command_device(command, &device)) return;
+    if (count) flush_upload(command, &device, buffer, 2);
+    ((PFN_vkCmdDrawIndexedIndirect)hybris_icd_device_inner_proc(device.handle,
+        "vkCmdDrawIndexedIndirect"))(command, buffer, offset, count, stride);
+}
 void hybris_memory_visibility_release_device(VkDevice device)
 {
     struct allocation *alist = NULL;
@@ -292,6 +312,7 @@ PFN_vkVoidFunction hybris_memory_visibility_proc(const char *name)
     PROC(MapMemory, map_memory); PROC(UnmapMemory, unmap_memory);
     PROC(CreateBuffer, create_buffer); PROC(DestroyBuffer, destroy_buffer);
     PROC(BindBufferMemory, bind_buffer); PROC(BindBufferMemory2, bind_core); PROC(BindBufferMemory2KHR, bind_khr);
+    PROC(CmdDrawIndirect, draw_indirect); PROC(CmdDrawIndexedIndirect, draw_indexed_indirect);
     PROC(CmdBindVertexBuffers, bind_vertices); PROC(CmdBindVertexBuffers2, vertices_core); PROC(CmdBindVertexBuffers2EXT, vertices_ext);
     PROC(CmdCopyBufferToImage, copy_buffer_image); PROC(CmdCopyBufferToImage2, copy_core); PROC(CmdCopyBufferToImage2KHR, copy_khr);
 #undef PROC
