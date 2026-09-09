@@ -26,6 +26,10 @@ ICD 所需的 native-window 实现移至 `vulkan/icd/`。
 Turnip 强制 BC 图像用例的
 12,524 个比较错误也未关闭。两端 Blender 启动截图与转换前后 capture
 文件不代替应用建模/保存/resize 或 capture replay 验收。
+后续两端已完成 staged Blender 的脚本建模、保存、全屏/恢复尺寸切换和
+同进程重新打开，最终截图确认模型可见、VVL 错误为零；见 Ardesk
+[工作流证据](../../tests/blender/README.md)。正式安装整合、任意 resize 压测、
+长期使用与 capture replay 仍未验收。
 
 Mali Zink 茶壶的设备创建失败已修复：兼容层补齐 Features2 输入链的
 ClipDistance 请求转换，两端现有特性探针及重装 APK 后的 GLX/Wayland
