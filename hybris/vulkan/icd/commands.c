@@ -3,6 +3,7 @@
 #include "commands.h"
 #include "../compat/application_policy.h"
 #include "../compat/scaled_vertex.h"
+#include "../compat/readback.h"
 #include <pthread.h>
 #include <string.h>
 
@@ -39,6 +40,7 @@ static void free_commands(struct command_state *list)
 {
     while (list) {
         struct command_state *next = list->next;
+        if (list->handle) hybris_readback_reset_command(list->handle);
         hybris_scaled_free(list->custom_allocator ? &list->allocator : NULL, list);
         list = next;
     }
@@ -86,6 +88,15 @@ int hybris_icd_command_allocator(VkCommandBuffer command, VkAllocationCallbacks 
         }
     pthread_mutex_unlock(&guard);
     return custom;
+}
+VkCommandPool hybris_icd_command_pool(VkCommandBuffer command)
+{
+    VkCommandPool pool = VK_NULL_HANDLE;
+    pthread_mutex_lock(&guard);
+    for (const struct command_state *state = commands; state; state = state->next)
+        if (state->handle == command) { pool = state->pool; break; }
+    pthread_mutex_unlock(&guard);
+    return pool;
 }
 void hybris_icd_command_error(VkCommandBuffer command, VkResult error)
 {
@@ -225,7 +236,10 @@ static VkResult VKAPI_CALL begin_command(VkCommandBuffer command, const VkComman
     }
     PFN_vkBeginCommandBuffer function = (PFN_vkBeginCommandBuffer)inner(&device, "vkBeginCommandBuffer");
     VkResult result = function(command, &begin);
-    if (result == VK_SUCCESS) hybris_icd_command_error(command, VK_SUCCESS);
+    if (result == VK_SUCCESS) {
+        hybris_icd_command_error(command, VK_SUCCESS);
+        hybris_readback_reset_command(command);
+    }
     return result;
 }
 static VkResult VKAPI_CALL end_command(VkCommandBuffer command)
@@ -241,6 +255,24 @@ static VkResult VKAPI_CALL end_command(VkCommandBuffer command)
     pthread_mutex_unlock(&guard);
     return result;
 }
+static VkResult VKAPI_CALL reset_command(VkCommandBuffer command, VkCommandBufferResetFlags flags)
+{
+    struct hybris_icd_device device;
+    if (!hybris_icd_command_device(command, &device)) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result = ((PFN_vkResetCommandBuffer)inner(&device, "vkResetCommandBuffer"))(command, flags);
+    if (result == VK_SUCCESS) {
+        hybris_icd_command_error(command, VK_SUCCESS);
+        hybris_readback_reset_command(command);
+    }
+    return result;
+}
+static VkResult VKAPI_CALL reset_pool(VkDevice device, VkCommandPool pool, VkCommandPoolResetFlags flags)
+{
+    VkResult result = ((PFN_vkResetCommandPool)hybris_icd_device_inner_proc(device,
+        "vkResetCommandPool"))(device, pool, flags);
+    if (result == VK_SUCCESS) hybris_readback_reset_pool(device, pool);
+    return result;
+}
 
 PFN_vkVoidFunction hybris_icd_commands_proc(const char *name)
 {
@@ -251,6 +283,8 @@ PFN_vkVoidFunction hybris_icd_commands_proc(const char *name)
         {"vkDestroyCommandPool", (PFN_vkVoidFunction)destroy_pool},
         {"vkBeginCommandBuffer", (PFN_vkVoidFunction)begin_command},
         {"vkEndCommandBuffer", (PFN_vkVoidFunction)end_command},
+        {"vkResetCommandBuffer", (PFN_vkVoidFunction)reset_command},
+        {"vkResetCommandPool", (PFN_vkVoidFunction)reset_pool},
     };
     for (size_t i = 0; i < sizeof(entries) / sizeof(*entries); ++i)
         if (!strcmp(name, entries[i].name)) return entries[i].function;

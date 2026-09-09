@@ -395,3 +395,97 @@ preserve atom boundaries and allocation generations, and avoid invalidating
 unrelated dirty host writes in the shared mapped VMA pool. Globally invalidating
 all mapped memory after any successful fence wait would not satisfy that gate.
 The original live model was reopened after the diagnostic renders.
+
+
+### Readback visibility correction (2026-09-09, subsequent batch)
+
+The compatibility profile now records GPU writes to persistently mapped,
+non-coherent, pure TRANSFER_DST buffers. Buffer copy/fill/update commands retain
+atom-aligned allocation ranges and allocation generations; image readback uses
+the complete logical staging buffer. Command recording and submission retirement
+are separate modules. A successful fence observation invalidates that submission
+and earlier writes on the same queue. Unrelated queues are not inferred complete.
+Fence polling and application-requested queue/device idle are also handled.
+No queue/device idle call is added by the workaround. Physical memory properties,
+allocation choices and GPU rendering commands remain unchanged.
+
+Snapshots are independent of command resets; command/pool/device cleanup releases
+owned metadata. Submission publication precedes the backend call so a concurrent
+successful waiter can see it, and failed submissions remove their snapshots.
+Completion processing serializes successful waiters and checks actual fence
+status for wait-any. Allocation generations and current mapping bounds are
+rechecked before cache maintenance. This is scoped to the observed Blender
+profile, not general coherent-memory emulation.
+
+The independent `blender-readback` probe extends the existing memory-range
+workload. Source and destination share a mapped non-coherent allocation, with a
+separate dirty CPU atom between them. It warms destination CPU cache lines and
+intentionally omits the application's invalidate before checking GPU results;
+an explicit invalidate afterwards is the reference. Thus native/frontend runs
+are **negative controls for the application omission**, not valid-workload
+failures of the native Vulkan implementation. Their raw FAIL results are retained.
+
+On the old runtime, result `20260909T151625-53555966` reports 1020 stale bytes in
+the first ICD read and 268–778 in later rounds; explicit invalidation gives zero
+incorrect bytes in every round. Native and frontend show the same missing-cache
+failure. The corrected ICD has zero incorrect bytes both before and after the
+explicit reference invalidate, and preserves the dirty CPU gap in all rounds.
+The workload covers ordinary fence wait, an unfenced submission followed by an
+empty fenced marker, an unrelated zero-timeout wait, fence polling, queue idle,
+device idle, wait-any, command reset, pool reset and partial mapping.
+
+- `20260909T152011-6a5783a0`: corrected ICD readback and validation PASS; ordinary
+  non-coherent memory validation remains PASS.
+- `20260909T152655-45d6c04e`: the same three cases PASS on an independent build
+  containing only this batch's source changes, without the concurrent WSI/fence
+  worktree edits. `readback-clean-build.log` records the actual clean build.
+- `20260909T152011-4c9c02e6`: Redmi ICD version and UBO rendering PASS; native,
+  frontend and ICD memory-range tests plus ICD readback are UNSUPPORTED because
+  the required host-visible non-coherent memory type is absent.
+
+The first validation run `20260909T151726-97ee818d` had four command/fence reuse
+errors after wait-any. The probe now explicitly queries the completed fence
+**after** checking readback bytes, so validation can retire its commands before
+reuse; the unassisted read remains a wait-any check. That earlier run is not a
+zero-validation-error result.
+
+An earlier attempt to restrict these buffers to actual coherent memory was
+rejected. Blender's bundled VMA 3.0.1 requires HOST_CACHED for HOST_ACCESS_RANDOM,
+whereas Mali's coherent type lacks HOST_CACHED. The resulting allocation failure
+led to a Blender resource lookup crash in
+`blender-render64-check-phi-fix-normal-145610`. The initial probe modeled a cached
+preference and therefore did not represent this allocator constraint. Its passing
+results do not validate that rejected approach. No memory-type restriction or
+fabricated memory property is retained. See the bundled
+[VMA selection code](https://raw.githubusercontent.com/blender/blender/v4.3.2/extern/vulkan_memory_allocator/vk_mem_alloc.h).
+
+With the final invalidate implementation, isolated
+`blender-render64-check-phi-fix-normal-151826` completed a 960x640 / 64-sample
+EEVEE export, with no observed shadow-counter or GPU group errors.
+`product-deploy-152822` then backed up and hash-verified the product library update.
+The real product launcher reopened the saved screwdriver, allowed Material
+Preview/orbit, and exported the same render in about 1.56 seconds. Evidence is
+`build/blender-vulkan/x300-readback-fixed-live.log` and
+`build/blender-vulkan/screwdriver/{Screwdriver-readback-fixed.png,readback-fixed-report.json,readback-fixed-render.py}`
+in the parent project. The original model was reopened afterwards.
+
+The product render still includes the concurrent WSI integration; the isolated
+headless regression above is the clean-source evidence. This batch does not prove
+long-running render stability, golden shadow pixels, cross-queue/concurrent-wait
+behavior, all copy/submit aliases, secondary-command execution, custom-allocator
+fault injection, aliasing or mapping only after recording. Those gates remain
+open. It closes the demonstrated non-coherent readback omission for the exercised
+paths, not all Blender rendering failures.
+
+
+The final source additionally disables this readback policy for multi-physical-
+device groups. This exclusion was added after the product render above, which
+uses one physical device. `readback-final-build.log` and
+`readback-clean-final-retry-build.log` record builds of that final source; the
+first simultaneous clean-build attempt failed on container `/out` permissions
+and is not passing evidence. The serial retry succeeded. The already-running
+product session and `product-deploy-152822` retain the preceding build with the
+same single-device behavior; multi-device behavior is not claimed from it.
+
+Final clean-source regression `20260909T153626-aa030a81` passes ICD version and
+all seven readback rounds with validation (zero errors).

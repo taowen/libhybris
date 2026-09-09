@@ -243,6 +243,19 @@ PFN_vkVoidFunction VKAPI_CALL hybris_icd_device_proc(VkDevice device, const char
     return backend;
 }
 
+int hybris_icd_device_allocator(VkDevice device, VkAllocationCallbacks *allocator)
+{
+    int custom = 0;
+    pthread_mutex_lock(&device_guard);
+    for (const struct device_state *state = devices; state; state = state->next)
+        if (state->handle == device) {
+            custom = state->custom_allocator;
+            if (custom) *allocator = state->allocator;
+            break;
+        }
+    pthread_mutex_unlock(&device_guard);
+    return custom;
+}
 int hybris_icd_lookup_device(VkDevice device, struct hybris_icd_device *out)
 {
     if (!device || !out) return 0;

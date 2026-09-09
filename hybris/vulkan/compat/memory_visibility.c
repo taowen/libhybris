@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "memory_visibility.h"
+#include "readback.h"
 #include "application_policy.h"
 #include "scaled_vertex.h"
 #include "../icd/commands.h"
@@ -34,6 +35,9 @@ struct buffer {
     struct buffer *next;
 };
 static pthread_mutex_t guard = PTHREAD_MUTEX_INITIALIZER;
+/* Internal cache maintenance must also serialize with explicit application
+ * flush/invalidate calls on mappings shared by several buffers. */
+static pthread_mutex_t cache_guard = PTHREAD_MUTEX_INITIALIZER;
 static struct allocation *allocations;
 static struct buffer *buffers;
 static uint64_t next_generation;
@@ -50,6 +54,65 @@ static struct buffer *find_buffer(const struct hybris_icd_device *device, VkBuff
         if (b->device == device->handle && b->device_generation == device->generation && b->handle == handle)
             return b;
     return NULL;
+}
+static VkResult cache_memory(VkDevice device, uint32_t count,
+    const VkMappedMemoryRange *ranges, const char *name)
+{
+    pthread_mutex_lock(&cache_guard);
+    VkResult result = ((PFN_vkFlushMappedMemoryRanges)hybris_icd_device_inner_proc(device, name))(
+        device, count, ranges);
+    pthread_mutex_unlock(&cache_guard);
+    return result;
+}
+static VkResult VKAPI_CALL flush_memory(VkDevice device, uint32_t count, const VkMappedMemoryRange *ranges)
+{ return cache_memory(device, count, ranges, "vkFlushMappedMemoryRanges"); }
+static VkResult VKAPI_CALL invalidate_memory(VkDevice device, uint32_t count, const VkMappedMemoryRange *ranges)
+{ return cache_memory(device, count, ranges, "vkInvalidateMappedMemoryRanges"); }
+VkResult hybris_memory_visibility_readback_range(const struct hybris_icd_device *device,
+    VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, struct hybris_readback_range *range)
+{
+    *range = (struct hybris_readback_range){0};
+    if (!(device->application_policy & HYBRIS_APP_HOST_READBACK_INVALIDATE)) return VK_SUCCESS;
+    VkResult result = VK_SUCCESS;
+    pthread_mutex_lock(&guard);
+    struct buffer *b = find_buffer(device, buffer);
+    struct allocation *a = b ? find_memory(device, b->memory) : NULL;
+    if (!b || b->usage != VK_BUFFER_USAGE_TRANSFER_DST_BIT || !a ||
+        a->generation != b->memory_generation || !a->mapped ||
+        (a->properties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) goto done;
+    if (offset > b->size) { result = VK_ERROR_MEMORY_MAP_FAILED; goto done; }
+    if (size == VK_WHOLE_SIZE) size = b->size - offset;
+    if (!a->atom || size > b->size - offset || b->offset > a->size ||
+        b->size > a->size - b->offset) { result = VK_ERROR_MEMORY_MAP_FAILED; goto done; }
+    if (!size) goto done;
+    VkDeviceSize begin = b->offset + offset, end = begin + size;
+    begin -= begin % a->atom;
+    VkDeviceSize padding = end % a->atom ? a->atom - end % a->atom : 0;
+    end += padding < a->size - end ? padding : a->size - end;
+    if (begin < a->map_offset || end > a->map_offset + a->map_size) {
+        result = VK_ERROR_MEMORY_MAP_FAILED; goto done;
+    }
+    *range = (struct hybris_readback_range){a->memory, a->generation, begin, end - begin};
+done:
+    pthread_mutex_unlock(&guard);
+    return result;
+}
+VkResult hybris_memory_visibility_invalidate(const struct hybris_icd_device *device,
+    const struct hybris_readback_range *range)
+{
+    VkResult result = VK_SUCCESS;
+    VkMappedMemoryRange mapped = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+    pthread_mutex_lock(&guard);
+    struct allocation *a = find_memory(device, range->memory);
+    if (a && a->generation == range->generation && a->mapped) {
+        if (range->offset < a->map_offset || range->offset > a->map_offset + a->map_size ||
+            range->size > a->map_offset + a->map_size - range->offset)
+            result = VK_ERROR_MEMORY_MAP_FAILED;
+        else { mapped.memory = a->memory; mapped.offset = range->offset; mapped.size = range->size; }
+    }
+    pthread_mutex_unlock(&guard);
+    if (mapped.memory) result = invalidate_memory(device->handle, 1, &mapped);
+    return result;
 }
 static VkResult VKAPI_CALL allocate_memory(VkDevice handle, const VkMemoryAllocateInfo *info,
     const VkAllocationCallbacks *allocator, VkDeviceMemory *out)
@@ -219,8 +282,7 @@ static void flush_upload(VkCommandBuffer command, const struct hybris_icd_device
     pthread_mutex_unlock(&guard);
     /* Never invoke driver code or application allocation callbacks under guard. */
     if (range.memory)
-        result = ((PFN_vkFlushMappedMemoryRanges)hybris_icd_device_inner_proc(device->handle,
-            "vkFlushMappedMemoryRanges"))(device->handle, 1, &range);
+        result = flush_memory(device->handle, 1, &range);
     if (result != VK_SUCCESS) hybris_icd_command_error(command, result);
 }
 static void VKAPI_CALL bind_vertices(VkCommandBuffer command, uint32_t first, uint32_t count,
@@ -292,6 +354,7 @@ static void VKAPI_CALL draw_indexed_indirect(VkCommandBuffer command, VkBuffer b
 }
 void hybris_memory_visibility_release_device(VkDevice device)
 {
+    hybris_readback_release_submissions(device);
     struct allocation *alist = NULL;
     struct buffer *blist = NULL;
     pthread_mutex_lock(&guard);
@@ -310,11 +373,13 @@ PFN_vkVoidFunction hybris_memory_visibility_proc(const char *name)
 #define PROC(n, f) if (!strcmp(name, "vk" #n)) return (PFN_vkVoidFunction)f
     PROC(AllocateMemory, allocate_memory); PROC(FreeMemory, free_memory);
     PROC(MapMemory, map_memory); PROC(UnmapMemory, unmap_memory);
+    PROC(FlushMappedMemoryRanges, flush_memory); PROC(InvalidateMappedMemoryRanges, invalidate_memory);
     PROC(CreateBuffer, create_buffer); PROC(DestroyBuffer, destroy_buffer);
     PROC(BindBufferMemory, bind_buffer); PROC(BindBufferMemory2, bind_core); PROC(BindBufferMemory2KHR, bind_khr);
     PROC(CmdDrawIndirect, draw_indirect); PROC(CmdDrawIndexedIndirect, draw_indexed_indirect);
     PROC(CmdBindVertexBuffers, bind_vertices); PROC(CmdBindVertexBuffers2, vertices_core); PROC(CmdBindVertexBuffers2EXT, vertices_ext);
     PROC(CmdCopyBufferToImage, copy_buffer_image); PROC(CmdCopyBufferToImage2, copy_core); PROC(CmdCopyBufferToImage2KHR, copy_khr);
 #undef PROC
-    return NULL;
+    PFN_vkVoidFunction function = hybris_readback_record_proc(name);
+    return function ? function : hybris_readback_submit_proc(name);
 }

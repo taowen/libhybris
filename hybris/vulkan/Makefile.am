@@ -40,6 +40,7 @@ libhybris_vulkan_icd_la_SOURCES = icd/icd.c icd/instance.c icd/instance.h icd/de
     compat/bc_context.c compat/bc_context.h compat/bc_commands.c compat/bc_resources.c compat/bc_record.c compat/bc_barriers.c compat/bc_image_copy.c compat/bc_policy.c compat/bc_policy.h \
     icd/commands.c icd/commands.h compat/application_policy.c compat/application_policy.h \
     compat/memory_visibility.c compat/memory_visibility.h compat/rendering_segments.c compat/rendering_segments.h \
+    compat/readback_record.c compat/readback_submit.c compat/readback.h \
     compat/point_size.c compat/point_size.h \
     compat/spirv_inout.c compat/spirv_inout.h \
     compat/spirv_image_bounds.c compat/spirv_image_bounds.h \

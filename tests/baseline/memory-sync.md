@@ -168,3 +168,38 @@ This covers partial mappings and allocation-end partial atoms on this Mali
 driver, in addition to the earlier ranges and resubmissions. Simultaneous access
 to different atoms, cross-process mappings and unrelated work remaining in
 flight during resource retirement are still untested. G09 remains open.
+
+
+## Blender readback compatibility (2026-09-09)
+
+`blender-readback` uses the observed Blender API signature and intentionally
+checks CPU bytes before application-side invalidation. `blender-readback-validation`
+adds the standard validation layer. It is an application-omission compatibility
+probe, not a conformance test of a legal no-invalidate non-coherent read.
+Native/frontend are negative controls; their FAIL results must not be described
+as driver defects. The explicit-invalidate reference and the ordinary
+`memory-ranges` cases remain the valid native comparison.
+
+The two buffers share one non-coherent allocation. Seven submissions change
+source data, warm destination cache lines, exercise partial mapping and verify
+1024 output bytes per round. A dirty CPU atom outside the GPU copy must survive.
+Completion paths include a later empty fenced submission, a zero-timeout unrelated
+fence, status polling, queue/device idle and wait-any. Readback is checked before
+the explicit reference invalidate and before the extra status query needed to
+make wait-any retirement visible to validation. Command and pool resets are
+covered. No new unit tests were added.
+
+Old ICD `20260909T151625-53555966`: first unassisted read has 1020 incorrect bytes;
+all seven explicit references have zero. New ICD `20260909T152011-6a5783a0` and
+clean-source build `20260909T152655-45d6c04e`: readback and ordinary memory
+validation PASS, all readback/reference/dirty-gap counts zero. Redmi
+`20260909T152011-4c9c02e6` lacks the required memory type and is UNSUPPORTED;
+its ICD UBO render still passes. Full commands, manifests, mappings and raw
+statuses are retained in the result directories.
+
+The initial wait-any probe revision left validation unable to retire its
+completed command, producing four reuse errors; `20260909T151726-97ee818d`
+is retained as that failed revision. All later passing statements refer to the
+corrected probe. Cross-queue waits, simultaneous waiters, secondary commands,
+copy/submit aliases and allocation-failure paths remain unverified here. See
+[application evidence and implementation scope](../../docs/blender-vulkan-compat.md).

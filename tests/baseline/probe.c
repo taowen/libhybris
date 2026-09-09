@@ -118,6 +118,8 @@ int main(int argc, char **argv) {
     rc = bc_decode_probe(strstr(mode, "validation") != NULL);
   else if (!strcmp(mode, "memory-ranges") || !strcmp(mode, "memory-ranges-validation"))
     rc = memory_ranges_probe(strstr(mode, "validation") != NULL);
+  else if (!strcmp(mode, "blender-readback") || !strcmp(mode, "blender-readback-validation"))
+    rc = memory_readback_probe(strstr(mode, "validation") != NULL);
   else if (!strncmp(mode, "timeline-", 9)) {
     int khr = strstr(mode, "khr") != NULL;
     int route = strstr(mode, "linked") ? 3 : strstr(mode, "elf") ? 2 : strstr(mode, "gdpa") ? 1 : 0;

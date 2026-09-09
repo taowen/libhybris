@@ -262,6 +262,8 @@ G09 timeline、dynamic rendering 等可能涉及大量语义，优先透传已�
 
 后续间接绘制参数修复已在 X300 验证：实际抓帧发现纯 INDIRECT_BUFFER 的 host 写入缺少 flush，现纳入限定的上传兼容处理。部署后移动/旋转/缩放/挤出/orbit，以及螺丝刀模型创建、编辑模式、保存和重新打开通过，期间未发现显式 GPU group error；原生/frontend/ICD/验证层内存范围回归通过。以下 FAIL 是修复前记录，保留作对照；此短时工作流不能关闭完整应用门、长期稳定性或多设备验收。详见同一诊断文档末尾的后续证据。
 材质预览和 EEVEE 图片导出也已实测，但首次导出出现异常大的 shadow buffer 计数；后续三次同进程及新进程渲染未复现。抓帧确认 GPU 读回 staging 路径没有 invalidate 调用，其与阴影异常的因果关系仍待验证，不能据此关闭渲染验收。
+后续已按完成提交的具体 GPU 写入范围补齐读回 invalidate：旧运行库的独立探针首轮有 1020 字节错误，显式 invalidate 后为零；新运行库七轮读回、共享分配中 CPU 脏数据保留、验证层，以及只包含本批改动的独立构建均通过。产品库更新后材质预览/orbit 和 960×640、64 采样 EEVEE 导出完成。原生/frontend 的省略 invalidate 用例是负面对照，不能记作驱动缺陷；红米缺少适用非 coherent 类型，保持 UNSUPPORTED。跨队列、并发、所有 alias 和长期渲染等仍未验收，详见同一文档后续记录。
+
 
 
 X300 实际应用已进一步定位：旧 common 与 ICD 混装、clip 改写的 Phi 前驱与未写入 varying、非法 suspension/resumption 序列，以及纹理 staging / immediate vertex 两条路径缺少非一致性内存 flush。`tools/inspect-upload-capture.py` 从真实 page-guard JSONL 给出 buffer→allocation→写入快照→flush→submit 证据，观察到 77 个纹理 staging 和一个 immediate buffer 的覆盖缺口；普通 buffer-copy staging 没有同类候选。工具明确区分快照时间与 CPU 写入时间，不冒充完整验证器。

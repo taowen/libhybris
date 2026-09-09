@@ -265,6 +265,7 @@ cases.extend(('hybris', mode, 'probe-glibc') for mode in ('render-owners', 'comm
 
 for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'memory-ranges', binary))
+    cases.append((backend, 'blender-readback', binary))
     cases.append((backend, 'vertex-policy', binary))
     cases.append((backend, 'bc-decode', binary))
     cases.append((backend, 'bc-images', binary))
@@ -297,7 +298,7 @@ if a.icd_hal:
     metadata['standard_loader_sha256'] = sha256_file(a.vulkan_loader)
     # The direct version probe provisions driver.json before loader cases.
     cases += [('icd', mode, 'probe-glibc')
-              for mode in ('version', 'egl-vulkan', 'vulkan-egl', 'vertex-policy', 'vertex-policy-direct', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
+              for mode in ('version', 'egl-vulkan', 'vulkan-egl', 'vertex-policy', 'vertex-policy-direct', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'blender-readback', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch', 'point-size-linked')]
     cases.extend(('icd', 'point-size' + route, 'probe-glibc') for route in ('', '-gdpa', '-elf'))
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
@@ -335,7 +336,7 @@ if a.icd_hal:
         layer_json['layer']['library_path'] = './libVkLayer_khronos_validation.so'
         (stage / 'layers/validation.json').write_text(json.dumps(layer_json))
         cases.extend(('icd', 'scaled-vertex-' + shape + '-validation', 'probe-glibc') for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-stride', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
-        cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'bc-decode-validation', 'bc-images-validation', 'bc-images-gdpa-validation', 'bc-images-dlsym-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-multi-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
+        cases.extend([('icd', mode, 'probe-glibc') for mode in ('scaled-vertex-literal-validation', 'scaled-vertex-literal-gdpa-validation', 'scaled-vertex-multi-validation', 'scaled-vertex-multi-gdpa-validation', 'scaled-vertex-validation', 'scaled-vertex-gdpa-validation', 'memory-ranges-validation', 'blender-readback-validation', 'bc-decode-validation', 'bc-images-validation', 'bc-images-gdpa-validation', 'bc-images-dlsym-validation', 'timeline-queues-core-validation', 'timeline-queues-khr-validation', 'timeline-core-validation', 'timeline-khr-validation', 'render-core13-validation', 'render-khr13-validation', 'validation', 'ubo-validation', 'ubo-dynamic-validation', 'ubo-multi-validation', 'ubo-large-validation', 'ubo-staged-validation', 'ubo-template-validation')])
 
 if a.capture_tools:
     stage_tools(a.capture_tools, stage, metadata, sha256_file)
