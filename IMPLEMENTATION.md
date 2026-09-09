@@ -4,6 +4,16 @@ The active objective is to complete the acceptance criteria in [gaps.md](gaps.md
 and improve maintainability without changing API/ABI contracts during structural
 refactors. A probe passing does not close an entire gap.
 
+## Device feature chains (2026-09-09)
+
+The shared layer now translates emulated ClipDistance requests in both legacy
+features and Features2 input chains. This fixes Mali Zink teapot device creation.
+Both drivers pass the existing core-feature device probe, including chain order
+and input preservation, and product GLX/Wayland present/resize pixel gates after
+an actual APK rebuild/install. [Evidence and limits](tests/baseline/device-features.md)
+retain VVL warnings and the remaining application/compatibility failures. Blender
+through Zink is not required; Blender acceptance uses direct Vulkan.
+
 ## Unified window integration tests (2026-09-08)
 
 One `tests/wsi/run.py --platform wayland|xcb|xlib` entry attaches to an

@@ -82,8 +82,13 @@ def main():
         env = dict(extra, **backend['env'])
         env.update(XDG_RUNTIME_DIR=a.runtime_dir, WAYLAND_DISPLAY=a.wayland_display,
                    HYBRIS_ANDROID_SDK_VERSION=host.prop('ro.build.version.sdk'))
-        libraries = ':'.join(remote + '/' + part.removeprefix('./')
-                             for part in backend['library_path'].split(':')) + ':' + a.library_path
+        backend_libraries = [remote + '/' + part.removeprefix('./')
+                             for part in backend['library_path'].split(':')]
+        # Keep the selected loader and its matching glibc together. Application
+        # GL/EGL libraries must precede the staged Android ABI frontends.
+        libraries = ':'.join([path for path in backend_libraries if not path.endswith('/hybris')] +
+                             a.library_path.split(':') +
+                             [path for path in backend_libraries if path.endswith('/hybris')])
         if a.validation_layer:
             metadata.update(stage_validation(a.validation_layer, a.validation_manifest, stage, remote, env))
             settings = stage / 'validation-settings'

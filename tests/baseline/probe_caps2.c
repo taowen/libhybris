@@ -82,8 +82,29 @@ int caps2_probe(void) {
   VkDeviceCreateInfo dc = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
       .pNext = &chained, .queueCreateInfoCount = 1, .pQueueCreateInfos = &qc};
   VkDevice device;
-  CHECK(p_vkCreateDevice(pd, &dc, NULL, &device));
-  p_vkDestroyDevice(device, NULL);
+  /* Put Features2 behind the extension-feature prefix as well. Device-create
+   * filtering must preserve the application's complete input chain. */
+  const void *nodes[] = {&storage, &multiview, &variable, &ycbcr, &draw, &chained};
+  const size_t sizes[] = {sizeof(storage), sizeof(multiview), sizeof(variable),
+      sizeof(ycbcr), sizeof(draw), sizeof(chained)};
+  unsigned char saved[6][sizeof(VkPhysicalDeviceFeatures2)];
+  for (unsigned position = 0; position < 2; ++position) {
+    if (position) {
+      chained.pNext = NULL;
+      draw.pNext = &chained;
+      dc.pNext = &storage;
+    }
+    for (unsigned i = 0; i < 6; ++i) memcpy(saved[i], nodes[i], sizes[i]);
+    CHECK(p_vkCreateDevice(pd, &dc, NULL, &device));
+    p_vkDestroyDevice(device, NULL);
+    for (unsigned i = 0; i < 6; ++i) {
+      if (memcmp(saved[i], nodes[i], sizes[i])) {
+        printf("FEATURES2 position %u device create modified input node %u\n", position, i);
+        return 2;
+      }
+    }
+  }
+  printf("FEATURES2 device create head/tail and input preservation PASS\n");
   if (!features.shaderFloat64) {
     chained.features.shaderFloat64 = VK_TRUE;
     VkResult result = p_vkCreateDevice(pd, &dc, NULL, &device);

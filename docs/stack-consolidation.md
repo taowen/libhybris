@@ -83,7 +83,10 @@ HAL ICD 保留 Android 加载、队列和 WSI；Turnip 使用产品 Mesa ICD。
 截图与有界日志。PID 加启动时间绑定诊断和清理，允许应用切换目录。
 捕获位置可选择兼容转换前或后；应用捕获保存原始文件，不冒充像素回放验收。
 `OBSERVED` 仅表示完成诊断观察，应用操作/保存/resize 验收仍为 unverified。
-此归并尚未打包进产品 APK，不能把隔离构建的通过结果当作产品重装结果。
+此归并已实际打包并安装到两台设备，产品部署记录见 Ardesk 的
+`docs/vulkan-compatibility.md`。后续 Features2 请求修复也已重装 APK，
+两端产品 GLX/Wayland 茶壶呈现、缩放像素门通过，见
+[设备特性链证据](../tests/baseline/device-features.md)。
 
 隔离构建 `/tmp/libhybris-unified-build` 的当前真机记录：Mali 强制兼容
 及同步验证用例通过；Turnip 的七项强制兼容同步验证用例通过，BC 图像

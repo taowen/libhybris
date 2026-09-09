@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "layer.h"
+#include "device_features.h"
 #include "../compat/application_policy.h"
 #include "../compat/scaled_vertex.h"
 #include "../compat/shader_dispatch.h"
@@ -85,15 +86,11 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
     }
     state->device.generation = ++next_generation;
     pthread_mutex_unlock(&guard);
-    VkDeviceCreateInfo filtered = *info;
-    VkPhysicalDeviceFeatures features;
-    if (filtered.pEnabledFeatures && hybris_clip_active(physical)) {
-        features = *filtered.pEnabledFeatures;
-        hybris_clip_filter_features(physical, &features);
-        filtered.pEnabledFeatures = &features;
-    }
     link->u.pLayerInfo = link->u.pLayerInfo->pNext;
-    result = create(physical, &filtered, allocator, out);
+    struct hybris_device_features filtered;
+    result = hybris_device_features_prepare(physical, info, allocator, &filtered);
+    if (result == VK_SUCCESS) result = create(physical, &filtered.info, allocator, out);
+    hybris_device_features_release(&filtered, allocator);
     if (result != VK_SUCCESS) { hybris_scaled_free(allocator, state); return result; }
     state->device.handle = *out;
     state->key = hybris_layer_dispatch_key(*out);

@@ -25,6 +25,11 @@ ICD 所需的 native-window 实现移至 `vulkan/icd/`。
 12,524 个比较错误也未关闭。两端 Blender 启动截图与转换前后 capture
 文件不代替应用建模/保存/resize 或 capture replay 验收。
 
+Mali Zink 茶壶的设备创建失败已修复：兼容层补齐 Features2 输入链的
+ClipDistance 请求转换，两端现有特性探针及重装 APK 后的 GLX/Wayland
+呈现、缩放像素门通过，见[设备特性链证据](tests/baseline/device-features.md)。
+此项不包含 Blender 经 Zink 启动；Blender 继续只按直接 Vulkan 路径验收。
+
 
 ## 官方 Mesa 切换时的历史记录（2026-09-07）
 
