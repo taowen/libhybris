@@ -10,7 +10,8 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   const int multi = dynamic == 2;
   const int staged = update_mode == 1;
   const int templated = update_mode == 2;
-  const int repeat = staged || templated;
+  const int recycle_descriptors = update_mode == 3 || update_mode == 4;
+  const int repeat = staged || templated || recycle_descriptors;
   void *h =
       dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
@@ -354,11 +355,20 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   VkDescriptorPoolSize pool_size = {descriptor_type, multi ? 4 : 1};
   VkDescriptorPoolCreateInfo pool_ci = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .flags = recycle_descriptors ? VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT : 0,
       .maxSets = multi ? 2 : 1,
       .poolSizeCount = 1,
       .pPoolSizes = &pool_size};
   VkDescriptorPool pool;
   CHECK(p_vkCreateDescriptorPool(device, &pool_ci, NULL, &pool));
+  PFN_vkResetDescriptorPool reset_descriptors = NULL;
+  PFN_vkFreeDescriptorSets free_descriptors = NULL;
+  if (recycle_descriptors) {
+    reset_descriptors = (PFN_vkResetDescriptorPool)gip(instance, "vkResetDescriptorPool");
+    free_descriptors = (PFN_vkFreeDescriptorSets)gip(instance, "vkFreeDescriptorSets");
+    if (!reset_descriptors || !free_descriptors) return 2;
+    if (update_mode == 4) CHECK(reset_descriptors(device, pool, 0));
+  }
   VkDescriptorSetAllocateInfo sa = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
       .descriptorPool = pool,
@@ -423,15 +433,28 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
   VkCommandBuffer cb;
   CHECK(p_vkAllocateCommandBuffers(device, &cba_info, &cb));
   int match_good = 0, match_bad = 0, dump_failed = 0, pixels_failed = 0;
-  for (unsigned submission = 0; submission < (repeat ? 6u : 1u); ++submission) {
+  for (unsigned submission = 0; submission < (recycle_descriptors ? 8u : repeat ? 6u : 1u); ++submission) {
     if (repeat) {
-      inject_wrong_binding = submission / 2 == 1;
+      inject_wrong_binding = recycle_descriptors ? (submission / 2) % 2 : submission / 2 == 1;
       printf("UBO_%s bytes=%u submission=%u rerecord=%u alternate=%d\n",
-             staged ? "STAGED" : "TEMPLATE", ubo_bytes, submission,
+             recycle_descriptors ? "POOL_RECYCLE" : staged ? "STAGED" : "TEMPLATE", ubo_bytes, submission,
              submission % 2 == 0, inject_wrong_binding);
     }
     if (!repeat || submission % 2 == 0) {
       if (submission) CHECK(reset_pool(device, cpool, 0));
+      if (recycle_descriptors && submission) {
+        /* All earlier uses completed at the previous fence. Exercise reset
+         * twice, then individual free/reallocation, with fresh descriptors
+         * and alternating shader-visible values. Odd submissions reuse the
+         * same recording without changing its descriptor set. */
+        if (submission == 6) CHECK(free_descriptors(device, pool, 1, sets));
+        else CHECK(reset_descriptors(device, pool, 0));
+        CHECK(p_vkAllocateDescriptorSets(device, &sa, sets));
+        set = sets[0];
+        dbi.buffer = inject_wrong_binding ? ubo_bad : ubo_good;
+        write.dstSet = set;
+        p_vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
+      }
       if (templated) {
         /* The prefix is a valid opposite descriptor. Ignoring entry.offset
          * therefore produces a definite incorrect pixel instead of a fault. */
@@ -518,12 +541,13 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
            mid[3], inject_wrong_binding);
     match_good = mid[0] == 255 && mid[1] == 255 && mid[2] == 0 && mid[3] == 255;
     match_bad = mid[0] == 0 && mid[1] == 255 && mid[2] == 255 && mid[3] == 0;
-    if (multi) {
+    if (multi || recycle_descriptors) {
       const uint8_t expected[2][4] = {{255, 255, 0, 255}, {0, 255, 255, 0}};
       unsigned mismatches = 0;
       for (unsigned pixel = 0; pixel < kWidgetImage * kWidgetImage; ++pixel)
         mismatches += memcmp(pixels + 4 * pixel, expected[inject_wrong_binding], 4) != 0;
-      printf("UBO_MULTI pixels=%u mismatches=%u\n", kWidgetImage * kWidgetImage, mismatches);
+      printf("UBO_%s pixels=%u mismatches=%u\n",
+             recycle_descriptors ? "POOL_RECYCLE" : "MULTI", kWidgetImage * kWidgetImage, mismatches);
       pixels_failed |= mismatches != 0;
     }
     const char *dump_dir = getenv("PROBE_WIDGET_DUMP_DIR");
@@ -580,11 +604,11 @@ static int ubo_draw_internal(int inject_wrong_binding, int validate, int dynamic
     destroy_messenger(instance, messenger, NULL);
   }
   p_vkDestroyInstance(instance, NULL);
-  if (dump_failed || pixels_failed) return 2;
   if (validate) {
     printf("WIDGET validation errors=%u binding=%d\n", validation.errors, inject_wrong_binding);
     if (validation.errors) return 2;
   }
+  if (dump_failed || pixels_failed) return 2;
   if (inject_wrong_binding) {
     if (!match_bad) {
       printf("UBO negative-control FAIL (unexpected pixel)\n");
@@ -652,6 +676,10 @@ int ubo_template_probe(int validate) {
     if (result) return result;
   }
   return 0;
+}
+
+int ubo_pool_reset_probe(int validate, int initially_empty) {
+  return ubo_draw_internal(0, validate, 0, 0, initially_empty ? 4 : 3, 0, 0);
 }
 
 int ubo_dynamic_draw(int alternate) {

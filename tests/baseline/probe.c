@@ -97,6 +97,10 @@ int main(int argc, char **argv) {
     rc = ubo_template_probe(0);
   else if (!strcmp(mode, "ubo-template-validation"))
     rc = ubo_template_probe(1);
+  else if (!strcmp(mode, "ubo-pool-reset") || !strcmp(mode, "ubo-pool-reset-validation"))
+    rc = ubo_pool_reset_probe(strstr(mode, "validation") != NULL, 0);
+  else if (!strcmp(mode, "ubo-pool-empty-reset") || !strcmp(mode, "ubo-pool-empty-reset-validation"))
+    rc = ubo_pool_reset_probe(strstr(mode, "validation") != NULL, 1);
   else if (!strcmp(mode, "ubo-staged"))
     rc = ubo_staged_probe(0);
   else if (!strcmp(mode, "ubo-staged-validation"))

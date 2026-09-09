@@ -88,6 +88,7 @@ int ubo_dynamic_draw(int alternate);
 int ubo_large_probe(int validate);
 int ubo_staged_probe(int validate);
 int ubo_template_probe(int validate);
+int ubo_pool_reset_probe(int validate, int initially_empty);
 int ubo_draw(int inject_wrong_binding, int validate);
 int validation_probe(void);
 int ubo_validation_probe(void);

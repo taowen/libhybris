@@ -4,8 +4,10 @@ The explicit `VK_LAYER_HYBRIS_compat` layer reuses the HAL ICD's rendering
 segment transformation through the standard Vulkan loader. In the Redmi
 Blender 4.3.2 small-window reproducer it passes the original
 `tu_insert_dynamic_cmdbufs` crash and reaches successful presentation.
-The application still displays missing content/white regions. Full-size
-startup still has the separate failed-acquire wait. **Application acceptance
+With the original driver, the application still displays missing content/white
+regions. The [descriptor-pool follow-up](blender-turnip-descriptor-pools.md)
+fixes that driver defect in an isolated build and restores UI content; physical
+window transparency and full-size startup remain unresolved. **Application acceptance
 remains FAIL; the installed product launcher has not been changed.**
 
 ## Ownership and activation

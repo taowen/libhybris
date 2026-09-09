@@ -76,3 +76,12 @@ Window presentation is tested by [WSI](../wsi/README.md); desktop OpenGL by
 
 Keep this README as the smoke-test entry point. Put new feature requirements,
 detailed experiments and dated device results in the relevant topic document.
+
+## Descriptor-pool reset
+
+`ubo-pool-reset` and `ubo-pool-empty-reset` reuse the UBO workload for eight
+exact 16×16 pixel checks across pool reset, individual descriptor-set free,
+reallocation and completed command-buffer reuse. The empty variant also resets
+before the first allocation. Native, hybris and ICD cases are registered; ICD
+`-validation` variants enable SyncVal through the existing validation option.
+See [Turnip negative controls and fixed-driver results](../../docs/blender-turnip-descriptor-pools.md).

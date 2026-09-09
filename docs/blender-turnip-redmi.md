@@ -163,3 +163,12 @@ four-round pixel/validation, allocator failure and two-device ownership checks
 pass. The displayed application content remains incomplete, and full-size
 acquire handling is still open. This is an isolated runtime experiment, not a
 completed product installation or Blender acceptance pass.
+
+## Descriptor-pool follow-up
+
+The [capture-based descriptor diagnosis](blender-turnip-descriptor-pools.md)
+now reproduces the missing UI with two standalone pool-reset workloads and
+fixes the Turnip allocator. Fixed-driver replay restores the UI; live small-window
+editing, saving, reopening and OBJ export have evidence. Physical window
+transparency and default-size startup remain unresolved, so application
+acceptance stays FAIL. The installed product driver remains unchanged.

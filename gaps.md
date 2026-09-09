@@ -258,6 +258,14 @@ X300 已提交批次的报告和资源请求回归保持一致。两宗红米故
 导出不可用，明确记不支持；详见[共享 layer 的构建、边界和回归](docs/vulkan-compat-layer.md)。
 这些证据不关闭 G02/G03/G08/G09/G11 或完整应用门。
 
+进一步从实际 font draw 的 atlas 查询为零定位到 Turnip descriptor pool reset：
+VMA heap 长度和分配方向在 reset 后错误。Mesa 已修复，共用 UBO 探针新增
+普通/首次分配前 reset，两种模式的原驱动负对照失败，修复后普通及 SyncVal
+各八轮精确像素通过；X300 native/frontend/ICD 回归通过。九帧回放恢复 UI，
+真机小窗口已编辑、保存、重新打开并导出 OBJ，坐标校验通过；物理窗口透明
+和默认大窗口启动仍失败，完整应用门保持 FAIL。详见
+[描述符池根因、修复及验收边界](docs/blender-turnip-descriptor-pools.md)。
+
 以下均为固定离屏 fixture 的证据，不能替代任意应用的诊断门槛。
 
 - **布局与像素**：272B std140、12 vertices / 18 indices；正确 binding 像素 `255,255,0,255`，替代 binding 为 `0,255,255,0`，color→transfer→host 同步明确。动态 UBO 使用非零 descriptor base 和 dynamic offset。实际 1232B 合成 shader block 逐项检查 14 个非对称 mat4（array stride=64、column stride=16）、尾部 vec4/vec2 和 bool/int；普通/动态两组数据经 native/frontend/ICD 得到精确预期像素，ICD VVL/SyncVal 零错误。这不是 Blender 完整 instanced widget 布局。
