@@ -341,3 +341,57 @@ unknown selected cases; it provides no passing coverage. The corrected run is
 contains concurrent WSI/fence integration changes; the live results are not a
 clean-commit isolation test. Redmi, long-running interaction and the remaining
 application gates are still unverified for this change.
+
+
+### EEVEE preview, image export and unresolved readback (2026-09-09)
+
+The same live product session subsequently switched to Material Preview through
+the viewport button. The screwdriver shows environment reflections and distinct
+rubber, polymer and metal appearance (`screwdriver/material-preview.png`). A
+camera and three area lights were added in memory; EEVEE exported a 960x640 PNG
+in approximately 1.93 seconds. The model with camera/lights was saved separately
+as `Screwdriver-render-check.blend`, leaving the original model intact. The
+creation/render scripts, PNG and elapsed-time report are in the parent
+`build/blender-vulkan/screwdriver/` directory.
+
+**Render acceptance remains open:** the first live export logged five
+`Shadow buffer full` errors with counts 823775308, 1879824896, 443685896,
+215639404 and 1929379841 against capacity 2048. Successful file export and a
+recognizable image do not establish correct shadow state. Three subsequent
+renders in this same process returned FINISHED without additional such errors;
+a fresh process at 960x640 / 64 samples also did not reproduce them. Do not
+attribute the first error solely to capture or resolution differences.
+
+A fresh 320x240 / four-sample render was captured with GFXReconstruct page-guard
+tracking, without a frame trim. It exited successfully and produced an image;
+it did not reproduce the shadow errors. Artifacts under the parent
+`build/mali-pipeline-investigation/20260909T101306/`:
+
+- `blender-render-check-product-only-outline-capture-143915`: capture and render.
+  The inherited variant name does not describe overlay changes in this runner;
+  it opens the saved render scene. `stage/check.py` is the actual workload.
+- `replay-blender-render-capture-144010`: **conversion only**, not replay;
+  `calls.jsonl` includes binary references.
+- `blender-render-check-product-overlay-on-144026`: same small render without
+  capture; no observed shadow or GPU group errors.
+- `blender-render64-check-product-overlay-on-144123`: fresh 960x640 / 64 samples,
+  also without those errors. These remain observations without golden pixels.
+
+The capture contains eight pure TRANSFER_DST buffers, seven of size 32 and one
+614400-byte image readback. All bind to mapped memory type 1; allocations 191
+and 2750 are mapped at calls 307 and 9414. For example, buffer 2040 is created
+at 6116 and bound at 6118 to allocation 191, offset 16248832; copy 6138 writes
+32 bytes, submit 6142 signals fence 175 and wait 6143 succeeds. The entire
+capture contains **zero vkInvalidateMappedMemoryRanges calls**. The inspected
+Blender 4.3.2 `VKStorageBuffer::read` copies into a DeviceToHost staging buffer;
+`VKBuffer::read` submits for read and then memcpy's mapped memory, without an
+invalidate. This is evidence of a missing readback cache operation, but does
+not by itself prove the observed shadow-count error's root cause or identify
+CPU read bytes from the capture.
+
+No invalidate workaround has been enabled based on this observation. A safe
+implementation must associate GPU-written ranges with completed submissions,
+preserve atom boundaries and allocation generations, and avoid invalidating
+unrelated dirty host writes in the shared mapped VMA pool. Globally invalidating
+all mapped memory after any successful fence wait would not satisfy that gate.
+The original live model was reopened after the diagnostic renders.
