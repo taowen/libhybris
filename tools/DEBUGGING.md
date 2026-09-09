@@ -1,5 +1,10 @@
 # Reproduce a saved baseline case
 
+For a failure that occurs after successful submission, inspect the standard
+application capture as described in [dynamic-rendering capture analysis](../docs/rendering-capture-analysis.md).
+It links rendering-sequence findings to command-buffer recordings, submits,
+attachments and draw binding calls; it does not replace GPU resource readback.
+
 `debug-baseline.py` replays a case from an existing baseline result under
 an Android AArch64 LLDB server. It uses that result's staged libraries and
 probe, checks the phone's build fingerprint, creates a unique remote directory
