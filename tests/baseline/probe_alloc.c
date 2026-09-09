@@ -165,7 +165,7 @@ int vulkan_allocator_probe(int direct_icd) {
 
 /* Frontend-owned pool/command metadata must honor callbacks and unwind a
  * partially allocated batch before invoking the driver. Independent probe. */
-int command_allocator_probe(void) {
+int command_allocator_probe(int application_profile) {
   void *h = dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) return 2;
   PFN_vkGetInstanceProcAddr gip = sym(h, "vkGetInstanceProcAddr");
@@ -174,7 +174,12 @@ int command_allocator_probe(void) {
   struct allocation_probe state = {0};
   VkAllocationCallbacks callbacks = {.pUserData = &state, .pfnAllocation = instance_allocate,
       .pfnReallocation = instance_reallocate, .pfnFree = instance_free};
-  VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+  VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+      .pApplicationName = "Blender", .pEngineName = "Blender",
+      .applicationVersion = VK_MAKE_VERSION(1, 0, 0), .engineVersion = VK_MAKE_VERSION(1, 0, 0),
+      .apiVersion = VK_API_VERSION_1_2};
+  VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+      .pApplicationInfo = application_profile ? &app : NULL};
   CHECK(p_vkCreateInstance(&ci, &callbacks, &instance));
   V(vkDestroyInstance); V(vkEnumeratePhysicalDevices);
   V(vkGetPhysicalDeviceQueueFamilyProperties); V(vkCreateDevice); V(vkDestroyDevice);

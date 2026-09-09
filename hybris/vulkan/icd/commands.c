@@ -109,6 +109,10 @@ void hybris_icd_command_error(VkCommandBuffer command, VkResult error)
 static VkResult VKAPI_CALL allocate_commands(VkDevice handle, const VkCommandBufferAllocateInfo *info,
     VkCommandBuffer *out)
 {
+    /* Allocation can fail in adapter metadata before the driver is called.
+     * The command-buffer allocation contract still requires every output to
+     * be null on failure, including entries not reached by partial staging. */
+    for (uint32_t i = 0; i < info->commandBufferCount; ++i) out[i] = VK_NULL_HANDLE;
     struct hybris_icd_device device;
     if (!hybris_icd_lookup_device(handle, &device)) return VK_ERROR_INITIALIZATION_FAILED;
     struct pool_state pool = {0};

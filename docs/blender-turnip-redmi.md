@@ -3,7 +3,9 @@
 Application acceptance is **FAIL**. This is Redmi `29854870`, M2012K11AC,
 Adreno 650, not the separate OnePlus / Adreno 830 device-lost investigation.
 X300's successful bounded Blender workflow does not establish this backend's
-compatibility. No Turnip, hybris runtime or Blender binary was changed here.
+compatibility. The initial diagnosis below changed no installed Turnip,
+hybris runtime or Blender binary. The later isolated compatibility-layer
+experiment is linked at the end.
 
 ## Runtime and launch
 
@@ -150,3 +152,14 @@ Both saved dynamic-widget captures from `20260907T042356-051c616f` still
 report no sequence findings and exit 0; the bad widget's separate pixel/data
 failure is unaffected. The real Redmi recording-only report exits 1 with
 one uncovered submission context, not a false all-covered result.
+
+## Rendering-layer follow-up
+
+The [shared rendering layer](vulkan-compat-layer.md) now reuses the existing
+segment conversion above native Turnip. In the same small-window startup it
+passes the original command-merging crash and reaches successful presentation.
+The below-layer capture contains only ordinary segments, and independent
+four-round pixel/validation, allocator failure and two-device ownership checks
+pass. The displayed application content remains incomplete, and full-size
+acquire handling is still open. This is an isolated runtime experiment, not a
+completed product installation or Blender acceptance pass.

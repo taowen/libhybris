@@ -250,6 +250,14 @@ resume，明确不当作已提交执行，也不生成对应 draw-resource 请�
 X300 已提交批次的报告和资源请求回归保持一致。两宗红米故障尚未修复，
 原 OnePlus/Adreno 830 故障未重测；详见[真机诊断与复用边界](docs/blender-turnip-redmi.md)。
 
+随后已把渲染分段转换从 HAL 分发中拆出，由独立的标准
+`VK_LAYER_HYBRIS_compat` 与原 ICD 共用。红米隔离运行跨过原命令合并崩溃，
+下层抓帧的 389 个 rendering begin 已转换，后续提交/等待/呈现成功；但界面
+仍有白块和缺失内容，完整应用仍 FAIL。独立像素/SyncVal、分配失败回收、
+双 device 重建，以及 X300 的原路径回归已有证据。标准 loader 的 KHR ELF
+导出不可用，明确记不支持；详见[共享 layer 的构建、边界和回归](docs/vulkan-compat-layer.md)。
+这些证据不关闭 G02/G03/G08/G09/G11 或完整应用门。
+
 以下均为固定离屏 fixture 的证据，不能替代任意应用的诊断门槛。
 
 - **布局与像素**：272B std140、12 vertices / 18 indices；正确 binding 像素 `255,255,0,255`，替代 binding 为 `0,255,255,0`，color→transfer→host 同步明确。动态 UBO 使用非零 descriptor base 和 dynamic offset。实际 1232B 合成 shader block 逐项检查 14 个非对称 mat4（array stride=64、column stride=16）、尾部 vec4/vec2 和 bool/int；普通/动态两组数据经 native/frontend/ICD 得到精确预期像素，ICD VVL/SyncVal 零错误。这不是 Blender 完整 instanced widget 布局。

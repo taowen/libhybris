@@ -79,8 +79,9 @@ int timeline_probe(int khr, int route, int validate, int multiple_queues);
 int timeline_queue_work(PFN_vkGetInstanceProcAddr gip, VkInstance instance,
     VkPhysicalDevice physical, VkDevice device, uint32_t family,
     PFN_vkGetSemaphoreCounterValue counter, PFN_vkWaitSemaphores wait);
-int render_owners_probe(void);
-int command_allocator_probe(void);
+int render_owners_probe(int application_profile);
+int command_allocator_probe(int application_profile);
+int rendering_segments_probe(int validate, int route, int profile);
 int ubo_render_probe(int family, int route, int validate);
 int ubo_dynamic_probe(int validate);
 int ubo_dynamic_draw(int alternate);

@@ -205,6 +205,7 @@ for lib in \
     libGLESv2.so.2.0.0 \
     libvulkan.so.1.2.183 \
     libhybris-vulkan-icd.so.0 \
+    libVkLayer_hybris_compat.so \
     libhybris/eglplatform_null.so \
     libhybris/linker/q.so
 do

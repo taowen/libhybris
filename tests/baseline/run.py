@@ -264,6 +264,7 @@ cases = [
 cases.extend(('hybris', mode, 'probe-glibc') for mode in ('render-owners', 'command-alloc'))
 
 for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
+    cases.append((backend, 'render-segments-control', binary))
     cases.append((backend, 'memory-ranges', binary))
     cases.append((backend, 'blender-readback', binary))
     cases.append((backend, 'vertex-policy', binary))
@@ -300,6 +301,9 @@ if a.icd_hal:
     cases += [('icd', mode, 'probe-glibc')
               for mode in ('version', 'egl-vulkan', 'vulkan-egl', 'vertex-policy', 'vertex-policy-direct', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'blender-readback', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch', 'point-size-linked')]
+    cases.extend(('icd', mode, 'probe-glibc') for mode in (
+        'render-segments', 'render-segments-gdpa', 'render-segments-elf',
+        'render-segments-control', 'command-alloc-blender', 'render-owners-blender'))
     cases.extend(('icd', 'point-size' + route, 'probe-glibc') for route in ('', '-gdpa', '-elf'))
     cases.extend(('icd', mode, 'probe-glibc') for mode in render_cases + timeline_cases + ('scaled-vertex', 'scaled-vertex-gdpa', 'scaled-vertex-elf', 'scaled-vertex-multi', 'scaled-vertex-multi-gdpa', 'scaled-vertex-multi-elf', 'scaled-vertex-literal', 'scaled-vertex-literal-gdpa', 'scaled-vertex-literal-elf'))
     cases.extend(('icd', 'scaled-vertex-' + shape, 'probe-glibc') for shape in ('packed1', 'packed2', 'packed3', 'packed4', 'builtins', 'matrix', 'array', 'nested', 'matarray', 'spec', 'spec-direct', 'group', 'group-multi', 'group-spec', 'divisor', 'divisor-stride', 'divisor-zero', 'divisor-base', 'divisor-zero-base'))
@@ -314,6 +318,8 @@ if a.icd_hal:
     cases.extend(('icd-linked', mode, 'probe-glibc-linked')
                  for mode in ('render-core13-linked', 'render-khr13-linked'))
     if a.validation_layer:
+        cases.extend(('icd', 'render-segments' + route + '-validation', 'probe-glibc')
+                     for route in ('', '-gdpa', '-control'))
         cases.extend(('icd', 'point-size' + route + '-validation', 'probe-glibc') for route in ('', '-gdpa', '-elf'))
         cases.append(('icd-linked', 'point-size-linked-validation', 'probe-glibc-linked'))
         cases.extend(('icd', 'scaled-vertex-builtins-' + route + '-validation', 'probe-glibc') for route in ('gdpa', 'elf'))

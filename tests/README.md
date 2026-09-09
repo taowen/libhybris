@@ -44,6 +44,7 @@ default-off smoke results. Read the documented limits before interpreting PASS.
 | Area | Documentation |
 | --- | --- |
 | Scaled vertex fetch | [Conversion](baseline/scaled-vertex.md), [aggregates and specialization](baseline/scaled-aggregates.md) |
+| Rendering segment preservation and layer ownership | [Shared Turnip/HAL transformation, pixel and allocator probes](../docs/vulkan-compat-layer.md) |
 | Scaled policy and instancing | [Format decisions](baseline/scaled-format-policy.md), [divisors](baseline/scaled-instancing.md) |
 | Packed SNORM vertex fetch | [Packed vertices](baseline/packed-vertex.md) |
 | SPIR-V transformations | [Grouped decorations and validation-layer fix](baseline/spirv-groups.md), [unused builtins](baseline/unused-builtins.md), [PointSize](baseline/point-size.md) |

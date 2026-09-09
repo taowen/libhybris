@@ -125,10 +125,13 @@ int main(int argc, char **argv) {
     int route = strstr(mode, "linked") ? 3 : strstr(mode, "elf") ? 2 : strstr(mode, "gdpa") ? 1 : 0;
     rc = timeline_probe(khr, route, strstr(mode, "validation") != NULL, strstr(mode, "queues") != NULL);
   }
-  else if (!strcmp(mode, "command-alloc"))
-    rc = command_allocator_probe();
-  else if (!strcmp(mode, "render-owners"))
-    rc = render_owners_probe();
+  else if (!strcmp(mode, "command-alloc") || !strcmp(mode, "command-alloc-blender"))
+    rc = command_allocator_probe(!strcmp(mode, "command-alloc-blender"));
+  else if (!strncmp(mode, "render-segments", 15))
+    rc = rendering_segments_probe(strstr(mode, "validation") != NULL,
+      strstr(mode, "gdpa") ? 1 : strstr(mode, "elf") ? 2 : 0, strstr(mode, "control") == NULL);
+  else if (!strcmp(mode, "render-owners") || !strcmp(mode, "render-owners-blender"))
+    rc = render_owners_probe(!strcmp(mode, "render-owners-blender"));
   else if (!strcmp(mode, "render-core13") || !strcmp(mode, "render-khr13"))
     rc = ubo_render_probe(!strcmp(mode, "render-core13") ? 1 : 2, -1, 0);
   else if (!strcmp(mode, "render-core13-elf") || !strcmp(mode, "render-khr13-elf"))
