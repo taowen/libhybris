@@ -13,6 +13,7 @@ import time
 from manifest import sha256_file, verify_manifest
 
 PACKAGE = 'io.taowen.ardesk'
+MALI_GPU_FAULT = re.compile(r'Received a (GROUP_(?:QUEUE_)?ERROR_[A-Z0-9_]+) error on group\(')
 
 class Host:
     def __init__(self, serial, out, package=PACKAGE, runtime_dir=None, wayland=None):
@@ -79,7 +80,7 @@ class Host:
         except (OSError, RuntimeError, subprocess.SubprocessError) as error: errors.append(str(error))
         self.record['service_lifecycle'] = 'external; left running'
         self.record['cleanup_errors'] = errors
-        if errors: self.record['status'] = 'FAIL'
+        if errors or self.record.get('gpu_fault_count', 0): self.record['status'] = 'FAIL'
         (self.out / 'isolation.json').write_text(json.dumps(self.record, indent=2) + '\n')
         self.lock.close()
 
@@ -134,6 +135,7 @@ class Host:
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         selector = selectors.DefaultSelector(); selector.register(process.stdout, selectors.EVENT_READ)
         deadline = time.monotonic() + timeout; last_output = time.monotonic(); pending = b''; screens = set()
+        line_number = 0
         try:
             with (out / 'probe.log').open('wb') as log:
                 while selector.get_map():
@@ -146,7 +148,17 @@ class Host:
                         last_output = time.monotonic(); log.write(data); log.flush(); pending += data
                         while b'\n' in pending:
                             line, pending = pending.split(b'\n', 1)
+                            line_number += 1
                             decoded = line.decode(errors='replace')
+                            fault = MALI_GPU_FAULT.search(decoded)
+                            if fault:
+                                # A successful fence/exit after GPU recovery does not
+                                # make this workload pass. Keep bounded log references.
+                                self.record['gpu_fault_count'] = self.record.get('gpu_fault_count', 0) + 1
+                                events = self.record.setdefault('gpu_faults', [])
+                                if len(events) < 64:
+                                    events.append({'kind': fault[1], 'log': str(out / 'probe.log'),
+                                                   'line': line_number})
                             print(decoded, flush=True)
                             if on_line: on_line(decoded)
                             match = re.search(rb'^(?:WSI_FRAME|X11_RESIZE_FRAME) epoch=(\d+) frame=(0|7)\b', line)

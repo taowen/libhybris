@@ -193,3 +193,48 @@ records `GROUP_ERROR_TILER_HEAP_OOM` during a submitted workload's fence wait,
 followed by a successful wait and further presentation. Thus the diagnostic
 screenshot script is not necessary to trigger the heap fault, and subsequent
 successful presentation does not establish fault-free operation.
+
+## Overlay isolation and replay fidelity
+
+`blender-overlay-check-*` runs in the same investigation directory use the
+installed product libraries, factory startup, no GPU debug option and no
+Blender screenshot operation. The timer requests three cube updates; Android
+screenshots observe composition. The already-open Quick Setup instance remains
+idle throughout. These are bounded diagnostic controls, not feature removals
+or application acceptance passes. `overlay-comparison.json` retains the run
+names and driver-event log lines.
+
+- Default overlays: one heap OOM and two timeouts.
+- All overlays off: two runs complete three updates without a recorded fault.
+- Selected outline off: the first run has no recorded fault, but repetition
+  reports four heap OOM events. The first result does not isolate the outline.
+- Grid off, extras off, and smooth wire off each still produce GPU faults.
+- Only grid enabled: no recorded fault in one run. Only selected outline
+  enabled: three timeouts. These controls identify a smaller reproducer, not
+  the failing draw or the underlying cause.
+- Standard SyncVal confirms it is active, reports no corresponding validation
+  error, and still reproduces two timeouts.
+
+`blender-overlay-check-product-only-outline-capture-133638` captures frame 3
+with standard page-guard tracking. Conversion and the existing rendering
+inspector identify submit 6970, command-buffer begin 6629, and three candidate
+draws: 6789 writes the R16_UINT outline ID/depth prepass; 6797 detects outlines;
+6821 composites antialiasing. The generated `draw-resources.json` requests these
+draws with their actual rendering boundaries.
+
+`replay-outline-resources-134109` produces all three resource reports, but has
+two queue faults at log lines 3889 and 3895 **during state restoration**, before
+the state-loading completion at line 4435. Its indirect prepass parameters are
+zero. Neither those values nor the later attachment dumps prove the original
+application's shader inputs. The replay also lacks the application's active
+compatibility-profile message. Replay extension/feature changes and profile
+equivalence must be resolved before interpreting these resources as a draw
+failure. The earlier `134036` attempt only failed to locate the product ICD;
+it is a launch-configuration failure, not driver evidence.
+
+The shared WSI host now recognizes the driver's explicit `Received a
+GROUP_*ERROR_* error on group(...)` messages, records a total and at most 64
+log/line references, and forces the final status to FAIL even after successful
+exit. The real `134109` replay verifies this path: exit 0, two recorded faults,
+final FAIL. This is an observed-message rejection rule, not a complete GPU
+health detector; absence of matching messages never establishes acceptance.
