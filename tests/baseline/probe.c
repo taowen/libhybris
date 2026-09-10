@@ -84,7 +84,11 @@ int main(int argc, char **argv) {
   else if (!strcmp(mode, "caps"))
     rc = caps_probe(0);
   else if (!strcmp(mode, "blender-vk"))
-    rc = blender_vk_probe();
+    rc = blender_vk_probe(0);
+  else if (!strcmp(mode, "blender-vk-5.2"))
+    rc = blender_vk_probe(1);
+  else if (!strcmp(mode, "blender-vk-5.2-optional-vertex"))
+    rc = blender_vk_probe(2);
   else if (!strcmp(mode, "wsi-disabled"))
     rc = caps_probe(1);
   else if (!strncmp(mode, "point-size", 10))
