@@ -369,10 +369,10 @@ static int64_t dequeue_timeout(uint64_t timeout)
     return (int64_t)timeout;
 }
 
-/* A size mismatch is sticky until the application replaces the chain. The
- * Wayland owner reports zero extent because its size is application selected.
- * Keep this separate from retirement: already acquired retired images may
- * still be presented if the native surface remains compatible. */
+/* Surface loss and an exhausted stale pool stay invalid. A still-presentable
+ * size mismatch returns SUBOPTIMAL without retiring the chain. Wayland reports
+ * zero extent because its size is application selected. Already acquired
+ * retired images may still be presented if the native surface is compatible. */
 static VkResult presentation_status(struct swapchain_state *state)
 {
     if (state->presentation_status != VK_SUCCESS) return state->presentation_status;

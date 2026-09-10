@@ -93,8 +93,9 @@ With both Wayland and X11 enabled at build time, the adapter also exposes
 local Unix sockets to submit gralloc handles, retaining buffers until actual
 BufferRelease events. Missing protocol and incompatible visuals are rejected.
 Xlib shares its XCB connection without changing application event ownership.
-Current extent comes from X geometry; stale-size chains now return
-OUT_OF_DATE on acquire/present and can be replaced. Rejected presents still
+Current extent comes from X geometry. A still-presentable size mismatch
+returns SUBOPTIMAL on acquire/present, signals the acquire fence, and
+queues the frame; surface lost stays sticky. Rejected presents still
 consume application waits. Shared `tests/wsi/run.py` covers XCB/Xlib/Wayland
 create, present, resize/out-of-date and native-X surface-lost. Remaining G11
 scope is multiwindow, disconnect, delayed release and longer lifetime, not a

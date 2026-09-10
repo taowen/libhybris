@@ -23,6 +23,23 @@ a supported TrueColor visual and TAWC-DRI 0.3. PresentBuffer sends gralloc
 handles through SCM_RIGHTS; BufferRelease controls buffer reuse. Xlib shares
 its XCB connection without changing application event ownership. There is no
 PRESENT_SOCKET fallback. GPU release fences currently require a host wait.
+Swapchain creation requires opaque composite alpha. `fence-acquire` acquires
+each frame with a fence, checks its signaled status and a repeated zero-timeout
+wait, resets it, and checks that the reset fence is unsignaled. Only then does
+it submit the acquired image's layout transitions and rendering. `present`
+uses an acquire semaphore instead. Both cases verify eight readbacks, physical
+screenshots and native buffer release before reuse.
+
+The [Vulkan WSI contract](https://docs.vulkan.org/spec/latest/chapters/VK_KHR_surface/wsi.html#_wsi_swapchain)
+requires acquisition before using an image, including layout transitions.
+The discarded `init-layout` diagnostic submitted transitions for all images
+before any acquisition and produced `UNASSIGNED-non-acquired-swapchain-image-used`
+validation errors. It is not a valid driver acceptance test. Do not compensate
+by eagerly acquiring every HAL image, submitting on a hidden application queue,
+or caching fence completion outside the driver.
+
+Device results and artifact hashes are recorded in the
+[fence acquisition review](../wsi/fence-acquire-review.md).
 
 The old server builder and vendored TAWC patch have been removed. Historical
 results in the [integration review](../wsi/integration-review.md) and
@@ -44,10 +61,14 @@ The [WSI specification](https://docs.vulkan.org/spec/latest/chapters/VK_KHR_surf
 requires the semaphore waits to remain enqueued when present returns out of
 date; returning from the call is not an observation that those waits completed.
 This fixed negative-case probe calls `vkQueueWaitIdle` before the empty
-signal/wait submissions. It still verifies both out-of-date results, unchanged
-acquire index, unsignaled fence, reuse of the same semaphore and preservation
-of old swapchain image handles. The runner requires `present_wait_idle=1` in
-both transition records; it does not discard validation messages.
+signal/wait submissions. A still-presentable size mismatch queues the held frame as SUBOPTIMAL.
+A further acquire that cannot dequeue a new buffer (pool exhausted after
+resize) returns OUT_OF_DATE with an unsignaled fence. Surface-lost still
+returns `VK_ERROR_SURFACE_LOST_KHR` with an unsignaled fence and unchanged
+acquire index. Both paths reuse the same semaphore after `vkQueueWaitIdle`
+and preserve old swapchain image handles. The runner requires
+`present_wait_idle=1` in both transition records; it does not discard
+validation messages.
 
 This probe uses unextended swapchain synchronization. Queue idle here is not
 a general replacement for presentation fences or compositor buffer release.

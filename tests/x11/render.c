@@ -28,6 +28,7 @@ static int save_maps(void) {
 int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_window_t *native_window, xcb_visualid_t visual, Display *display) {
     xcb_window_t window = *native_window;
     int validate = getenv("HYBRIS_X11_VALIDATION") != NULL;
+    int fence_acquire_case = getenv("HYBRIS_X11_FENCE_ACQUIRE") != NULL;
     VkInstance instance = VK_NULL_HANDLE;
     V(vkCreateInstance);
     const char *extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, display ? VK_KHR_XLIB_SURFACE_EXTENSION_NAME : VK_KHR_XCB_SURFACE_EXTENSION_NAME, VK_EXT_DEBUG_UTILS_EXTENSION_NAME, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME};
@@ -136,11 +137,14 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
     if (!format) { printf("X11_FORMAT_UNSUPPORTED requested=%d\n", wanted); return 3; }
     int bgra = format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
     VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if (fence_acquire_case) usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     if ((caps.supportedUsageFlags & usage) != usage || caps.minImageCount > 3 || (caps.maxImageCount && caps.maxImageCount < 3)) return 3;
-    VkCompositeAlphaFlagBitsKHR alpha = caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
-        ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
-    if (!(caps.supportedCompositeAlpha & alpha)) return 3;
-    printf("X11_SURFACE usage=0x%x alpha=0x%x extent=%ux%u format=%d\n", caps.supportedUsageFlags,
+    if (!(caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)) {
+        printf("X11_ALPHA_UNSUPPORTED advertised=0x%x\n", caps.supportedCompositeAlpha);
+        return 3;
+    }
+    VkCompositeAlphaFlagBitsKHR alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    printf("X11_SURFACE usage=0x%x alpha=0x%x extent=%ux%u format=%d\n", usage,
            alpha, caps.currentExtent.width, caps.currentExtent.height, format);
     VkSwapchainCreateInfoKHR sw = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, .surface = surface,
         .minImageCount = 3, .imageFormat = format, .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
@@ -218,8 +222,23 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
       }
       unsigned width = sw.imageExtent.width, height = sw.imageExtent.height;
       for (unsigned frame = 0; frame < 8; ++frame) {
-        uint32_t index; OK(vkAcquireNextImageKHR(device, chain, 2000000000ull, acquired, VK_NULL_HANDLE, &index));
-        if (index >= count) return 2;
+        uint32_t index;
+        int fence_acquire = fence_acquire_case;
+        if (fence_acquire) {
+            OK(vkAcquireNextImageKHR(device, chain, 2000000000ull, VK_NULL_HANDLE, fence, &index));
+            if (index >= count) return 2;
+            VkResult waited = vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull);
+            if (waited != VK_SUCCESS) return 2;
+            /* Completed waits must agree with status and remain nonblocking. */
+            OK(vkGetFenceStatus(device, fence));
+            OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 0));
+            OK(vkResetFences(device, 1, &fence));
+            if (vkGetFenceStatus(device, fence) != VK_NOT_READY) return 2;
+            printf("X11_FENCE_ACQUIRE frame=%u image=%u wait=ok status=signaled repeat=ok reset=ok\n", frame, index);
+        } else {
+            OK(vkAcquireNextImageKHR(device, chain, 2000000000ull, acquired, VK_NULL_HANDLE, &index));
+            if (index >= count) return 2;
+        }
         OK(vkResetCommandBuffer(command, 0));
         VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         OK(vkBeginCommandBuffer(command, &begin));
@@ -242,8 +261,9 @@ int x11_render(PFN_vkGetInstanceProcAddr gip, xcb_connection_t *connection, xcb_
         vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &host, 0, NULL, 0, NULL);
         OK(vkEndCommandBuffer(command));
         VkPipelineStageFlags wait = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-        VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .waitSemaphoreCount = 1, .pWaitSemaphores = &acquired,
-            .pWaitDstStageMask = &wait, .commandBufferCount = 1, .pCommandBuffers = &command,
+        VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .waitSemaphoreCount = fence_acquire ? 0u : 1, .pWaitSemaphores = fence_acquire ? NULL : &acquired,
+            .pWaitDstStageMask = fence_acquire ? NULL : &wait, .commandBufferCount = 1, .pCommandBuffers = &command,
             .signalSemaphoreCount = 1, .pSignalSemaphores = &ready[index]};
         OK(vkQueueSubmit(queue, 1, &submit, fence)); OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 2000000000ull));
         unsigned char *pixels; OK(vkMapMemory(device, memory, 0, 320 * 240 * 4, 0, (void **)&pixels));

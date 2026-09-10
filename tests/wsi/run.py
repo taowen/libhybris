@@ -22,8 +22,8 @@ def main():
     p.add_argument('--display', default=':1', help='existing local X display supplied by the compositor')
     p.add_argument('--xauthority', help='device-side Xauthority path accessible to the compositor UID')
     p.add_argument('--platform', choices=('wayland', 'xcb', 'xlib'), default='wayland')
-    p.add_argument('--case', choices=('present', 'swapchain-review', 'control', 'resize', 'missing-protocol', 'acquire-timeout', 'surface-lost'), default='present')
-    p.add_argument('--surface-format', type=int, help='explicit VkFormat number for XCB/Xlib present or resize; must be advertised')
+    p.add_argument('--case', choices=('present', 'swapchain-review', 'control', 'resize', 'missing-protocol', 'acquire-timeout', 'surface-lost', 'fence-acquire'), default='present')
+    p.add_argument('--surface-format', type=int, help='explicit VkFormat number for XCB/Xlib present, resize or fence-acquire; must be advertised')
     p.add_argument('--repeat', type=int, default=1, help='1–100 sequential clients sharing one compositor process')
     p.add_argument('--backend', choices=('hybris', 'turnip'), default='hybris')
     p.add_argument('--mesa-build', type=Path, default=ROOT / 'tests/desktop-gl/build', help='verified product Mesa runtime from desktop-gl build.sh')
@@ -40,10 +40,10 @@ def main():
     p.add_argument('--capture-tools', type=Path)
     a = p.parse_args()
     wayland = a.platform == 'wayland'
-    if a.case not in (('present', 'swapchain-review') if wayland else ('present', 'control', 'resize', 'missing-protocol', 'acquire-timeout', 'surface-lost')):
+    if a.case not in (('present', 'swapchain-review') if wayland else ('present', 'control', 'resize', 'missing-protocol', 'acquire-timeout', 'surface-lost', 'fence-acquire')):
         p.error('case is not supported by this platform')
-    if a.surface_format is not None and (wayland or a.case not in ('present', 'resize')):
-        p.error('--surface-format requires XCB/Xlib present or resize')
+    if a.surface_format is not None and (wayland or a.case not in ('present', 'resize', 'fence-acquire')):
+        p.error('--surface-format requires XCB/Xlib present, resize or fence-acquire')
     if not 1 <= a.repeat <= 100: p.error('--repeat must be between 1 and 100')
     if a.backend == 'hybris':
         if (wayland or a.case != 'control') and not a.icd_hal:

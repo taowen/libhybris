@@ -70,9 +70,8 @@ int x11_surface_change(PFN_vkGetInstanceProcAddr gip, VkInstance instance, VkPhy
     VkResult presented = vkQueuePresentKHR(queue, &present);
     printf("X11_RESIZE_PRESENT epoch=%u result=%d per_chain=%d\n", epoch, presented, per_chain);
     if (presented != expected || per_chain != presented) return 2;
-    /* OUT_OF_DATE and SURFACE_LOST still enqueue the present waits. Complete those queue
-     * operations before this binary semaphore is signaled again. This probe
-     * does not use swapchain-maintenance presentation fences. */
+    /* Present waits stay enqueued on both SUBOPTIMAL (queued) and SURFACE_LOST
+     * (cancelled). Wait idle before re-signaling the same binary semaphore. */
     OK(vkQueueWaitIdle(queue));
     submit.commandBufferCount = 0;
     OK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));

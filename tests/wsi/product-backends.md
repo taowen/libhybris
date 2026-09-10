@@ -8,9 +8,10 @@ product Mesa runtime packaged by `tests/desktop-gl/build.sh`; there is no
 second Mesa pin or window-specific build. The product owns its loader/libc
 pair. Other X11 client/runtime SONAME conflicts remain errors.
 
-X11 clients select an advertised opaque or inherit alpha mode; their test
-pixels have alpha one. They log the actual usage, alpha and extent. This does
-not make the two drivers' import capabilities or alpha policies equivalent.
+X11 and Wayland clients require advertised opaque composite alpha; inherit is
+not a fallback. Test pixels have alpha one. They log the actual usage, alpha
+and extent. This does not make the two drivers' import capabilities or alpha
+policies equivalent.
 Turnip needs the compositor Wayland allocator even for XCB/Xlib presentation.
 
 ## Inputs

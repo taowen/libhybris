@@ -107,7 +107,7 @@ def run(a, host, out):
                     raise ValueError('validation layer mapping missing')
         except (ValueError, OSError) as error:
             record['validation_or_mapping_error'] = str(error); code = 2
-    if code == 0 and a.case in ('present', 'resize'):
+    if code == 0 and a.case in ('present', 'resize', 'fence-acquire'):
         try:
             if a.surface_format is not None and not re.search(r'^X11_SURFACE .* format=' + str(a.surface_format) + r'$', (out / 'probe.log').read_text(), re.M):
                 raise ValueError('selected surface format does not match request')
@@ -115,7 +115,11 @@ def run(a, host, out):
             record['screen'] = [verify_epoch(out, epoch, size) for epoch, size in enumerate(sizes)]
             log = (out / 'probe.log').read_text()
             frames = re.findall(r'^X11_FRAME frame=(\d+) image=(\d+) pixels=76800 exact=1$', log, re.M)
-            if a.case == 'present':
+            if a.case in ('present', 'fence-acquire'):
+                if a.case == 'fence-acquire':
+                    acquisitions = re.findall(r'^X11_FENCE_ACQUIRE frame=(\d+) image=\d+ wait=ok status=signaled repeat=ok reset=ok$', log, re.M)
+                    if acquisitions != [str(frame) for frame in range(8)]:
+                        raise ValueError('missing eight fence acquisition/wait verdicts')
                 if [int(f[0]) for f in frames] != list(range(8)): raise ValueError('missing exact eight-frame sequence')
             else:
                 frames = re.findall(r'^X11_RESIZE_FRAME epoch=(\d+) frame=(\d+) image=\d+ size=(\d+)x(\d+) pixels=(\d+) exact=1$', log, re.M)

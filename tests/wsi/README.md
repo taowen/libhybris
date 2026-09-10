@@ -71,14 +71,15 @@ hybris-only because it exercises that adapter's allocation hooks.
 | --- | --- | --- |
 | Wayland | `present` | 24 GPU readbacks, three sizes, six physical screenshots, surface lifetimes |
 | Wayland | `swapchain-review` | Present plus allocator, timeout, retirement, old images and multi-present boundaries |
-| XCB/Xlib | `present` | Eight GPU readbacks, two physical screenshots, TAWC-DRI release before reuse |
-| XCB/Xlib | `resize` | 24 readbacks, three sizes, six screenshots, acquire/present out-of-date, semaphore reuse and swapchain replacement |
+| XCB/Xlib | `present` | Eight GPU readbacks, two physical screenshots, TAWC-DRI release before reuse; requires opaque composite alpha |
+| XCB/Xlib | `fence-acquire` | Eight fence-only acquisitions with color-attachment and transfer usage; bounded waits, status, repeated zero-timeout waits and reset checks, followed by the same readback/present evidence |
+| XCB/Xlib | `resize` | 24 readbacks, three sizes, six screenshots, acquire/present SUBOPTIMAL (queued), semaphore reuse and swapchain replacement |
 | XCB/Xlib | `surface-lost` | Destroy the native window while holding an image; surface/acquire/present errors, unchanged acquire index/fence and present semaphore reuse |
 | XCB/Xlib | `acquire-timeout` | Zero/finite acquire timeout with unchanged index and unsignaled fence |
 | XCB/Xlib | `missing-protocol` | Support false and eight surface rejections; requires an existing externally managed display without TAWC-DRI |
 | XCB/Xlib | `control` | XCB create/map/clear/GetImage environment check; no Vulkan or GPU claim |
 
-For XCB/Xlib `present` or `resize`, `--surface-format N` selects one advertised
+For XCB/Xlib `present`, `resize` or `fence-acquire`, `--surface-format N` selects one advertised
 VkFormat: 37 = RGBA8 UNORM, 44 = BGRA8 UNORM, 43 = RGBA8 SRGB, 50 = BGRA8 SRGB.
 The client logs the full advertised list and the selected format; the host
 checks the selection. An absent or unhandled format reports UNSUPPORTED.
