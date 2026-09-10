@@ -15,6 +15,7 @@ libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/device.c layer/physica
     compat/application_policy.c compat/application_policy.h \
     compat/memory_visibility.c compat/memory_visibility.h compat/rendering_segments.c compat/rendering_segments.h \
     compat/readback_record.c compat/readback_submit.c compat/readback.h \
+    compat/vertex_stores.c compat/vertex_stores.h compat/spirv_discard.c \
     compat/point_size.c compat/point_size.h \
     compat/spirv_inout.c compat/spirv_inout.h \
     compat/spirv_image_bounds.c compat/spirv_image_bounds.h \

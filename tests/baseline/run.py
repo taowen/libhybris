@@ -281,7 +281,7 @@ for backend, binary in (('native', 'probe-bionic'), ('hybris', 'probe-glibc')):
     cases.append((backend, 'memory-ranges', binary))
     cases.append((backend, 'blender-readback', binary))
     if a.selected_cases:
-        cases.extend((backend, mode, binary) for mode in ('blender-vk', 'blender-vk-5.2', 'blender-vk-5.2-optional-vertex'))
+        cases.extend((backend, mode, binary) for mode in ('blender-vk', 'blender-vk-5.2', 'vertex-store-raw', 'vertex-store-raw-enabled', 'vertex-store', 'vertex-store-validation', 'vertex-store-features2-validation'))
     cases.append((backend, 'vertex-policy', binary))
     cases.append((backend, 'bc-decode', binary))
     cases.append((backend, 'bc-images', binary))
@@ -331,7 +331,7 @@ if standard_backend:
     cases += [('icd', mode, 'probe-glibc')
               for mode in ('version', 'egl-vulkan', 'vulkan-egl', 'vertex-policy', 'vertex-policy-direct', 'native-buffer', 'bc-decode', 'bc-images', 'bc-images-gdpa', 'bc-images-dlsym', 'memory-ranges', 'blender-readback', 'groups', 'groups-dlsym', 'vk', 'vk-dlsym', 'vk-gdpa', 'vk-core11', 'vk-khr11', 'dispatch', 'life', 'vk-init', 'vk-alloc', 'icd-alloc-direct', 'unload', 'tls', 'caps', 'caps2', 'ubo', 'ubo-dynamic', 'ubo-multi', 'ubo-large', 'ubo-staged', 'ubo-template')]
     if a.selected_cases:
-        cases.extend(('icd', mode, 'probe-glibc') for mode in ('blender-vk', 'blender-vk-5.2', 'blender-vk-5.2-optional-vertex'))
+        cases.extend(('icd', mode, 'probe-glibc') for mode in ('blender-vk', 'blender-vk-5.2', 'vertex-store-raw', 'vertex-store-raw-enabled', 'vertex-store', 'vertex-store-validation', 'vertex-store-features2-validation'))
     cases += [('icd-linked', mode, 'probe-glibc-linked') for mode in ('vk', 'dispatch', 'point-size-linked')]
     cases.extend(('icd', mode, 'probe-glibc') for mode in (
         'ubo-pool-reset', 'ubo-pool-empty-reset'))
@@ -435,7 +435,9 @@ try:
                 'HYBRIS_ANDROID_SDK_VERSION=' + shlex.quote(metadata['ro.build.version.sdk']) + ' '
                 + ('HYBRIS_VULKAN_HAL=' + shlex.quote(a.icd_hal) + ' ' if a.icd_hal else '')
                 + 'VK_DRIVER_FILES=$PWD/driver.json '
-                + ' '.join(k + '=' + shlex.quote(v) for k, v in compat_env.items()) + ' '
+                + ' '.join(k + '=' + shlex.quote(
+                    'VK_LAYER_KHRONOS_validation:' + v if k == 'VK_INSTANCE_LAYERS' and mode in ('vertex-store-validation', 'vertex-store-features2-validation') else v)
+                    for k, v in compat_env.items()) + ' '
                 'PROBE_VK=$PWD/standard/libvulkan.so.1 '
                 'PROBE_ICD=$PWD/' + driver_relative + ' '
                 './glibc/ld-linux-aarch64.so.1 --library-path ' + standard_libraries + ' ./'

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "shader_policy.h"
+#include "vertex_stores.h"
 #include "scaled_formats.h"
 #include "bc_policy.h"
 #include "../layer/layer.h"
@@ -33,7 +34,7 @@ int hybris_shader_command_allowed(const char *name)
 }
 VkResult hybris_shader_prepare_device(VkPhysicalDevice physical, const VkDeviceCreateInfo *info)
 {
-    if (!hybris_shader_physical_mask(physical)) return VK_SUCCESS;
+    if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical)) return VK_SUCCESS;
     for (uint32_t i = 0; i < info->enabledExtensionCount; ++i)
         if (!hybris_shader_extension_allowed(info->ppEnabledExtensionNames[i])) return VK_ERROR_EXTENSION_NOT_PRESENT;
     for (const VkBaseInStructure *node = info->pNext; node; node = node->pNext) {
@@ -63,7 +64,7 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     PFN_vkGetPhysicalDeviceFeatures2 query = (PFN_vkGetPhysicalDeviceFeatures2)hybris_bc_policy_proc(name);
     if (!query) query = (PFN_vkGetPhysicalDeviceFeatures2)context.resolver(context.instance, name);
     query(physical, out);
-    if (!hybris_shader_physical_mask(physical)) return;
+    if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical)) return;
     for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext) {
         switch (node->sType) {
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
@@ -124,7 +125,7 @@ static void VKAPI_CALL properties2_khr(VkPhysicalDevice physical, VkPhysicalDevi
 { properties2(physical, out, "vkGetPhysicalDeviceProperties2KHR"); }
 PFN_vkVoidFunction hybris_shader_policy_proc(const char *name)
 {
-    if (!hybris_scaled_enabled()) return NULL;
+    /* Vertex-store discard conversion also requires complete static pipelines. */
     if (!strcmp(name, "vkGetPhysicalDeviceProperties2")) return (PFN_vkVoidFunction)properties2_core;
     if (!strcmp(name, "vkGetPhysicalDeviceProperties2KHR")) return (PFN_vkVoidFunction)properties2_khr;
     if (!strcmp(name, "vkGetPhysicalDeviceFeatures2")) return (PFN_vkVoidFunction)features2_core;

@@ -46,6 +46,7 @@ int memory_ranges_probe(int validate);
 int memory_readback_probe(int validate);
 int bc_decode_probe(int validate);
 int bc_images_probe(int validate, int route);
+int vertex_store_probe(int raw, int validate);
 int point_size_probe(int validate, int route);
 int dispatch_probe(void);
 int life_probe(int unload);

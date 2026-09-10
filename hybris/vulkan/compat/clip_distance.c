@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
 #include "clip_distance.h"
+#include "vertex_stores.h"
 #include "shader_policy.h"
 #include "bc_policy.h"
 #include "../layer/layer.h"
@@ -61,6 +62,7 @@ static void VKAPI_CALL features(VkPhysicalDevice physical, VkPhysicalDeviceFeatu
     if (!query) return;
     query(physical, out);
     if (hybris_clip_active(physical)) out->shaderClipDistance = VK_TRUE;
+    if (hybris_vertex_stores_active(physical)) out->vertexPipelineStoresAndAtomics = VK_TRUE;
 }
 
 static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out, const char *name)
@@ -69,6 +71,14 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     if (!query) return;
     query(physical, out);
     if (hybris_clip_active(physical)) out->features.shaderClipDistance = VK_TRUE;
+    if (hybris_vertex_stores_active(physical)) {
+        out->features.vertexPipelineStoresAndAtomics = VK_TRUE;
+        for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext)
+            if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT) {
+                VkPhysicalDeviceTransformFeedbackFeaturesEXT *tf = (void *)node;
+                tf->transformFeedback = tf->geometryStreams = VK_FALSE;
+            }
+    }
 }
 
 static void VKAPI_CALL features2_core(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out)

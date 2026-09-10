@@ -87,10 +87,18 @@ int main(int argc, char **argv) {
     rc = blender_vk_probe(0);
   else if (!strcmp(mode, "blender-vk-5.2"))
     rc = blender_vk_probe(1);
-  else if (!strcmp(mode, "blender-vk-5.2-optional-vertex"))
-    rc = blender_vk_probe(2);
   else if (!strcmp(mode, "wsi-disabled"))
     rc = caps_probe(1);
+  else if (!strcmp(mode, "vertex-store-raw"))
+    rc = vertex_store_probe(1, 0);
+  else if (!strcmp(mode, "vertex-store-raw-enabled"))
+    rc = vertex_store_probe(2, 0);
+  else if (!strcmp(mode, "vertex-store"))
+    rc = vertex_store_probe(0, 0);
+  else if (!strcmp(mode, "vertex-store-features2-validation"))
+    rc = vertex_store_probe(0, 2);
+  else if (!strcmp(mode, "vertex-store-validation"))
+    rc = vertex_store_probe(0, 1);
   else if (!strncmp(mode, "point-size", 10))
     rc = point_size_probe(strstr(mode, "validation") != NULL,
       strstr(mode, "gdpa") ? 1 : strstr(mode, "elf") ? 2 : strstr(mode, "linked") ? 3 : 0);

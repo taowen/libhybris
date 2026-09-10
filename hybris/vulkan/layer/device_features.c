@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "device_features.h"
+#include "../compat/vertex_stores.h"
 #include "../compat/clip_distance.h"
 #include "../compat/scaled_vertex.h"
 #include <vulkan/vk_layer.h>
@@ -33,16 +34,24 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     struct hybris_device_features *out)
 {
     *out = (struct hybris_device_features){.info = *info};
-    if (!hybris_clip_active(physical)) return VK_SUCCESS;
+    int clip = hybris_clip_active(physical);
+    int stores = hybris_vertex_stores_active(physical);
+    if (!clip && !stores) return VK_SUCCESS;
+    if (stores) for (uint32_t i = 0; i < info->enabledExtensionCount; ++i)
+        if (!strcmp(info->ppEnabledExtensionNames[i], VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME))
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
     if (info->pEnabledFeatures) {
         out->features = *info->pEnabledFeatures;
-        out->features.shaderClipDistance = VK_FALSE;
+        if (clip) out->features.shaderClipDistance = VK_FALSE;
+        if (stores) out->features.vertexPipelineStoresAndAtomics = VK_FALSE;
         out->info.pEnabledFeatures = &out->features;
     }
     const VkBaseInStructure *target = info->pNext;
     while (target && target->sType != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2)
         target = target->pNext;
-    if (!target || !((const VkPhysicalDeviceFeatures2 *)target)->features.shaderClipDistance)
+    if (!target) return VK_SUCCESS;
+    const VkPhysicalDeviceFeatures *requested = &((const VkPhysicalDeviceFeatures2 *)target)->features;
+    if (!(clip && requested->shaderClipDistance) && !(stores && requested->vertexPipelineStoresAndAtomics))
         return VK_SUCCESS;
 
     /* Only copy the prefix needed to replace Features2. Preserve every other
@@ -67,7 +76,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
         *slot = copy;
         slot = &copy->pNext;
         if (node == target) {
-            ((VkPhysicalDeviceFeatures2 *)copy)->features.shaderClipDistance = VK_FALSE;
+            if (clip) ((VkPhysicalDeviceFeatures2 *)copy)->features.shaderClipDistance = VK_FALSE;
+            if (stores) ((VkPhysicalDeviceFeatures2 *)copy)->features.vertexPipelineStoresAndAtomics = VK_FALSE;
             copy->pNext = (void *)out->suffix;
             break;
         }

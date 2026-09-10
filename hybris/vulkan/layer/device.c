@@ -2,6 +2,7 @@
 #define VK_NO_PROTOTYPES
 #include "layer.h"
 #include "device_features.h"
+#include "../compat/vertex_stores.h"
 #include "../compat/application_policy.h"
 #include "../compat/scaled_vertex.h"
 #include "../compat/shader_dispatch.h"
@@ -122,6 +123,7 @@ void VKAPI_CALL hybris_layer_destroy_device(VkDevice handle, const VkAllocationC
     hybris_memory_visibility_release_device(handle);
     hybris_layer_commands_release_device(handle);
     hybris_bc_device_remove(handle);
+    hybris_vertex_stores_release_device(handle);
     hybris_shader_device_destroy(handle);
     struct device_state *retired = NULL;
     pthread_mutex_lock(&guard);
@@ -144,6 +146,7 @@ PFN_vkVoidFunction hybris_layer_device_inner_proc(VkDevice handle, const char *n
     PFN_vkVoidFunction compat = hybris_bc_proc(name);
     if (!compat) compat = hybris_shader_cleanup_proc(name);
     if (!compat) compat = hybris_shader_proc(name);
+    if (!compat) compat = hybris_vertex_stores_proc(name);
     return compat ? compat : next;
 }
 PFN_vkVoidFunction hybris_layer_device_dispatch(const char *name, int track_commands)
@@ -156,6 +159,7 @@ PFN_vkVoidFunction hybris_layer_device_dispatch(const char *name, int track_comm
     if (!compat) compat = hybris_bc_proc(name);
     if (!compat) compat = hybris_shader_cleanup_proc(name);
     if (!compat) compat = hybris_shader_proc(name);
+    if (!compat) compat = hybris_vertex_stores_proc(name);
     return compat;
 }
 PFN_vkVoidFunction VKAPI_CALL hybris_layer_get_device_proc(VkDevice handle, const char *name)

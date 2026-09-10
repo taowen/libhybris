@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "layer.h"
+#include "../compat/vertex_stores.h"
 #include "../compat/shader_dispatch.h"
 #include "../compat/shader_policy.h"
 #include "../compat/bc_policy.h"
@@ -64,7 +65,8 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
         context.resolver(context.instance, "vkEnumerateDeviceExtensionProperties");
     unsigned bc_mask = layer ? 0 : hybris_bc_physical_mask(physical);
     unsigned shader_mask = layer ? 0 : hybris_shader_physical_mask(physical);
-    if (layer || (!bc_mask && !shader_mask))
+    int vertex_stores = !layer && hybris_vertex_stores_active(physical);
+    if (layer || (!bc_mask && !shader_mask && !vertex_stores))
         return enumerate(physical, layer, count, properties);
     uint32_t available = 0;
     VkResult result = enumerate(physical, NULL, &available, NULL);
@@ -75,8 +77,9 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     if (result != VK_SUCCESS && result != VK_INCOMPLETE) { free(all); return result; }
     uint32_t kept = 0, written = 0, capacity = properties ? *count : 0;
     for (uint32_t i = 0; i < available; ++i) {
+        if (vertex_stores && !strcmp(all[i].extensionName, VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME)) continue;
         if ((bc_mask && !hybris_bc_extension_allowed(all[i].extensionName)) ||
-            (shader_mask && !hybris_shader_extension_allowed(all[i].extensionName))) continue;
+            ((shader_mask || vertex_stores) && !hybris_shader_extension_allowed(all[i].extensionName))) continue;
         if (properties && written < capacity) properties[written++] = all[i];
         ++kept;
     }

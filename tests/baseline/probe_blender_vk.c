@@ -4,7 +4,7 @@
  * 5.2.1: Blender revision 9e2066aef7ef, vk_backend.cc. */
 int blender_vk_probe(int modern)
 {
-  printf("BLENDER_VK_REQ profile=%s scope=startup-requirements\n", modern == 2 ? "5.2.1+09417042a1fa" : modern ? "5.2.1" : "4.3");
+  printf("BLENDER_VK_REQ profile=%s scope=startup-requirements\n", modern ? "5.2.1" : "4.3");
   void *h = dlopen(getenv("PROBE_VK") ?: "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!h) {
     printf("Vulkan dlopen: %s\n", dlerror());
@@ -101,8 +101,7 @@ int blender_vk_probe(int modern)
     NEED(features.features.drawIndirectFirstInstance, "draw indirect first instance");
     NEED(features.features.fragmentStoresAndAtomics, "fragment stores and atomics");
     if (modern) {
-      if (modern == 1)
-        NEED(features.features.vertexPipelineStoresAndAtomics, "vertex pipeline stores and atomics");
+      NEED(features.features.vertexPipelineStoresAndAtomics, "vertex pipeline stores and atomics");
       NEED(f11.shaderDrawParameters, "shader draw parameters");
       NEED(f12.timelineSemaphore, "timeline semaphores");
       NEED(f12.bufferDeviceAddress, "buffer device address");
