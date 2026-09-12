@@ -11,7 +11,7 @@
 | 协议定义 | Arlinux `protocols/` 的 `arlinux-wsi-protocols` 包，包含 TAWC-DRI 0.4 和 `android_wlegl`；hybris 不再自带 XML |
 | Xwayland | 只由 Arlinux `third_party/xwayland` 构建；hybris 构建独立客户端，runner 默认附着到已安装、运行中的 `io.taowen.arlinux.debian` |
 | 合成器入口 | Arlinux anlabwc scene 消费 AHB；客户端工具不再构建旧测试 APK 或私有 Xwayland |
-| 产品 Mesa 源码 | `taowen/mesa` 的 `ardesk-wsi`，固定 `bfe5f4ce`，构建时不 apply WSI patch |
+| 产品 Mesa 源码 | `taowen/mesa` 的 `arlinux-wsi`，固定 `bfe5f4ce`，构建时不 apply WSI patch |
 | Mesa 探针构建 | desktop-gl 调用产品 `tools/build/mesa.sh`，直接打包产品库，记录产品提交/源码树/协议校验值；不再维护第二套 pin |
 | 窗口验证入口 | `tests/wsi/run.py --backend hybris/turnip` 共用客户端、validation、capture/replay、截图与 X11 release 检查；Turnip 直接复用产品 Mesa runtime，见[证据](../tests/wsi/product-backends.md) |
 | frontend 窗口删除 | EGL Wayland/X11 插件和 PRESENT_SOCKET 已删除；Vulkan frontend 插件层已删除；Gladio/Vortek GPU host 和 APK 内 shm 演示客户端已删除。窗口 runner 只走标准 loader + ICD；native-window 在 `vulkan/icd/`。旧 overlay 目录 `usr/lib/{gladio,vortek}` 仅在安装时清掉 |

@@ -9,7 +9,7 @@ SPIRV-Tools' debug-iterator fix lives in
 [taowen/SPIRV-Tools, branch ardesk-vvl-1.4.362](https://github.com/taowen/SPIRV-Tools/tree/ardesk-vvl-1.4.362),
 commit `adc7d8b01ae855292822192ae870ab1df19e40a3`, based on upstream
 `b40380bfa431d028fb7ca8eb375e4d21ea98a70e`. The earlier SDK 1.4.309-based
-`94043c878ff46fc2d7d48084696ef5fb02f5e3ea` remains on branch `ardesk` for
+`94043c878ff46fc2d7d48084696ef5fb02f5e3ea` remains on branch `arlinux` for
 reproducing old runs.
 `FlattenDecorationPass` now advances past non-`OpName` debug entries, including
 `OpMemberName`, instead of hanging on valid grouped modules. It preserves

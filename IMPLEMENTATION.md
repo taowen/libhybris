@@ -63,7 +63,7 @@ product path.
 ## Maintained dependency forks (2026-09-08)
 
 GFXReconstruct's empty-submit fix and SPIRV-Tools' debug-iterator fix now live
-in `taowen/gfxreconstruct` and `taowen/SPIRV-Tools`, both on branch `ardesk`.
+in `taowen/gfxreconstruct` and `taowen/SPIRV-Tools`, both on branch `arlinux`.
 Builders pin their fork commits directly; the two build-time patches have
 been removed. Both AArch64 builds and the applicable Redmi/Mali capture and
 validation regressions pass. [Fork pins and exact migration checks](docs/tool-forks.md)
@@ -72,7 +72,7 @@ retain replay comparison limits and the known unresolved failures.
 ## Current Mesa dependency
 
 Current desktop-GL probes reuse the product Mesa build (`taowen/mesa`
-`ardesk-wsi` at `bfe5f4ceb762504532ccdd7f19c1c2cdd31791b4`). Official
+`arlinux-wsi` at `bfe5f4ceb762504532ccdd7f19c1c2cdd31791b4`). Official
 unmodified upstream `c3b008c1` remains historical offscreen evidence only.
 The product fork is based on that upstream commit with the shared WSI
 changes committed directly.
