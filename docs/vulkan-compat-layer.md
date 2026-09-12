@@ -146,7 +146,7 @@ successful subsequent submit/wait/present calls, and no rendering-inspector
 sequence findings. Physical screenshots retain the visibly incomplete UI;
 successful Vulkan returns do not replace that failed application gate.
 
-Artifacts are under Ardesk `build/blender-vulkan/`: `rendering-layer-*` build
+Artifacts are under Arlinux `build/blender-vulkan/`: `rendering-layer-*` build
 and X300 logs, `redmi-rendering-layer*` application logs/maps/capture/analysis,
 and `redmi-layer-{probes,owners,dispatch}/` per-case logs and exact commands.
 Only isolated layer directories under the Redmi app's `files/run` were

@@ -6,7 +6,7 @@
 
 ## 当前产品栈与统一状态（2026-09-09）
 
-现行 compositor 入口为已安装的 `io.taowen.ardesk`；Xwayland 由 Ardesk
+现行 compositor 入口为已安装的 `io.taowen.arlinux.debian`；Xwayland 由 Arlinux
 构建，libhybris 只构建客户端。后文 `io.taowen.hybriswsitest` 等名称属于
 注明日期的历史记录，不能作为当前夹具或验收步骤。
 产品 Mesa 已使用 `taowen/mesa` 的 WSI fork `bfe5f4ce`；下面的官方
@@ -27,7 +27,7 @@ Turnip 强制 BC 图像用例的
 12,524 个比较错误也未关闭。两端 Blender 启动截图与转换前后 capture
 文件不代替应用建模/保存/resize 或 capture replay 验收。
 后续两端已完成 staged Blender 的脚本建模、保存、全屏/恢复尺寸切换和
-同进程重新打开，最终截图确认模型可见、VVL 错误为零；见 Ardesk
+同进程重新打开，最终截图确认模型可见、VVL 错误为零；见 Arlinux
 [工作流证据](../../tests/blender/README.md)。正式安装整合、任意 resize 压测、
 长期使用与 capture replay 仍未验收。
 
@@ -130,7 +130,7 @@ Vortek 的封包不能改善 API 语义。不要把 command ring/socket 加回�
 
 ## 3. 两次 Blender 失败揭示的缺口
 
-下面引用的 `../../docs/` 是父级 ardesk 的本地调查记录，独立 clone 本仓库时不可访问，因此这里保留必要摘要；不是本轮重新验证的结果。
+下面引用的 `../../docs/` 是父级 arlinux 的本地调查记录，独立 clone 本仓库时不可访问，因此这里保留必要摘要；不是本轮重新验证的结果。
 
 ### 3.1 Mali：立方体正常，widget 白底、品红条
 
@@ -374,7 +374,7 @@ descriptor 需在实际使用时重建有效状态：普通 set、copy/update te
 | smoke | 现有 baseline + 正确加载路径/dispatch 检查 | adb、glibc runtime、hybris；无窗口 |
 | semantic | texture/mips/sRGB/swizzle、UBO/descriptor、多 pass、同步、shader 转换 | 同上；无窗口；每项明确 reference |
 | blender-shaped | Mali widget 数据与 draw、Turnip View3D 多资源复用组合 | 普通 Vulkan/GLES 程序；不能把未复现的 probe 标成原 bug 回归通过 |
-| wsi | buffer 交接、fence/release、resize、颜色、窗口生命周期 | 独立小型 bionic receiver/compositor；X11 需要匹配 Xwayland；不需要完整 ardesk 应用 |
+| wsi | buffer 交接、fence/release、resize、颜色、窗口生命周期 | 独立小型 bionic receiver/compositor；X11 需要匹配 Xwayland；不需要完整 arlinux 应用 |
 | cts | 指定 API/version/feature 用例列表、分批运行 | 固定 CTS 和 runner；glibc 与 bionic 两种构建 |
 | apps | Blender fixture、默认场景/UI、orbit/resize 与其它目标应用 | 最终集成环境；单独记录 app/version/backend |
 
@@ -418,7 +418,7 @@ descriptor 需在实际使用时重建有效状态：普通 set、copy/update te
 ### Original Debian Blender after desktop resize (2026-09-09)
 
 The original Debian Blender 4.3.2 package now completed the Mali Vulkan model,
-save, fullscreen/restore and reopen workflow in Ardesk's desktop session. The
+save, fullscreen/restore and reopen workflow in Arlinux's desktop session. The
 fix keeps live resized X11 buffers presentable with SUBOPTIMAL and real acquire
 synchronization; it does not alter Blender or skip fence waits. An independent
 resize run passed exact frames/screenshots, release ordering and validation.

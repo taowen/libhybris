@@ -2,7 +2,7 @@
 
 One entry point runs Wayland, XCB and Xlib clients against an installed,
 already running debuggable compositor APK. Xwayland and its TAWC-DRI patches
-belong to Ardesk or the external APK; android_wlegl belongs to anlabwc.
+belong to Arlinux or the external APK; android_wlegl belongs to anlabwc.
 The same clients select either the hybris ICD or product Mesa/Turnip through
 the standard Vulkan loader. libhybris builds and deploys only client artifacts.
 The runner does not install, start, restart or stop the compositor or X server.
@@ -17,7 +17,7 @@ python3 tests/x11/build.py
 
 Install/start the compositor with its owning project's tooling. See the
 [external service contract](compositor/README.md). The default package is
-`io.taowen.ardesk`; `--package` selects another installed debuggable
+`io.taowen.arlinux.debian`; `--package` selects another installed debuggable
 compositor package. The default Wayland socket is `files/runtime/wayland-0`. Use `--runtime-dir`
 and `--wayland-display` for the endpoints supplied by the APK; an absolute
 Wayland socket path is also accepted. Hybris X11 checks do not require a Wayland
@@ -141,7 +141,7 @@ validation failure with pre-deletion controls.
 
 ## Application window gates
 
-The parent Ardesk tests reuse this Host for the per-device lock, compositor
+The parent Arlinux tests reuse this Host for the per-device lock, compositor
 identity, bounded execution, screenshots and cleanup:
 
 - `tests/test-scene-ahb-device.py` — native AHB/TAWC-DRI scene pixels. Not a

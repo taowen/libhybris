@@ -16,7 +16,7 @@ already running compositor APK and its existing local `DISPLAY`. Both XCB and
 Xlib use that display and optional `XAUTHORITY`. The watchdog owns only its
 client process; it neither creates a listening socket nor launches a server.
 
-Xwayland and TAWC-DRI patches belong to Ardesk's `third_party/xwayland` or an
+Xwayland and TAWC-DRI patches belong to Arlinux's `third_party/xwayland` or an
 external test APK; android_wlegl belongs to anlabwc. The libhybris ICD owns
 only the TAWC-DRI/android_wlegl client. It requires a local AF_UNIX connection,
 a supported TrueColor visual and TAWC-DRI 0.3. PresentBuffer sends gralloc

@@ -53,7 +53,7 @@ For Redmi use serial `29854870`, output directory `adreno`, HAL
 `/vendor/lib64/hw/vulkan.adreno.so`, and omit the Mali quirk. For Turnip use
 `--backend turnip` and omit both HAL and loader arguments; the runner verifies
 and stages the product Mesa runtime from `tests/desktop-gl/build`.
-An Ardesk X display must be running. The first Redmi attempt
+An Arlinux X display must be running. The first Redmi attempt
 `20260910T113533-2b5d3cef` failed X11 connection before Vulkan initialization;
 the display was started before the recorded reruns below.
 

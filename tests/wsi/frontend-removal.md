@@ -11,7 +11,7 @@ not retained behind a build switch:
 - The frontend window branch and environment selection in the WSI runner.
 
 The ICD's existing Wayland native-window implementation moved unchanged to
-`hybris/vulkan/icd/`. Its X11 implementation includes the shared Ardesk protocol
+`hybris/vulkan/icd/`. Its X11 implementation includes the shared Arlinux protocol
 header directly. The replacement Vulkan library remains a headless diagnostic
 path; it forwards global queries directly to Android's resolver. Its direct
 swapchain export still checks the device resolver, since the Android ELF export
@@ -46,7 +46,7 @@ shell syntax and diff checks pass.
 
 Both devices use their vendor HAL through the ICD for these window runs; these
 are **not Turnip window results**. The external service is installed
-`io.taowen.ardesk`. VVL is the pinned 1.4.362 build; capture runs separately with
+`io.taowen.arlinux.debian`. VVL is the pinned 1.4.362 build; capture runs separately with
 the recorded GFXReconstruct build. Results are under the build's
 `baseline-results/`, `window-results/` and `window-controls/` directories.
 

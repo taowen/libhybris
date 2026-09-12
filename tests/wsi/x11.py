@@ -40,7 +40,7 @@ def run(a, host, out):
     env = dict(backend['env'], DISPLAY=a.display, XDG_RUNTIME_DIR=a.runtime_dir,
                WAYLAND_DISPLAY=a.wayland,
                HYBRIS_ANDROID_SDK_VERSION=prop('ro.build.version.sdk'))
-    env['ARDESK_WSI_TRACE' if a.backend == 'turnip' else 'HYBRIS_X11_TRACE'] = '1'
+    env['ARLINUX_WSI_TRACE' if a.backend == 'turnip' else 'HYBRIS_X11_TRACE'] = '1'
     if a.surface_format is not None: env['WSI_SURFACE_FORMAT'] = str(a.surface_format)
     if a.xauthority: env['XAUTHORITY'] = a.xauthority
     server = {'source': 'external-service', 'display': a.display, 'xauthority': a.xauthority}

@@ -60,7 +60,7 @@ Automatic mode leaves the MMUD environment variable unset:
   failed in these runs. The corrected mixed-mode results are listed above.
 - Mali Wayland `20260908T182203-a8525800` and XCB resize
   `20260908T182422-fff10323`: PASS with VVL/SyncVal and no explicit MMUD switch,
-  attaching to the installed Ardesk compositor. They retain GPU readbacks,
+  attaching to the installed Arlinux compositor. They retain GPU readbacks,
   physical screenshots and unchanged compositor identity.
 
 - Mali teapots `tests/wsi/build/results/mmud-teapots-20260908T182729`:
@@ -69,7 +69,7 @@ Automatic mode leaves the MMUD environment variable unset:
   environment confirms the MMUD variable is absent. Both Android screenshots
   show the orange teapot within its decorated window. These MMUD records are
   visual checks, not the later Host teapot pixel gate. The runner, logs and provenance are saved
-  with the result. Ardesk, its Mesa and the APK remain installed unchanged.
+  with the result. Arlinux, its Mesa and the APK remain installed unchanged.
   An earlier temporary launch (`mmud-teapots-20260908T182535`) forced an absolute
   HAL path under the guest rootfs shim and failed namespace access before
   instance creation. The passing run uses the product's normal HAL discovery.

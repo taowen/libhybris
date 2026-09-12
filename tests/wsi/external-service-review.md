@@ -1,7 +1,7 @@
 # External window-service boundary (2026-09-08)
 
 libhybris is the glibc/bionic driver bridge and a WSI protocol client. Xwayland
-and TAWC-DRI server patches belong to Ardesk's third_party/xwayland or an
+and TAWC-DRI server patches belong to Arlinux's third_party/xwayland or an
 external test APK; android_wlegl belongs to anlabwc.
 
 Removed from this tree: the Xwayland source archive/patch/build/dependency
@@ -49,7 +49,7 @@ private-server passes are retained as history, not claimed for this workflow.
 The old installed test APK explicitly set `WLR_XWAYLAND=/system/bin/false`:
 its compositor never owned an enabled Xwayland service, because the former
 probe supervisor supplied it. Its mere presence is therefore insufficient for
-new X11 tests. Ardesk already supplies `libxwayland.so` via WLR_XWAYLAND and
+new X11 tests. Arlinux already supplies `libxwayland.so` via WLR_XWAYLAND and
 anlabwc sets DISPLAY from the Xwayland instance it creates. Enabling that
 existing owner-side chain and exposing its actual endpoint resolves the missing
 service prerequisite; the local display number must not be guessed.

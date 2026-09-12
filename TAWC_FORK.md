@@ -2,16 +2,16 @@
 
 This fork is claudeslop: AI-written and AI-maintained as part of the [tawc](https://codeberg.org/sphi/tawc) project.
 
-**Current Ardesk fork:** https://github.com/taowen/libhybris (`ardesk`)
+**Current Arlinux fork:** https://github.com/taowen/libhybris (`ardesk`)
 
 **Historical tawc fork:** https://github.com/wmww/libhybris
 
-## Current Ardesk desktop contract
+## Current Arlinux desktop contract
 
 Desktop clients use the standard glibc Vulkan loader with either Turnip WSI
 (Adreno) or the hybris ICD WSI (vendor HALs/Mali). Desktop GL uses Mesa Zink.
-The shared protocols live in Ardesk `protocols/`; Xwayland and the compositor
-are built by Ardesk, and client runners attach to installed `io.taowen.ardesk`.
+The shared protocols live in Arlinux `protocols/`; Xwayland and the compositor
+are built by Arlinux, and client runners attach to installed `io.taowen.arlinux.debian`.
 The frontend Wayland/EGL X11 plugins and PRESENT_SOCKET implementation have
 been deleted. The Vulkan frontend no longer has a window-plugin loader;
 it remains available for headless Android-loader diagnostics. Wayland
@@ -119,7 +119,7 @@ release before reuse; their outstanding contract checks are tracked in the
 
 The original tawc fork rebased/amended its patch series and tagged each update `tawc-DD-Mon-YYYY-N` (e.g. `tawc-15-Apr-2026-1`) so previous states can be recovered even after force-pushes.
 
-## Current Ardesk build
+## Current Arlinux build
 
 Build libhybris from this checkout:
 
@@ -127,8 +127,8 @@ Build libhybris from this checkout:
 tools/build-aarch64.sh
 ```
 
-Ardesk consumes the resulting installation through `HYBRIS_LIB_DIR`. Product
-Mesa and server builds belong to Ardesk; window probes attach to its running
+Arlinux consumes the resulting installation through `HYBRIS_LIB_DIR`. Product
+Mesa and server builds belong to Arlinux; window probes attach to its running
 compositor. See the [build evidence](tests/baseline/build.md),
 [window instructions](tests/wsi/README.md) and
 [shared protocol contract](docs/stack-consolidation.md).

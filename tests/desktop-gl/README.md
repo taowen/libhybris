@@ -1,8 +1,8 @@
 # Desktop OpenGL with product Mesa
 
-The probe uses the parent Ardesk product Mesa build, currently `26.3.0-devel`
+The probe uses the parent Arlinux product Mesa build, currently `26.3.0-devel`
 at `bfe5f4ceb762504532ccdd7f19c1c2cdd31791b4` in
-[taowen/mesa](https://github.com/taowen/mesa). This fork adds Ardesk WSI to
+[taowen/mesa](https://github.com/taowen/mesa). This fork adds Arlinux WSI to
 upstream Mesa; it does not add custom Zink vertex conversion. Zink emits Vulkan
 through the standard glibc loader. Select the hybris ICD for an Android vendor
 HAL, or the bundled Turnip ICD on an Adreno KGSL device. Mesa implements EGL
@@ -13,7 +13,7 @@ SNORM fallback and its static capability/property policy. On Mali the requested
 GL 3.3 context, main draw and twelve packed draws now pass with validation. See the
 [actual packed results and limitations](../baseline/packed-vertex.md).
 
-Build prerequisites are the parent Ardesk checkout, Podman and its GL
+Build prerequisites are the parent Arlinux checkout, Podman and its GL
 cross-builder. `build.sh` calls the parent's `tools/build/mesa.sh`, then packages
 ELFs directly from `build/mesa-upstream/lib` and compiles the probe using
 `tools/ensure-glibc-builder.sh`. There is no separate probe Mesa revision,
@@ -165,7 +165,7 @@ product-window/teapot gate or G06/G12 in full.
 ## Product Mesa build reuse (2026-09-08)
 
 The product build was actually reconfigured, compiled and installed through
-Ardesk `tools/build/mesa.sh`; the desktop C probe was recompiled. Mesa is
+Arlinux `tools/build/mesa.sh`; the desktop C probe was recompiled. Mesa is
 `980c6429e6cb83cb0c394ecad558211f63eab6db`, tree
 `1e2f6193016c512f6ff9d15eb019aa798f4c22ac`. Packaged libGL, libEGL, libgallium,
 libvulkan, Turnip and zink_dri were byte-compared with the product installation;
@@ -225,7 +225,7 @@ prove Blender rendering. The user accepts Blender incompatibility through
 Zink, so Blender-on-Zink is not an acceptance gate. Private Xvfb :189 and both ADB reverses are removed
 after validation.
 
-The parent Ardesk build also compiles official Zink+Turnip, stages the standard
+The parent Arlinux build also compiles official Zink+Turnip, stages the standard
 loader and zink/swrast DRI aliases, and builds the APK. Upstream capability gaps
 remain open; historical fork passes below are not evidence for this dependency.
 
@@ -342,7 +342,7 @@ omits the EGL path's `MESA_LOADER_DRIVER_OVERRIDE=zink`, which would require DRI
 on the test X server. Runtime manifest hashes now include the DRI subdirectory.
 
 An independent host Xvfb was used, with only its Unix socket exposed to the
-phone through an ADB reverse (no changes to the running Ardesk desktop):
+phone through an ADB reverse (no changes to the running Arlinux desktop):
 
 ```sh
 Xvfb :181 -screen 0 960x640x24 -nolisten tcp -ac -noreset
@@ -363,7 +363,7 @@ pbuffer tests, not validation of swaps, resize or visible application rendering.
 The existing surfaceless EGL core-3.3 regression also passed in
 `20260907T111349-36d45a8a` after the shared-draw refactor.
 
-The actual installed Blender 4.3.2 was additionally launched under the Ardesk
+The actual installed Blender 4.3.2 was additionally launched under the Arlinux
 app UID using its rootfs dependencies, the newly built GLX runtime and a fresh
 HOME/config directory. It displayed the unsupported-platform dialog identifying
 Mesa/Zink and Mali, then logged:
@@ -641,7 +641,7 @@ SyncVal reports no errors. Each native run has 12 SPIR-V modules and each
 compute run 85; all 291 validate with Vulkan 1.3 and uniform-buffer-standard-layout.
 Per-run disassemblies and `spirv-validation.json` retain tool versions, commands,
 module hashes and image hashes. Private Xvfb :184 and its ADB reverse were
-removed afterward; the existing Ardesk application was not changed.
+removed afterward; the existing Arlinux application was not changed.
 
 This resolves the reproduced valid-buffer first-instance/divisor failure and
 DrawID transition failure. It does not validate out-of-bounds/robust fetches,

@@ -18,13 +18,13 @@ BUILT_SOURCES = wayland-android-protocol.c \
 		wayland-android-client-protocol.h \
 		wayland-android-server-protocol.h
 
-wayland-android-protocol.c : $(ARDESK_WSI_PROTOCOL_DIR)/wayland-android.xml
+wayland-android-protocol.c : $(ARLINUX_WSI_PROTOCOL_DIR)/wayland-android.xml
 	$(AM_V_GEN)$(WAYLAND_SCANNER) code < $< > $@
 
-wayland-android-server-protocol.h : $(ARDESK_WSI_PROTOCOL_DIR)/wayland-android.xml
+wayland-android-server-protocol.h : $(ARLINUX_WSI_PROTOCOL_DIR)/wayland-android.xml
 	$(AM_V_GEN)$(WAYLAND_SCANNER) server-header < $< > $@
 
-wayland-android-client-protocol.h : $(ARDESK_WSI_PROTOCOL_DIR)/wayland-android.xml
+wayland-android-client-protocol.h : $(ARLINUX_WSI_PROTOCOL_DIR)/wayland-android.xml
 	$(AM_V_GEN)$(WAYLAND_SCANNER) client-header < $< > $@
 
 endif

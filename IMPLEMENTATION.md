@@ -76,14 +76,14 @@ Current desktop-GL probes reuse the product Mesa build (`taowen/mesa`
 unmodified upstream `c3b008c1` remains historical offscreen evidence only.
 The product fork is based on that upstream commit with the shared WSI
 changes committed directly.
-The product handoff is in Ardesk's `docs/GRAPHICS_CONSOLIDATION.md`. Both use this libhybris
-repository. Since `734ec73`, Ardesk's `protocols/` is the sole wire-contract
-source, selected for standalone builds by `ARDESK_WSI_PROTOCOL_DIR`. Window
-regressions attach to the running Ardesk (`io.taowen.ardesk`, X display `:1`).
+The product handoff is in Arlinux's `docs/GRAPHICS_CONSOLIDATION.md`. Both use this libhybris
+repository. Since `734ec73`, Arlinux's `protocols/` is the sole wire-contract
+source, selected for standalone builds by `ARLINUX_WSI_PROTOCOL_DIR`. Window
+regressions attach to the running Arlinux (`io.taowen.arlinux.debian`, X display `:1`).
 Surface formats are based on AHB import queries, not ordinary-image support.
 The inspected X300 MMUD loader workaround now activates automatically for its
 known driver build, including EGL-first processes. Mixed-API, Wayland/XCB
-validation and installed-Ardesk GLX/EGL teapot checks pass with newly staged
+validation and installed-Arlinux GLX/EGL teapot checks pass with newly staged
 libraries and no MMUD environment override; explicit disable reproduces the
 pipeline crash. [Evidence and scope](docs/mali-mmud.md) retain the remaining
 MMUD optimization limits. Compositor `read_pixels`, screen-capture protocol
@@ -120,7 +120,7 @@ Mali or a Turnip connection through the hybris ICD.
 
 Independent smoke/semantic/device workloads are used for verification. No new
 unit-test suite or general capture/replay engine is planned. Completed batches
-are committed and pushed separately to taowen/ardesk.
+are committed and pushed separately to taowen/arlinux.
 
 ## Remaining acceptance work
 
@@ -873,7 +873,7 @@ Tests/wsi/compositor provides an independent debug APK and per-run process
 wrapper. The small Java/JNI host supplies a real Android Surface to anlabwc;
 its native dependency closure and xkb assets are imported from a caller-selected
 APK with recorded hashes. The separate package/UID and fresh process remove
-cross-run native-state accumulation without restarting Ardesk. Both X300 and
+cross-run native-state accumulation without restarting Arlinux. Both X300 and
 Redmi now pass the same three-size screen gate on this chosen backend. This is
 not a source-built compositor or a fix for long-lived backend resource leaks.
 

@@ -98,7 +98,7 @@ No general resource graph, queue retirement framework or WSI changes were added.
 
 ## Validation and remaining failures
 
-Evidence lives in the Ardesk parent workspace under
+Evidence lives in the Arlinux parent workspace under
 `build/mali-pipeline-investigation/20260909T101306/`. Each application result
 retains the command, runtime hashes/manifest, loaded maps and screenshots.
 These runs include the user's existing uncommitted WSI/fence changes, preserved

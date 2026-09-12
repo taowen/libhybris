@@ -156,7 +156,7 @@ The [fork commit](https://github.com/taowen/gfxreconstruct/commit/e6865bedad471a
 submit's semaphore/fence work. Replaying the **same capture** with the patched
 tool completed all 27 readbacks and matched all 15 saved images. This comparison
 used the pre-consolidation runtime saved with that capture; subsequent runs use
-libhybris `734ec73`, built with Ardesk's shared protocol package.
+libhybris `734ec73`, built with Arlinux's shared protocol package.
 
 Using `-m rebind` on the original descriptor-buffer capture is not a solution:
 the pinned tool explicitly warns that this mode is unsupported and Mali logged
@@ -188,7 +188,7 @@ correct-versus-wrong binding capture/replay pairs pass (5 PASS). The tools
 were built with the fixed patch, then rebuilt through the clean-source patch
 application path; every installed file remained byte-identical. The final
 libhybris clean build used `734ec73` and
-`ARDESK_WSI_PROTOCOL_DIR=/var/home/taowen/projects/glibc-on-bionic/ardesk/protocols`.
+`ARLINUX_WSI_PROTOCOL_DIR=/var/home/taowen/projects/glibc-on-bionic/arlinux/protocols`.
 Shell syntax, Python compilation and actual helper hashes recorded in the
 final runs were checked. Earlier manual commands, failed logs and partial
 outputs remain under the source captures' `capture/replay-attempts/`.

@@ -132,7 +132,7 @@ An upstream VVL/SyncVal run did not diagnose the sequence below.
 
 The standard GFXReconstruct layer captured frames 1–2 with unassisted memory
 tracking. The original failure still occurred during capture. Evidence in the
-parent Ardesk workspace is under
+parent Arlinux workspace is under
 `build/mali-pipeline-investigation/20260909T101306/blender-phi-fix-capture-104859/`:
 `capture.tar`, `conversion/calls.jsonl`, `rendering-analysis.json`, the runtime
 manifest, loaded maps and application log. This is a real application capture,

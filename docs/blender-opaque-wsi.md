@@ -1,6 +1,6 @@
 # Blender opaque composition on Redmi — 2026-09-09
 
-The transparent background is fixed in the Ardesk window transport. Redmi's
+The transparent background is fixed in the Arlinux window transport. Redmi's
 installed product Mesa and Blender launcher now use the shared compatibility
 layer and the matching Xwayland. The saved edited model opens with an opaque
 viewport. **Full Blender acceptance remains FAIL:** default-size startup still
@@ -8,7 +8,7 @@ stops after failed acquire; this batch does not repair Blender's acquire logic.
 
 ## Contract and implementation
 
-The Ardesk WSI advertised only `VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR`, but sent
+The Arlinux WSI advertised only `VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR`, but sent
 RGBA/BGRA buffers through a premultiplied-alpha compositor path. Valid application
 alpha zero therefore leaked the windows underneath. Buffer readback alone could
 not detect this failure.
@@ -63,7 +63,7 @@ as recorded below.
 
 ### Mali alpha-zero regression
 
-X300 `10AFA31610002QH` used the running product `io.taowen.ardesk` with
+X300 `10AFA31610002QH` used the running product `io.taowen.arlinux.debian` with
 `/vendor/lib64/hw/vulkan.mali.so`. The runner staged the previously built,
 manifest-verified `/tmp/libhybris-rendering-layer-clean-build` runtime; ICD
 SHA-256 is `04e7cd84e5093bd78e95dbdaf1d86f674a87da88135532cf6905ad3ada96cda9`.
@@ -84,7 +84,7 @@ installation or a rebuild of the HAL adapter.
 
 The existing Wayland client was rebuilt during this regression batch. Its
 SHA-256 `7681f82b166f3acde7730c4ab4874885a6241713333f946813fb66b1e2837f19`
-is byte-identical to the client used in both runs. Artifacts are under Ardesk
+is byte-identical to the client used in both runs. Artifacts are under Arlinux
 `build/blender-vulkan/mali-opaque-wayland-{results,validation,probe}` with the
 corresponding build and run logs. No unit tests or new probe cases were added.
 This closes the missing Mali Wayland alpha-zero observation only; X11
@@ -94,7 +94,7 @@ outside this evidence.
 ## Product integration and remaining failure
 
 `tools/install-guest-gpu.sh` packages the standard layer in
-`usr/lib/ardesk/vulkan` for both GPU overlays. It takes the supplied libhybris
+`usr/lib/arlinux/vulkan` for both GPU overlays. It takes the supplied libhybris
 library directory. The common glibc runtime now enables the same compatibility
 layer for both ICDs and all applications, without adding the Android Vulkan
 frontend to the library search path. Existing explicitly ordered layer lists
@@ -110,7 +110,7 @@ app; updating the asset matters because startup recopies the launcher.
 This is a tested component APK update, not a full Gradle rebuild or fresh-install
 qualification. Backups of the earlier APK and manual deployment are retained.
 Maps and device hashes confirm live Blender uses `rootfs/usr/lib/mesa` and
-`rootfs/usr/lib/ardesk/vulkan`, without a staged driver override. The final
+`rootfs/usr/lib/arlinux/vulkan`, without a staged driver override. The final
 screenshot shows `interactive.blend` in the 3D viewport with no terminal text
 leaking through it.
 
@@ -137,7 +137,7 @@ has been introduced to mask this application failure.
   `1e8ad39ac9a574e7d118fc47fc21f9446e7d3f0f6aeb42cb0355056b1df8de23`.
 
 Mesa and Xwayland were built with the repository builders; the Wayland probe
-was compiled with its existing builder. Ignored evidence under Ardesk
+was compiled with its existing builder. Ignored evidence under Arlinux
 `build/blender-vulkan/redmi-opaque-*` retains build logs, source/runtime manifests,
 APK comparison, deployment hashes, negative/positive physical screenshots,
 raw images, validation logs, API capture and final product maps. The isolated

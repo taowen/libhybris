@@ -104,10 +104,10 @@ AC_ARG_ENABLE(x11,
   [x11="no"])
 AM_CONDITIONAL( [WANT_X11], [test x"$x11" = x"yes"])
 AS_IF([test x"$wayland" = x"yes" || test x"$x11" = x"yes"], [
-    PKG_CHECK_MODULES(ARDESK_WSI_PROTOCOLS, [ardesk-wsi-protocols >= 0.3])
-    CPPFLAGS="$CPPFLAGS $ARDESK_WSI_PROTOCOLS_CFLAGS"
-    ARDESK_WSI_PROTOCOL_DIR=`$PKG_CONFIG --variable=pkgdatadir ardesk-wsi-protocols`
-    AC_SUBST(ARDESK_WSI_PROTOCOL_DIR)
+    PKG_CHECK_MODULES(ARLINUX_WSI_PROTOCOLS, [arlinux-wsi-protocols >= 0.3])
+    CPPFLAGS="$CPPFLAGS $ARLINUX_WSI_PROTOCOLS_CFLAGS"
+    ARLINUX_WSI_PROTOCOL_DIR=`$PKG_CONFIG --variable=pkgdatadir arlinux-wsi-protocols`
+    AC_SUBST(ARLINUX_WSI_PROTOCOL_DIR)
 ])
 
 

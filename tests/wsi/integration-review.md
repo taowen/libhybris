@@ -11,7 +11,7 @@
 
 `tests/wsi/run.py --backend hybris|turnip --platform wayland|xcb|xlib`
 attaches to an installed, already running compositor; the default package is
-`io.taowen.ardesk`. Ardesk owns anlabwc, Xwayland and their build/installation.
+`io.taowen.arlinux.debian`. Arlinux owns anlabwc, Xwayland and their build/installation.
 The runner stages clients and their selected Vulkan runtime, records service
 identity and collects evidence. It does not build a private APK/server or
 start and stop those services. Package, socket and display arguments select

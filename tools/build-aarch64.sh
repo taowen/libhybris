@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/tests/baseline/build"
 HEADERS=""
-PROTOCOLS="${ARDESK_WSI_PROTOCOL_DIR:-$ROOT/../../protocols}"
+PROTOCOLS="${ARLINUX_WSI_PROTOCOL_DIR:-$ROOT/../../protocols}"
 CLEAN=0
 DEBUG_BUILD=0
 INCREMENTAL=0
@@ -24,8 +24,8 @@ Builds libhybris for aarch64 glibc and stages:
 Without --headers, fetch the pinned Android headers using this repository's
 tools/fetch-android-headers.sh. tools/ensure-builder.sh builds the pinned
 Debian cross-toolchain recipe. BUILDER_IMAGE may explicitly override it.
-ARDESK_WSI_PROTOCOL_DIR selects the shared Ardesk protocol package (defaults
-to ../../protocols when checked out inside Ardesk). It is snapshotted and
+ARLINUX_WSI_PROTOCOL_DIR selects the shared Arlinux protocol package (defaults
+to ../../protocols when checked out inside Arlinux). It is snapshotted and
 included in cache validation and build provenance.
 Build snapshots, header/compiler identities and ELF hashes are recorded.
 --debug enables existing libhybris logging/trace macros (runtime opt-in).
@@ -48,8 +48,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ ! -f "$PROTOCOLS/ardesk-wsi-protocols.pc" ]]; then
-    echo "Set ARDESK_WSI_PROTOCOL_DIR to the Ardesk protocols package directory." >&2
+if [[ ! -f "$PROTOCOLS/arlinux-wsi-protocols.pc" ]]; then
+    echo "Set ARLINUX_WSI_PROTOCOL_DIR to the Arlinux protocols package directory." >&2
     exit 2
 fi
 

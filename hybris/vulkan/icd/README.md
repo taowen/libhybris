@@ -5,7 +5,7 @@ Android Vulkan HAL through libhybris. It does not load Android libvulkan, modify
 dispatchable object headers, build a private layer chain or edit pNext lists.
 HAL objects already reserve the loader dispatch word; the glibc loader owns it.
 
-The Ardesk desktop path uses the standard glibc Vulkan loader with this ICD
+The Arlinux desktop path uses the standard glibc Vulkan loader with this ICD
 for Mali/vendor HALs, or Turnip WSI for supported Adreno devices. The replacement
 libvulkan frontend is retained for headless diagnostics; its desktop window
 plugins and plugin-loading layer have been deleted. EGL Wayland/X11 and
@@ -102,8 +102,8 @@ scope is multiwindow, disconnect, delayed release and longer lifetime, not a
 hybris EGL X11 window plugin.
 
 The [X11 client probes](../../../tests/x11/README.md) build only clients and
-run through that same window runner. Xwayland is built in Ardesk; the runner
-attaches to the already running, installed `io.taowen.ardesk` compositor and
+run through that same window runner. Xwayland is built in Arlinux; the runner
+attaches to the already running, installed `io.taowen.arlinux.debian` compositor and
 its existing display/socket. Both Adreno and Mali passed XCB/Xlib present,
 protocol rejection, acquire timeout, resize and surface-lost with VVL/SyncVal.
 No Mesa or anlabwc change was required. See that document for protocol

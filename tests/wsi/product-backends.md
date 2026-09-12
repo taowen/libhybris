@@ -31,7 +31,7 @@ Turnip needs the compositor Wayland allocator even for XCB/Xlib presentation.
   GFXReconstruct build at `ab565b27`.
 
 Mesa and both C window clients were actually rebuilt. The runs attach to the
-already running `io.taowen.ardesk`; they do not install a new APK. Each run
+already running `io.taowen.arlinux.debian`; they do not install a new APK. Each run
 retains APK identity, compositor identity checks, input manifests, source and
 ELF hashes, live mappings, logs, readbacks and physical screenshots.
 Raw records are under `/tmp/libhybris-product-wsi-results/<run>/`.
@@ -66,7 +66,7 @@ swapchain and does not constitute a second physical presentation.
 
 Turnip `20260908T213140-4e5dd292` rendered eight frames with zero validation
 errors but failed the unchanged X11 gate because the product driver had no
-present/release trace. Mesa `ea1cc179` added `ARDESK_WSI_TRACE=1` at successful
+present/release trace. Mesa `ea1cc179` added `ARLINUX_WSI_TRACE=1` at successful
 presentation and matched release events. XCB resize then passed in
 `20260908T213729-0a3e39a5`.
 
@@ -80,7 +80,7 @@ FAIL in their raw records; no screen or release gate was weakened.
 
 ## Remaining scope
 
-Ardesk teapot/scene application workloads reuse Host rather than these
+Arlinux teapot/scene application workloads reuse Host rather than these
 Vulkan clients. Delayed release, disconnect and destruction races are
 coverage expansions, not a second window runner.
 `swapchain-review` remains hybris-only because it uses adapter-specific
@@ -145,7 +145,7 @@ window destruction. No application-level recovery or long-run FD claim is made.
 
 ## DMA-BUF import capability gate — 2026-09-08
 
-Product Mesa now shares `wsi_common_ardesk_formats.c` between surface format
+Product Mesa now shares `wsi_common_arlinux_formats.c` between surface format
 enumeration, capabilities and swapchain creation. The four RGBA/BGRA UNORM/SRGB
 values are candidates, not unconditional advertisements. A direct candidate
 must pass an external DMA-BUF image query with the linear DRM modifier and
@@ -179,7 +179,7 @@ tree `2b05420a962de62a0f97cc1db3609be8142ecb94`; Turnip SHA256 is
 `cb500da84232058b7dc410272bae5f7ebc231269ac932ecd548fcd2baa6eddd9`.
 Mesa and the updated X11 C client were actually rebuilt. The devices, standard
 loader, VVL and hybris runtime are the same verified inputs described above.
-Raw records live under `build/libhybris-import-gate-results/` in the ardesk
+Raw records live under `build/libhybris-import-gate-results/` in the arlinux
 checkout; `/tmp/libhybris-import-gate-results/` is a compatibility symlink.
 The directory was migrated after the host `/tmp` user quota interrupted
 `20260908T223023-18994930` before client execution; that failed record is
@@ -220,7 +220,7 @@ races and teapot/scene application gates remain outside these results.
 
 ## Native scene shared Host — 2026-09-08
 
-Ardesk's `tests/test-scene-ahb-device.py` now uses the same Host as the Vulkan
+Arlinux's `tests/test-scene-ahb-device.py` now uses the same Host as the Vulkan
 window probes: per-device exclusion, external APK/PID/starttime identity,
 bounded execution, owned-client cleanup and physical screenshot transport.
 The exact scene pixel checker is separated into `tests/scene_ahb_evidence.py`;

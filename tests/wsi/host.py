@@ -12,7 +12,7 @@ import tarfile
 import time
 from manifest import sha256_file
 
-PACKAGE = 'io.taowen.ardesk'
+PACKAGE = 'io.taowen.arlinux.debian'
 MALI_GPU_FAULT = re.compile(r'Received a (GROUP_(?:QUEUE_)?ERROR_[A-Z0-9_]+) error on group\(')
 VULKAN_DEVICE_LOST = re.compile(r'\b(VK_ERROR_DEVICE_LOST)\b')
 

@@ -126,7 +126,7 @@ the identical source tree `311afb501466d20c26509410df3f8a091d50e850`.
 The build provenance retains both identities rather than claiming a rebuild.
 The replay sources are clean `c2ff0eec`, including the host build.
 
-Ignored artifacts live under Ardesk `build/blender-vulkan/`: `redmi-layer-*`
+Ignored artifacts live under Arlinux `build/blender-vulkan/`: `redmi-layer-*`
 capture analyses, resource/shader controls and replay outputs;
 `redmi-pool-{reset,empty-reset}-before/`, `redmi-pool-reset-after/`, build and
 X300 logs; and `redmi-fixed-turnip-*` screenshots, maps, provenance and saved

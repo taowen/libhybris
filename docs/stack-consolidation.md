@@ -8,9 +8,9 @@
 
 | 项 | 现行实现 |
 | --- | --- |
-| 协议定义 | Ardesk `protocols/` 的 `ardesk-wsi-protocols` 包，包含 TAWC-DRI 0.4 和 `android_wlegl`；hybris 不再自带 XML |
-| Xwayland | 只由 Ardesk `third_party/xwayland` 构建；hybris 构建独立客户端，runner 默认附着到已安装、运行中的 `io.taowen.ardesk` |
-| 合成器入口 | Ardesk anlabwc scene 消费 AHB；客户端工具不再构建旧测试 APK 或私有 Xwayland |
+| 协议定义 | Arlinux `protocols/` 的 `arlinux-wsi-protocols` 包，包含 TAWC-DRI 0.4 和 `android_wlegl`；hybris 不再自带 XML |
+| Xwayland | 只由 Arlinux `third_party/xwayland` 构建；hybris 构建独立客户端，runner 默认附着到已安装、运行中的 `io.taowen.arlinux.debian` |
+| 合成器入口 | Arlinux anlabwc scene 消费 AHB；客户端工具不再构建旧测试 APK 或私有 Xwayland |
 | 产品 Mesa 源码 | `taowen/mesa` 的 `ardesk-wsi`，固定 `bfe5f4ce`，构建时不 apply WSI patch |
 | Mesa 探针构建 | desktop-gl 调用产品 `tools/build/mesa.sh`，直接打包产品库，记录产品提交/源码树/协议校验值；不再维护第二套 pin |
 | 窗口验证入口 | `tests/wsi/run.py --backend hybris/turnip` 共用客户端、validation、capture/replay、截图与 X11 release 检查；Turnip 直接复用产品 Mesa runtime，见[证据](../tests/wsi/product-backends.md) |
@@ -23,7 +23,7 @@
 | 项 | 现状与剩余验收 |
 | --- | --- |
 | 产品 GPU 后端 | 标准 loader → Turnip WSI（Adreno）；标准 loader → hybris ICD WSI（Mali/vendor HAL）。不需要合成一个 DSO |
-| 导入 | ICD `wsi.c:image_limits` 按 AHB external-image 查询并要求 IMPORTABLE，再筛格式和 usage；Turnip `wsi_common_ardesk_formats.c` 先查询线性 DMA-BUF image 或 DMA-BUF buffer + GPU copy 的导入能力，再筛格式、usage 与 extent；创建时仍验证实际 FD、布局、大小和内存类型。见[查询与真机范围](../tests/wsi/product-backends.md#dma-buf-import-capability-gate--2026-09-08) |
+| 导入 | ICD `wsi.c:image_limits` 按 AHB external-image 查询并要求 IMPORTABLE，再筛格式和 usage；Turnip `wsi_common_arlinux_formats.c` 先查询线性 DMA-BUF image 或 DMA-BUF buffer + GPU copy 的导入能力，再筛格式、usage 与 extent；创建时仍验证实际 FD、布局、大小和内存类型。见[查询与真机范围](../tests/wsi/product-backends.md#dma-buf-import-capability-gate--2026-09-08) |
 | FIFO/release | 两条产品路径都有 FIFO 和实际 release 驱动的复用；共同门已有 acquire-timeout 和原生 X 窗口销毁后的 surface-lost；断连、延迟 release 和并发销毁竞态仍待验收 |
 | usage/alpha/extent | Turnip 保留 opaque alpha，usage/extent 按可导入路径查询计算；ICD `wsi.c` 也广告并传递 opaque alpha，并按 HAL 导入查询计算 usage/extent。不能把这些不同值机械改成相同；需以 compositor 实际消费语义和每条导入路径逐项验收 |
 
@@ -36,8 +36,8 @@
 
 ## 构建边界与 Mali quirk
 
-独立 libhybris checkout 通过 `ARDESK_WSI_PROTOCOL_DIR` 指向共享协议包；
-嵌入 Ardesk 时构建器默认查找 `../../protocols`。产品打包/安装通过
+独立 libhybris checkout 通过 `ARLINUX_WSI_PROTOCOL_DIR` 指向共享协议包；
+嵌入 Arlinux 时构建器默认查找 `../../protocols`。产品打包/安装通过
 `HYBRIS_LIB_DIR` 选择已构建的 hybris 安装产物，不能再复制一份协议 XML。
 
 MMUD 是 HAL 初始化兼容处理，既不是协议字段，也不是 WSI 能力。
@@ -58,7 +58,7 @@ MMUD 是 HAL 初始化兼容处理，既不是协议字段，也不是 WSI 能�
 这不覆盖所有格式、混合 alpha 或窗口生命周期。usage 也需按每个广告位的真实图像操作验证，而不是仅在
 createInfo 中请求该位。extent 的 resize 证据不涵盖所有边界和创建竞态。
 
-Ardesk teapot 的 Zink 真窗口与 `tests/test-scene-ahb-device.py` 的原生
+Arlinux teapot 的 Zink 真窗口与 `tests/test-scene-ahb-device.py` 的原生
 AHB scene 是不同工作负载，但共用 Host。scene 不是 Vulkan 客户端，不能
 靠设置 VVL/GFXReconstruct 环境冒充窗口探针。teapot 的画面和 resize
 由产品像素检查负责；Khronos 层的探针验证与应用诊断分别记录；应用复用捕获部署和文件保留，
@@ -83,7 +83,7 @@ HAL ICD 保留 Android 加载、队列和 WSI；Turnip 使用产品 Mesa ICD。
 截图与有界日志。PID 加启动时间绑定诊断和清理，允许应用切换目录。
 捕获位置可选择兼容转换前或后；应用捕获保存原始文件，不冒充像素回放验收。
 `OBSERVED` 仅表示完成诊断观察，应用操作/保存/resize 验收仍为 unverified。
-此归并已实际打包并安装到两台设备，产品部署记录见 Ardesk 的
+此归并已实际打包并安装到两台设备，产品部署记录见 Arlinux 的
 `docs/vulkan-compatibility.md`。后续 Features2 请求修复也已重装 APK，
 两端产品 GLX/Wayland 茶壶呈现、缩放像素门通过，见
 [设备特性链证据](../tests/baseline/device-features.md)。

@@ -38,7 +38,7 @@ clip continuation block, leaving value IDs unchanged. In the captured
 third fragment, the only resulting binary difference is word 363:
 predecessor ID 5 becomes ID 127. The corrected module passes validation.
 
-Evidence is retained in the Ardesk parent workspace at
+Evidence is retained in the Arlinux parent workspace at
 `build/mali-pipeline-investigation/20260909T101306/`:
 
 - `phi-fix-build.log`: full AArch64 build and runtime manifest validation.

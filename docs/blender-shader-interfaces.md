@@ -70,7 +70,7 @@ These product teapot checks are distinct from the staged Blender observations.
 
 Local records are in `/tmp/mali-blender-interface/`,
 `/tmp/libhybris-unified-app-results/`, `/tmp/libhybris-features-results/`, and
-Ardesk `build/blender-vulkan/shader-interfaces/`. The latter retains the three
+Arlinux `build/blender-vulkan/shader-interfaces/`. The latter retains the three
 before/after pipeline modules, inspection reports, app logs/screenshots and
 installed-product checks. The earlier failing run remains as the control.
 Blender's acquire fix packaging, full workflows, capture replay pixels and the
@@ -82,6 +82,6 @@ remaining gaps are still unfinished. Blender through Zink is not required.
 Subsequent unified-layer runs `20260909T221555-8fd1ebb4` (Turnip) and
 `20260909T221618-99521293` (Mali) completed scripted model/save/fullscreen/restore/
 reopen operations, with zero VVL error markers and inspected final model
-screenshots. See Ardesk's [workflow evidence](../../../tests/blender/README.md)
+screenshots. See Arlinux's [workflow evidence](../../../tests/blender/README.md)
 for exact scope, the retained initial script failure and remaining product
 installation boundary. This does not add shader corpus or replay coverage.

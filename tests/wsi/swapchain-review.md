@@ -1,7 +1,7 @@
 # ICD swapchain review, 2026-09-07
 
 Current entry: `tests/wsi/run.py` attaches to installed, already running
-`io.taowen.ardesk`; Xwayland is built only by Ardesk. References below to
+`io.taowen.arlinux.debian`; Xwayland is built only by Arlinux. References below to
 `io.taowen.hybriswsitest` describe historical runs and are not current launch
 instructions. This review covers the hybris ICD probe, not the Turnip product
 window or teapot/scene validation gate. See the
@@ -98,7 +98,7 @@ finish with no unfreed or foreign allocations. The main probe subsequently check
 At the user's request the Qualcomm comparison uses OnePlus 8T
 `192.168.1.28:5555`, Android 13, queried ICD API 1.1.128, replacing the Redmi.
 The existing dedicated `io.taowen.hybriswsitest` APK was installed on the OnePlus;
-Ardesk was not replaced. Mali remains vivo X300 `10AFA31610002QH`, Android 16,
+Arlinux was not replaced. Mali remains vivo X300 `10AFA31610002QH`, Android 16,
 queried ICD API 1.3.305 with the existing explicit build-id-scoped MMUD quirk.
 Each run retains APK/library hashes, command, staged artifacts and device build
 fingerprint under `tests/wsi/build/isolated/`.

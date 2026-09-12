@@ -8,7 +8,7 @@ commands and endpoints are retired; use [the current runner](README.md).
 This optional standalone probe exercises either the replacement Vulkan frontend
 or, with `--icd-hal`, the standard-loader ICD against a running Android compositor exposing `wl_compositor`, `xdg_wm_base`
 and `android_wlegl`. The default
-endpoint is the existing debuggable `io.taowen.ardesk` app's `files/runtime/wayland-0`.
+endpoint is the existing debuggable `io.taowen.arlinux.debian` app's `files/runtime/wayland-0`.
 Start that app and its desktop before running; the runner does not install,
 restart or update it. A stale socket is not evidence that a compositor is running.
 
@@ -246,7 +246,7 @@ not implemented by this collector.
 A separate [disposable compositor APK](compositor/README.md) now provides the
 same fixed-window probe with its own package, process and Android Surface.
 Its wrapper restarts only that test package for each run, avoiding pollution
-of the Ardesk desktop's native compositor state. Backend binaries are imported
+of the Arlinux desktop's native compositor state. Backend binaries are imported
 from an explicitly selected APK and hashed; this does not fix the backend's
 long-lived binding-table reclamation gap.
 
@@ -416,16 +416,16 @@ historical evidence for their own revisions.
 
 This small debug APK runs the existing anlabwc backend on its own Activity
 Surface. Its package is `io.taowen.hybriswsitest`, with its own UID, process,
-files/runtime directory and Wayland socket. It does not start Ardesk, a rootfs,
+files/runtime directory and Wayland socket. It does not start Arlinux, a rootfs,
 xterm, Gladio or Vortek. It is a developer test fixture, not a desktop app.
 
 Build from an explicitly supplied APK containing libanlabwc, its native
 libraries and xkb assets:
 
 ```sh
-python3 tests/wsi/compositor/build.py --backend-apk /path/to/ardesk-debug.apk \
+python3 tests/wsi/compositor/build.py --backend-apk /path/to/arlinux-debug.apk \
     --sdk /path/to/Android/Sdk
-/path/to/ardesk/tools/install-apk.sh --serial SERIAL \
+/path/to/arlinux/tools/install-apk.sh --serial SERIAL \
     tests/wsi/build/compositor/hybris-wsi-test.apk
 tests/wsi/build.sh
 python3 tests/wsi/compositor/run.py --serial SERIAL
@@ -448,9 +448,9 @@ To test a source change in anlabwc while retaining the selected APK's support
 libraries and xkb data, build that checkout and replace just its backend:
 
 ```sh
-meson compile -C /path/to/ardesk/build/ndk-anlabwc
-python3 tests/wsi/compositor/build.py --backend-apk /path/to/ardesk-debug.apk \
-    --backend-library /path/to/ardesk/build/ndk-anlabwc/libanlabwc.so \
+meson compile -C /path/to/arlinux/build/ndk-anlabwc
+python3 tests/wsi/compositor/build.py --backend-apk /path/to/arlinux-debug.apk \
+    --backend-library /path/to/arlinux/build/ndk-anlabwc/libanlabwc.so \
     --sdk /path/to/Android/Sdk
 ```
 
@@ -474,7 +474,7 @@ UNSUPPORTED); the wrapper succeeds only when every requested client passes.
 Rebuild the WSI probe for its `WSI_CLIENT` PID evidence. FD snapshots are
 observations, not a leak-freedom gate: startup and driver work may affect them.
 The run ends with the same package cleanup even on failure. Installation is separate and explicit;
-it never replaces the Ardesk package. Closing the test Surface terminates
+it never replaces the Arlinux package. Closing the test Surface terminates
 its process, so the fixture does not reuse a destroyed Surface or native
 globals. This also means backgrounding the test Activity may end a run.
 
@@ -492,11 +492,11 @@ GPU state, not a hermetic filesystem or Android graphics stack.
 Initial validation on 2026-09-07 imported backend APK SHA256
 b29b7d92d15c223785b66be8934e2983f9113aefeee9e7e55873ad7046fa3553 and generated
 APK dcfa145739e5b3dd9582ad0dab92ef8d1621f1bcc8bcb0e090bb325885fe6647.
-Both phones installed that separate package via Ardesk's install-apk.sh.
+Both phones installed that separate package via Arlinux's install-apk.sh.
 X300 `20260907T095503-db4c5402` and Redmi `20260907T095503-961cc48c`
 both pass three sizes, 24 frames and 254,976 screen pixels. Redmi now exercises
 actual android_wlegl presentation through this selected backend; its previously
-installed Ardesk compositor remains a different, unsupported endpoint.
+installed Arlinux compositor remains a different, unsupported endpoint.
 
 No standard-loader ICD WSI, presented capture/replay, arbitrary applications,
 compositor restart recovery inside a run, long-lived leak freedom or GPU fault
@@ -511,7 +511,7 @@ compositor logs (16,777 / 16,885 bytes, not truncated), and ended with no test
 PID. Two prior wrapper rounds also passed. Startup now waits for one stable
 PID as well as a socket, because a short-lived same-name child was observed
 on X300 during startup. The per-device host lock is present but competing
-wrapper invocations were not separately exercised. Original Ardesk packages
+wrapper invocations were not separately exercised. Original Arlinux packages
 were not replaced; foreground Surface availability is still shared with Android.
 
 Repeated-client validation on 2026-09-07: the rebuilt probe and `--repeat 10`
@@ -593,7 +593,7 @@ memory/FD lifetime, simultaneous window placement or API compatibility gates.
 This independent tool builds a glibc Vulkan client, a small Android process
 supervisor and a private TAWC-DRI Xwayland. It uses the disposable
 `io.taowen.hybriswsitest` compositor APK. Each invocation selects one check;
-it does not launch the Ardesk desktop or a rootfs. No Mesa changes are needed.
+it does not launch the Arlinux desktop or a rootfs. No Mesa changes are needed.
 The existing anlabwc android_wlegl backend accepts the imported buffers.
 
 ## Build and run
@@ -604,15 +604,15 @@ Supply an Android Xwayland source checkout and an existing NDK dependency
 prefix containing `android-cross.ini`, `native.ini`, headers, libraries and
 pkg-config files. The builder reads these inputs, builds an isolated source
 copy under ignored `tests/x11/build`, and never installs into that prefix.
-The tested base is Ardesk's Android-patched Xwayland 24.1.6, commit
+The tested base is Arlinux's Android-patched Xwayland 24.1.6, commit
 `6372702c0c12461787d9fab351912b9663dbcea4`.
 Host requirements include Meson/Ninja, Git, tar, patchelf, the baseline pinned
 cross-builder container and Android NDK 29.0.14206865.
 
 ```sh
 python3 tests/x11/build.py \
-  --xwayland-source /path/to/ardesk/third_party/xwayland \
-  --ndk-prefix /path/to/ardesk/build/ndk-prefix
+  --xwayland-source /path/to/arlinux/third_party/xwayland \
+  --ndk-prefix /path/to/arlinux/build/ndk-prefix
 python3 tests/x11/run.py --serial SERIAL --api xcb --case present \
   --icd-hal /vendor/lib64/hw/vulkan.adreno.so \
   --vulkan-loader /path/to/glibc/libvulkan.so.1

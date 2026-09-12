@@ -128,7 +128,7 @@ render/export and the original OnePlus failure remain open.
 
 ## Artifacts and tool verification
 
-Local ignored artifacts are under Ardesk `build/blender-vulkan/`:
+Local ignored artifacts are under Arlinux `build/blender-vulkan/`:
 `redmi-product-{baseline,validation,capture,small-window,small-capture,small-debug-validation}.log`,
 `redmi-product-baseline-stacks.txt`, baseline/validation `.maps`,
 `redmi-product-small-window.crash.txt`, `redmi-product-identities.txt`,

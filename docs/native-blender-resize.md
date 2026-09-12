@@ -7,7 +7,7 @@ Blender 4.3.2 executable has SHA256
 
 ## Failure and diagnosis
 
-The application was started from Ardesk's existing xterm with its normal desktop
+The application was started from Arlinux's existing xterm with its normal desktop
 environment. GDB's default executable detection saw the explicitly invoked
 loader. A known-stack fixture established that mapping-based ELF symbol loading
 can recover the application call chain. Applied in the same desktop session,
@@ -48,12 +48,12 @@ No application-name checks or application source/package changes are involved.
 ## Evidence and limits
 
 The isolated library build differed from the previous deployed source in only
-`icd/swapchain.c` and `icd/native_window_x11.cpp`. It was packaged into Ardesk's
+`icd/swapchain.c` and `icd/native_window_x11.cpp`. It was packaged into Arlinux's
 APK and the installed ICD hash matched the packaged overlay:
 `965f2d5da6756678a8efd9f2650a949be5633f182d9c1583776dd8afdabf3512`.
 APK SHA256: `b1e5d792d85d1ca74fc078001b7e06ebe156eed07e71d72e15f53395c4f0c1b8`.
 The package database and an existing document retained their pre-upgrade hashes.
-The APK also includes the pending general runtime changes from Ardesk; this was
+The APK also includes the pending general runtime changes from Arlinux; this was
 not an isolated APK change limited to the ICD.
 
 Original Blender, launched normally with its supported `--gpu-backend vulkan`
@@ -67,7 +67,7 @@ The independent XCB resize probe checked 24 frames at three sizes, screenshot
 pixels, two SUBOPTIMAL transitions, successful acquire fence waits, present
 semaphore reuse, and 26 protocol presents with matching release-before-reuse
 ordering. The Khronos validation run reported zero errors and passed the host
-checks. Evidence: Ardesk `build/native-debian/wsi-resize-vvl/20260909T233737-41cc54ef`.
+checks. Evidence: Arlinux `build/native-debian/wsi-resize-vvl/20260909T233737-41cc54ef`.
 The separate surface-loss run also passed with validation, preserving the
 error result, unchanged acquire index, unsignaled fence and present-wait reuse
 checks (`wsi-surface-lost-vvl/20260909T233926-427ac8d3`).

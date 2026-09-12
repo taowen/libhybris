@@ -1,7 +1,7 @@
 # Window validation/capture review, 2026-09-07
 
 Current entry: `tests/wsi/run.py` attaches to installed, already running
-`io.taowen.ardesk`; Xwayland is built only by Ardesk. References below to
+`io.taowen.arlinux.debian`; Xwayland is built only by Arlinux. References below to
 `io.taowen.hybriswsitest` describe historical runs and are not current launch
 instructions. This review covers the hybris ICD probe, not the Turnip product
 window or teapot/scene validation gate. See the

@@ -4,7 +4,7 @@ This is a source comparison, not a claim of Vortek or libhybris conformance.
 The reviewed host source is the local `x11-glibc-apk/app/src/main/cpp/` tree.
 Its three files below are byte-identical to the extracted upstream archive
 `winlator-app-c2f4ad4534f4637b543a9a3b085e28f50cf6d01c` in the workspace.
-The old `ardesk/android/...` links in gaps.md no longer identify existing files.
+The old `arlinux/android/...` links in gaps.md no longer identify existing files.
 
 | Host source under `vortekrenderer/src/` | SHA-256 |
 | --- | --- |

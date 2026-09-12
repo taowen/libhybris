@@ -72,7 +72,7 @@ runtime and default/explicit layer environment checks also pass.
 
 Local evidence: `/tmp/libhybris-features-results`,
 `/tmp/libhybris-unified-app-results`, `/tmp/mali-teapot-{before,after}.jsonl`, and
-Ardesk `build/blender-vulkan/device-features/`. The previous failing captures and
+Arlinux `build/blender-vulkan/device-features/`. The previous failing captures and
 product results remain available. Broader gaps, including direct Vulkan Blender's
 VS/GS interface error and Turnip's forced BC image failures, remain open.
 The later [shader-interface batch](../../docs/blender-shader-interfaces.md) fixes
