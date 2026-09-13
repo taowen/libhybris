@@ -1,0 +1,803 @@
+{
+  "date": "2026-09-13",
+  "scope": "Android generated namespace config; no HYBRIS_LD_LIBRARY_PATH override",
+  "devices": {
+    "redmi": {
+      "device": {
+        "ro.product.model": "M2012K11AC",
+        "ro.build.fingerprint": "Redmi/alioth/alioth:13/TKQ1.221114.001/V816.0.10.0.TKHCNXM:user/release-keys",
+        "ro.build.version.sdk": "33",
+        "run_id": "20260913T221741-a5933b37",
+        "instance_evidence_sha256": "3959c7e870051748c9e56179bea9f2a7b6a740916bdbb3c00ff289db5d9dabbf",
+        "device_evidence_sha256": "173a8abca0efe6011f17d9a3090a61086f1401edd665bb51cb00938670995bba",
+        "scaled_evidence_sha256": "1a3babcf71472978143ca327cc54944cb8643a34c1069e091ef50022fb27387a",
+        "packed_evidence_sha256": "23325fb01ca4078192684a828af84ea6e47378dc474a54650a398f880f70a0cb",
+        "commands": {
+          "hybris-tls-mrs": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221741-a5933b37",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=33 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc tls-mrs",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "native-vk": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221741-a5933b37",
+            "command": "PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so ./probe-bionic vk",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "native-2": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221741-a5933b37",
+            "command": "PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so ./probe-bionic 2",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "native-3": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221741-a5933b37",
+            "command": "PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so ./probe-bionic 3",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-vk": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221741-a5933b37",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=33 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc vk",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-2": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221741-a5933b37",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=33 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc 2",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-3": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221741-a5933b37",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=33 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc 3",
+            "output": "stderr merged into stdout on device before adb transport"
+          }
+        },
+        "driver_observations": {
+          "hybris-tls-mrs": [],
+          "native-vk": [
+            "GPU Adreno (TM) 650 Vulkan=1.1.128 driver=0x801f6000 BC=0 ETC2=1 ASTC=1 geometry=1 tessellation=1 float64=0 int64=0"
+          ],
+          "native-2": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 650 version=OpenGL ES 3.2 V@0502.0 (GIT@db3d445dbc, Ia06b22fa1a, 1633355031) (Date:10/04/21) GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "native-3": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 650 version=OpenGL ES 3.2 V@0502.0 (GIT@db3d445dbc, Ia06b22fa1a, 1633355031) (Date:10/04/21) GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "hybris-vk": [
+            "GPU Adreno (TM) 650 Vulkan=1.1.128 driver=0x801f6000 BC=0 ETC2=1 ASTC=1 geometry=1 tessellation=1 float64=0 int64=0"
+          ],
+          "hybris-2": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 650 version=OpenGL ES 3.2 V@0502.0 (GIT@db3d445dbc, Ia06b22fa1a, 1633355031) (Date:10/04/21) GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "hybris-3": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 650 version=OpenGL ES 3.2 V@0502.0 (GIT@db3d445dbc, Ia06b22fa1a, 1633355031) (Date:10/04/21) GLSL=OpenGL ES GLSL ES 3.20"
+          ]
+        },
+        "icd_mali_loader_quirk_requested": null,
+        "mapping_note": "Snapshots observe file-backed paths at named phases. Staged hashes describe deployment files; Android file hashes are collected by path after execution, not from mapped pages.",
+        "hybris_source_commit": "62a9a8f61f4c00d8c43309bd41177e292b201aa8",
+        "hybris_lib": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/install/usr/lib/hybris",
+        "runtime": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/runtime",
+        "manifest": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/manifest.json",
+        "probe_manifest": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/bundle/probe-manifest.json",
+        "binary_source_commit": "62a9a8f61f4c00d8c43309bd41177e292b201aa8",
+        "binary_source_dirty": true,
+        "compiler": "aarch64-linux-gnu-gcc (Debian 14.2.0-19) 14.2.0 Copyright (C) 2024 Free Software Foundation, Inc. This is free software; see the source for copying conditions.  There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  aarch64-linux-gnu 14 ",
+        "configure_args": [
+          "--host=aarch64-linux-gnu",
+          "--prefix=/usr/lib/hybris",
+          "--libdir=/usr/lib/hybris",
+          "--with-android-headers=/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/headers",
+          "--enable-arch=arm64",
+          "--enable-wayland",
+          "--enable-x11",
+          "--disable-wayland_serverside_buffers",
+          "--enable-adreno-quirks",
+          "--enable-mali-quirks",
+          "--enable-property-cache",
+          "--with-default-hybris-ld-library-path=/vendor/lib64/egl:/vendor/lib64/hw:/vendor/lib64:/system/lib64:/system_ext/lib64"
+        ],
+        "note": "binary_source_commit comes from the build manifest, not from inspecting this git HEAD.",
+        "selected_cases": [
+          "native-vk",
+          "hybris-vk",
+          "native-2",
+          "hybris-2",
+          "native-3",
+          "hybris-3",
+          "hybris-tls-mrs"
+        ],
+        "scheduled_cases": [
+          "hybris-tls-mrs",
+          "native-vk",
+          "native-2",
+          "native-3",
+          "hybris-vk",
+          "hybris-2",
+          "hybris-3"
+        ]
+      },
+      "graphics_run": "20260913T221741-a5933b37",
+      "graphics": [
+        {
+          "case": "hybris-tls-mrs",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "native-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "hybris-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ],
+      "namespace": [
+        {
+          "case": "hybris-namespaces",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ],
+      "namespace_output": [
+        "NAMESPACE default=present sphal=present distinct=1",
+        "NAMESPACE platform_search=/system/lib64:/system_ext/lib64",
+        "RESULT 0"
+      ],
+      "integrity_passed": 18,
+      "integrity_total": 18,
+      "disk_unchanged": true
+    },
+    "x300": {
+      "device": {
+        "ro.product.model": "V2509A",
+        "ro.build.fingerprint": "vivo/PD2509/PD2509:16/BP2A.250605.031.A3_V000L1/compiler260510114321:user/release-keys",
+        "ro.build.version.sdk": "36",
+        "run_id": "20260913T221740-83294d41",
+        "instance_evidence_sha256": "3959c7e870051748c9e56179bea9f2a7b6a740916bdbb3c00ff289db5d9dabbf",
+        "device_evidence_sha256": "173a8abca0efe6011f17d9a3090a61086f1401edd665bb51cb00938670995bba",
+        "scaled_evidence_sha256": "1a3babcf71472978143ca327cc54944cb8643a34c1069e091ef50022fb27387a",
+        "packed_evidence_sha256": "23325fb01ca4078192684a828af84ea6e47378dc474a54650a398f880f70a0cb",
+        "commands": {
+          "hybris-tls-mrs": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-83294d41",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=36 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc tls-mrs",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "native-vk": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-83294d41",
+            "command": "PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so ./probe-bionic vk",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "native-2": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-83294d41",
+            "command": "PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so ./probe-bionic 2",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "native-3": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-83294d41",
+            "command": "PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so ./probe-bionic 3",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-vk": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-83294d41",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=36 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc vk",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-2": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-83294d41",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=36 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc 2",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-3": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-83294d41",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=36 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc 3",
+            "output": "stderr merged into stdout on device before adb transport"
+          }
+        },
+        "driver_observations": {
+          "hybris-tls-mrs": [],
+          "native-vk": [
+            "GPU Mali-G1-Ultra MC12 Vulkan=1.3.305 driver=0xd801000 BC=0 ETC2=1 ASTC=1 geometry=1 tessellation=1 float64=0 int64=1"
+          ],
+          "native-2": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=ARM renderer=Mali-G1-Ultra MC12 version=OpenGL ES 3.2 v1.r54p1-11eac0.5ac4efe.15f36b8c6518df15cadf5aced2a1638a.1c3d0d1d631f33b0b8a673ce08c68e340f851541 GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "native-3": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=ARM renderer=Mali-G1-Ultra MC12 version=OpenGL ES 3.2 v1.r54p1-11eac0.5ac4efe.15f36b8c6518df15cadf5aced2a1638a.1c3d0d1d631f33b0b8a673ce08c68e340f851541 GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "hybris-vk": [
+            "GPU Mali-G1-Ultra MC12 Vulkan=1.3.305 driver=0xd801000 BC=0 ETC2=1 ASTC=1 geometry=1 tessellation=1 float64=0 int64=1",
+            "HYBRIS_MALI_MMUD build_id=5ac4efe8d6175298b273dbaeb8f9d28e5e508e72 skip_loader_check=1 property_before=0 property_after=8322126"
+          ],
+          "hybris-2": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "HYBRIS_MALI_MMUD build_id=5ac4efe8d6175298b273dbaeb8f9d28e5e508e72 skip_loader_check=1 property_before=0 property_after=8322126",
+            "GL vendor=ARM renderer=Mali-G1-Ultra MC12 version=OpenGL ES 3.2 v1.r54p1-11eac0.5ac4efe.15f36b8c6518df15cadf5aced2a1638a.1c3d0d1d631f33b0b8a673ce08c68e340f851541 GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "hybris-3": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "HYBRIS_MALI_MMUD build_id=5ac4efe8d6175298b273dbaeb8f9d28e5e508e72 skip_loader_check=1 property_before=0 property_after=8322126",
+            "GL vendor=ARM renderer=Mali-G1-Ultra MC12 version=OpenGL ES 3.2 v1.r54p1-11eac0.5ac4efe.15f36b8c6518df15cadf5aced2a1638a.1c3d0d1d631f33b0b8a673ce08c68e340f851541 GLSL=OpenGL ES GLSL ES 3.20"
+          ]
+        },
+        "icd_mali_loader_quirk_requested": null,
+        "mapping_note": "Snapshots observe file-backed paths at named phases. Staged hashes describe deployment files; Android file hashes are collected by path after execution, not from mapped pages.",
+        "hybris_source_commit": "62a9a8f61f4c00d8c43309bd41177e292b201aa8",
+        "hybris_lib": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/install/usr/lib/hybris",
+        "runtime": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/runtime",
+        "manifest": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/manifest.json",
+        "probe_manifest": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/bundle/probe-manifest.json",
+        "binary_source_commit": "62a9a8f61f4c00d8c43309bd41177e292b201aa8",
+        "binary_source_dirty": true,
+        "compiler": "aarch64-linux-gnu-gcc (Debian 14.2.0-19) 14.2.0 Copyright (C) 2024 Free Software Foundation, Inc. This is free software; see the source for copying conditions.  There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  aarch64-linux-gnu 14 ",
+        "configure_args": [
+          "--host=aarch64-linux-gnu",
+          "--prefix=/usr/lib/hybris",
+          "--libdir=/usr/lib/hybris",
+          "--with-android-headers=/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/headers",
+          "--enable-arch=arm64",
+          "--enable-wayland",
+          "--enable-x11",
+          "--disable-wayland_serverside_buffers",
+          "--enable-adreno-quirks",
+          "--enable-mali-quirks",
+          "--enable-property-cache",
+          "--with-default-hybris-ld-library-path=/vendor/lib64/egl:/vendor/lib64/hw:/vendor/lib64:/system/lib64:/system_ext/lib64"
+        ],
+        "note": "binary_source_commit comes from the build manifest, not from inspecting this git HEAD.",
+        "selected_cases": [
+          "native-vk",
+          "hybris-vk",
+          "native-2",
+          "hybris-2",
+          "native-3",
+          "hybris-3",
+          "hybris-tls-mrs"
+        ],
+        "scheduled_cases": [
+          "hybris-tls-mrs",
+          "native-vk",
+          "native-2",
+          "native-3",
+          "hybris-vk",
+          "hybris-2",
+          "hybris-3"
+        ]
+      },
+      "graphics_run": "20260913T221740-83294d41",
+      "graphics": [
+        {
+          "case": "hybris-tls-mrs",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "native-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "hybris-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ],
+      "namespace": [
+        {
+          "case": "hybris-namespaces",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ],
+      "namespace_output": [
+        "NAMESPACE default=present sphal=present distinct=1",
+        "NAMESPACE platform_search=/system/lib64:/system_ext/lib64",
+        "RESULT 0"
+      ],
+      "integrity_passed": 18,
+      "integrity_total": 18,
+      "disk_unchanged": true
+    },
+    "oneplus8t": {
+      "device": {
+        "ro.product.model": "KB2000",
+        "ro.build.fingerprint": "OnePlus/OnePlus8T_CH/OnePlus8T:13/RKQ1.211119.001/R.13f1313_1-1f6c89:user/release-keys",
+        "ro.build.version.sdk": "33",
+        "run_id": "20260913T221740-1a9dc1c0",
+        "instance_evidence_sha256": "3959c7e870051748c9e56179bea9f2a7b6a740916bdbb3c00ff289db5d9dabbf",
+        "device_evidence_sha256": "173a8abca0efe6011f17d9a3090a61086f1401edd665bb51cb00938670995bba",
+        "scaled_evidence_sha256": "1a3babcf71472978143ca327cc54944cb8643a34c1069e091ef50022fb27387a",
+        "packed_evidence_sha256": "23325fb01ca4078192684a828af84ea6e47378dc474a54650a398f880f70a0cb",
+        "commands": {
+          "hybris-tls-mrs": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-1a9dc1c0",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=33 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc tls-mrs",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "native-vk": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-1a9dc1c0",
+            "command": "PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so ./probe-bionic vk",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "native-2": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-1a9dc1c0",
+            "command": "PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so ./probe-bionic 2",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "native-3": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-1a9dc1c0",
+            "command": "PROBE_VK=libvulkan.so PROBE_EGL=libEGL.so PROBE_GLES=libGLESv2.so ./probe-bionic 3",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-vk": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-1a9dc1c0",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=33 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc vk",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-2": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-1a9dc1c0",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=33 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc 2",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-3": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221740-1a9dc1c0",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=33 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc 3",
+            "output": "stderr merged into stdout on device before adb transport"
+          }
+        },
+        "driver_observations": {
+          "hybris-tls-mrs": [],
+          "native-vk": [
+            "GPU Adreno (TM) 650 Vulkan=1.1.128 driver=0x801f6000 BC=0 ETC2=1 ASTC=1 geometry=1 tessellation=1 float64=0 int64=0"
+          ],
+          "native-2": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 650 version=OpenGL ES 3.2 V@0502.0 (GIT@1159e70389, I1027f1d7d9, 1649418316) (Date:04/08/22) GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "native-3": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 650 version=OpenGL ES 3.2 V@0502.0 (GIT@1159e70389, I1027f1d7d9, 1649418316) (Date:04/08/22) GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "hybris-vk": [
+            "GPU Adreno (TM) 650 Vulkan=1.1.128 driver=0x801f6000 BC=0 ETC2=1 ASTC=1 geometry=1 tessellation=1 float64=0 int64=0"
+          ],
+          "hybris-2": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 650 version=OpenGL ES 3.2 V@0502.0 (GIT@1159e70389, I1027f1d7d9, 1649418316) (Date:04/08/22) GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "hybris-3": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 650 version=OpenGL ES 3.2 V@0502.0 (GIT@1159e70389, I1027f1d7d9, 1649418316) (Date:04/08/22) GLSL=OpenGL ES GLSL ES 3.20"
+          ]
+        },
+        "icd_mali_loader_quirk_requested": null,
+        "mapping_note": "Snapshots observe file-backed paths at named phases. Staged hashes describe deployment files; Android file hashes are collected by path after execution, not from mapped pages.",
+        "hybris_source_commit": "62a9a8f61f4c00d8c43309bd41177e292b201aa8",
+        "hybris_lib": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/install/usr/lib/hybris",
+        "runtime": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/runtime",
+        "manifest": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/manifest.json",
+        "probe_manifest": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/bundle/probe-manifest.json",
+        "binary_source_commit": "62a9a8f61f4c00d8c43309bd41177e292b201aa8",
+        "binary_source_dirty": true,
+        "compiler": "aarch64-linux-gnu-gcc (Debian 14.2.0-19) 14.2.0 Copyright (C) 2024 Free Software Foundation, Inc. This is free software; see the source for copying conditions.  There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  aarch64-linux-gnu 14 ",
+        "configure_args": [
+          "--host=aarch64-linux-gnu",
+          "--prefix=/usr/lib/hybris",
+          "--libdir=/usr/lib/hybris",
+          "--with-android-headers=/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/headers",
+          "--enable-arch=arm64",
+          "--enable-wayland",
+          "--enable-x11",
+          "--disable-wayland_serverside_buffers",
+          "--enable-adreno-quirks",
+          "--enable-mali-quirks",
+          "--enable-property-cache",
+          "--with-default-hybris-ld-library-path=/vendor/lib64/egl:/vendor/lib64/hw:/vendor/lib64:/system/lib64:/system_ext/lib64"
+        ],
+        "note": "binary_source_commit comes from the build manifest, not from inspecting this git HEAD.",
+        "selected_cases": [
+          "native-vk",
+          "hybris-vk",
+          "native-2",
+          "hybris-2",
+          "native-3",
+          "hybris-3",
+          "hybris-tls-mrs"
+        ],
+        "scheduled_cases": [
+          "hybris-tls-mrs",
+          "native-vk",
+          "native-2",
+          "native-3",
+          "hybris-vk",
+          "hybris-2",
+          "hybris-3"
+        ]
+      },
+      "graphics_run": "20260913T221740-1a9dc1c0",
+      "graphics": [
+        {
+          "case": "hybris-tls-mrs",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "native-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "hybris-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ],
+      "namespace": [
+        {
+          "case": "hybris-namespaces",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ],
+      "namespace_output": [
+        "NAMESPACE default=present sphal=present distinct=1",
+        "NAMESPACE platform_search=/system/lib64:/system_ext/lib64",
+        "RESULT 0"
+      ],
+      "integrity_passed": 18,
+      "integrity_total": 18,
+      "disk_unchanged": true
+    },
+    "pjz110": {
+      "device": {
+        "ro.product.model": "PJZ110",
+        "ro.build.fingerprint": "OnePlus/PJZ110/OP5D0DL1:16/BP2A.250605.015/V.3890a4c-14ef1e9-14f2de5:user/release-keys",
+        "ro.build.version.sdk": "36",
+        "run_id": "20260913T221652-2e6db9be",
+        "instance_evidence_sha256": "3959c7e870051748c9e56179bea9f2a7b6a740916bdbb3c00ff289db5d9dabbf",
+        "device_evidence_sha256": "173a8abca0efe6011f17d9a3090a61086f1401edd665bb51cb00938670995bba",
+        "scaled_evidence_sha256": "1a3babcf71472978143ca327cc54944cb8643a34c1069e091ef50022fb27387a",
+        "packed_evidence_sha256": "23325fb01ca4078192684a828af84ea6e47378dc474a54650a398f880f70a0cb",
+        "commands": {
+          "hybris-tls-mrs": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221652-2e6db9be",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=36 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc tls-mrs",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-vk": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221652-2e6db9be",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=36 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc vk",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-2": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221652-2e6db9be",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=36 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc 2",
+            "output": "stderr merged into stdout on device before adb transport"
+          },
+          "hybris-3": {
+            "directory": "/data/local/tmp/libhybris-baseline-20260913T221652-2e6db9be",
+            "command": "HYBRIS_LINKER_DIR=$PWD/hybris/libhybris/linker HYBRIS_EGLPLATFORM_DIR=$PWD/hybris/libhybris HYBRIS_EGLPLATFORM=null HYBRIS_ANDROID_SDK_VERSION=36 ./glibc/ld-linux-aarch64.so.1 --library-path ./hybris:./glibc ./probe-glibc 3",
+            "output": "stderr merged into stdout on device before adb transport"
+          }
+        },
+        "driver_observations": {
+          "hybris-tls-mrs": [],
+          "hybris-vk": [
+            "GPU Adreno (TM) 830 Vulkan=1.3.284 driver=0x80320048 BC=1 ETC2=1 ASTC=1 geometry=1 tessellation=1 float64=0 int64=1"
+          ],
+          "hybris-2": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 830 version=OpenGL ES 3.2 V@0800.72 (GIT@3967b80d3b, Ica4ce9bea6, 1770914544) (Date:02/12/26) GLSL=OpenGL ES GLSL ES 3.20"
+          ],
+          "hybris-3": [
+            "EGL 1.5 vendor=Android apis=OpenGL_ES",
+            "GL vendor=Qualcomm renderer=Adreno (TM) 830 version=OpenGL ES 3.2 V@0800.72 (GIT@3967b80d3b, Ica4ce9bea6, 1770914544) (Date:02/12/26) GLSL=OpenGL ES GLSL ES 3.20"
+          ]
+        },
+        "icd_mali_loader_quirk_requested": null,
+        "mapping_note": "Snapshots observe file-backed paths at named phases. Staged hashes describe deployment files; Android file hashes are collected by path after execution, not from mapped pages.",
+        "hybris_source_commit": "62a9a8f61f4c00d8c43309bd41177e292b201aa8",
+        "hybris_lib": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/install/usr/lib/hybris",
+        "runtime": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/runtime",
+        "manifest": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/manifest.json",
+        "probe_manifest": "/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/bundle/probe-manifest.json",
+        "binary_source_commit": "62a9a8f61f4c00d8c43309bd41177e292b201aa8",
+        "binary_source_dirty": true,
+        "compiler": "aarch64-linux-gnu-gcc (Debian 14.2.0-19) 14.2.0 Copyright (C) 2024 Free Software Foundation, Inc. This is free software; see the source for copying conditions.  There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  aarch64-linux-gnu 14 ",
+        "configure_args": [
+          "--host=aarch64-linux-gnu",
+          "--prefix=/usr/lib/hybris",
+          "--libdir=/usr/lib/hybris",
+          "--with-android-headers=/var/home/taowen/projects/glibc-on-bionic/arlinux/third_party/libhybris/tests/baseline/build/headers",
+          "--enable-arch=arm64",
+          "--enable-wayland",
+          "--enable-x11",
+          "--disable-wayland_serverside_buffers",
+          "--enable-adreno-quirks",
+          "--enable-mali-quirks",
+          "--enable-property-cache",
+          "--with-default-hybris-ld-library-path=/vendor/lib64/egl:/vendor/lib64/hw:/vendor/lib64:/system/lib64:/system_ext/lib64"
+        ],
+        "note": "binary_source_commit comes from the build manifest, not from inspecting this git HEAD.",
+        "selected_cases": [
+          "hybris-vk",
+          "hybris-2",
+          "hybris-3",
+          "hybris-tls-mrs"
+        ],
+        "scheduled_cases": [
+          "hybris-tls-mrs",
+          "hybris-vk",
+          "hybris-2",
+          "hybris-3"
+        ]
+      },
+      "graphics_run": "20260913T221652-2e6db9be",
+      "graphics": [
+        {
+          "case": "hybris-tls-mrs",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ],
+      "namespace": [
+        {
+          "case": "hybris-namespaces",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ],
+      "namespace_output": [
+        "NAMESPACE default=present sphal=present distinct=1",
+        "NAMESPACE platform_search=/system/lib64:/system_ext/lib64",
+        "RESULT 0"
+      ],
+      "integrity_passed": 18,
+      "integrity_total": 18,
+      "disk_unchanged": true
+    }
+  },
+  "pjz110_app_uid": {
+    "package": "io.taowen.arlinux.omarchy",
+    "route": "run-as, staged standalone probe and rebuilt libhybris; not the Turnip desktop",
+    "output": [
+      "PROBE pid=7223 mode=vk linked=0",
+      "RESULT 0",
+      "CASE_EXIT=0",
+      "PROBE pid=7224 mode=2 linked=0",
+      "RESULT 0",
+      "CASE_EXIT=0",
+      "PROBE pid=7226 mode=3 linked=0",
+      "RESULT 0",
+      "CASE_EXIT=0",
+      "PROBE pid=7232 mode=namespaces linked=0",
+      "NAMESPACE default=present sphal=present distinct=1",
+      "NAMESPACE platform_search=/system/lib64:/system_ext/lib64",
+      "RESULT 0",
+      "CASE_EXIT=0"
+    ]
+  },
+  "negative_control": "PROBE pid=3873 mode=namespaces linked=0\nNAMESPACE default=missing sphal=missing distinct=0\nMAPPING\tcomplete\t7065150000-706519a000 r-xp 00000000 fe:4d 4400864                        /data/local/tmp/hybris-integrity-test/control/q.so\nMAPPING\tcomplete\t706519a000-70651ae000 ---p 0004a000 fe:4d 4400864                        /data/local/tmp/hybris-integrity-test/control/q.so\nMAPPING\tcomplete\t70651ae000-70651b0000 r--p 0004e000 fe:4d 4400864                        /data/local/tmp/hybris-integrity-test/control/q.so\nMAPPING\tcomplete\t70651b0000-70651b1000 rw-p 00050000 fe:4d 4400864                        /data/local/tmp/hybris-integrity-test/control/q.so\nMAPPING\tcomplete\t70651c0000-706524e000 r-xp 00000000 fe:4d 4408831                        /data/local/tmp/hybris-integrity-test/glibc/libm.so.6\nMAPPING\tcomplete\t706524e000-706525f000 ---p 0008e000 fe:4d 4408831                        /data/local/tmp/hybris-integrity-test/glibc/libm.so.6\nMAPPING\tcomplete\t706525f000-7065260000 r--p 0008f000 fe:4d 4408831                        /data/local/tmp/hybris-integrity-test/glibc/libm.so.6\nMAPPING\tcomplete\t7065260000-7065261000 rw-p 00090000 fe:4d 4408831                        /data/local/tmp/hybris-integrity-test/glibc/libm.so.6\nMAPPING\tcomplete\t7065270000-706528f000 r-xp 00000000 fe:4d 4408839                        /data/local/tmp/hybris-integrity-test/glibc/libgcc_s.so.1\nMAPPING\tcomplete\t706528f000-706529f000 ---p 0001f000 fe:4d 4408839                        /data/local/tmp/hybris-integrity-test/glibc/libgcc_s.so.1\nMAPPING\tcomplete\t706529f000-70652a0000 r--p 0001f000 fe:4d 4408839                        /data/local/tmp/hybris-integrity-test/glibc/libgcc_s.so.1\nMAPPING\tcomplete\t70652a0000-70652a1000 rw-p 00020000 fe:4d 4408839                        /data/local/tmp/hybris-integrity-test/glibc/libgcc_s.so.1\nMAPPING\tcomplete\t70652b0000-7065583000 r-xp 00000000 fe:4d 4408842                        /data/local/tmp/hybris-integrity-test/glibc/libstdc++.so.6\nMAPPING\tcomplete\t7065583000-7065595000 ---p 002d3000 fe:4d 4408842                        /data/local/tmp/hybris-integrity-test/glibc/libstdc++.so.6\nMAPPING\tcomplete\t7065595000-70655a0000 r--p 002d5000 fe:4d 4408842                        /data/local/tmp/hybris-integrity-test/glibc/libstdc++.so.6\nMAPPING\tcomplete\t70655a0000-70655a5000 rw-p 002e0000 fe:4d 4408842                        /data/local/tmp/hybris-integrity-test/glibc/libstdc++.so.6\nMAPPING\tcomplete\t70655b0000-70655cf000 r-xp 00000000 fe:4d 4408053                        /data/local/tmp/hybris-integrity-test/hybris/libhybris-common.so.1\nMAPPING\tcomplete\t70655cf000-70655df000 ---p 0001f000 fe:4d 4408053                        /data/local/tmp/hybris-integrity-test/hybris/libhybris-common.so.1\nMAPPING\tcomplete\t70655df000-70655e0000 r--p 0001f000 fe:4d 4408053                        /data/local/tmp/hybris-integrity-test/hybris/libhybris-common.so.1\nMAPPING\tcomplete\t70655e0000-70655e4000 rw-p 00020000 fe:4d 4408053                        /data/local/tmp/hybris-integrity-test/hybris/libhybris-common.so.1\nMAPPING\tcomplete\t70655f0000-706578d000 r-xp 00000000 fe:4d 4408840                        /data/local/tmp/hybris-integrity-test/glibc/libc.so.6\nMAPPING\tcomplete\t706578d000-706579d000 ---p 0019d000 fe:4d 4408840                        /data/local/tmp/hybris-integrity-test/glibc/libc.so.6\nMAPPING\tcomplete\t706579d000-70657a0000 r--p 0019d000 fe:4d 4408840                        /data/local/tmp/hybris-integrity-test/glibc/libc.so.6\nMAPPING\tcomplete\t70657a0000-70657a2000 rw-p 001a0000 fe:4d 4408840                        /data/local/tmp/hybris-integrity-test/glibc/libc.so.6\nMAPPING\tcomplete\t70657b0000-70658c6000 r-xp 00000000 fe:4d 4438538                        /data/local/tmp/hybris-integrity-test/probe-gpu\nMAPPING\tcomplete\t70658c6000-70658db000 ---p 00116000 fe:4d 4438538                        /data/local/tmp/hybris-integrity-test/probe-gpu\nMAPPING\tcomplete\t70658db000-70658e0000 r--p 0011b000 fe:4d 4438538                        /data/local/tmp/hybris-integrity-test/probe-gpu\nMAPPING\tcomplete\t70658e0000-70658e1000 rw-p 00120000 fe:4d 4438538                        /data/local/tmp/hybris-integrity-test/probe-gpu\nMAPPING\tcomplete\t70658e2000-706590a000 r-xp 00000000 fe:4d 4408846                        /data/local/tmp/hybris-integrity-test/glibc/ld-linux-aarch64.so.1\nMAPPING\tcomplete\t7065920000-7065922000 r--p 0002e000 fe:4d 4408846                        /data/local/tmp/hybris-integrity-test/glibc/ld-linux-aarch64.so.1\nMAPPING\tcomplete\t7065922000-7065923000 rw-p 00030000 fe:4d 4408846                        /data/local/tmp/hybris-integrity-test/glibc/ld-linux-aarch64.so.1\nRESULT 2\n",
+  "pjz110_before": {
+    "run": "20260913T221007-9d104e13",
+    "results": [
+      {
+        "case": "native-vk",
+        "status": "PASS",
+        "exit_code": 0,
+        "probe_exit_code": 0,
+        "shader_evidence_error": null,
+        "binary": "probe-bionic"
+      },
+      {
+        "case": "native-2",
+        "status": "PASS",
+        "exit_code": 0,
+        "probe_exit_code": 0,
+        "shader_evidence_error": null,
+        "binary": "probe-bionic"
+      },
+      {
+        "case": "native-3",
+        "status": "PASS",
+        "exit_code": 0,
+        "probe_exit_code": 0,
+        "shader_evidence_error": null,
+        "binary": "probe-bionic"
+      },
+      {
+        "case": "hybris-vk",
+        "status": "FAIL",
+        "exit_code": 2,
+        "probe_exit_code": 2,
+        "shader_evidence_error": null,
+        "binary": "probe-glibc"
+      },
+      {
+        "case": "hybris-2",
+        "status": "CRASH",
+        "exit_code": 139,
+        "probe_exit_code": 139,
+        "shader_evidence_error": null,
+        "binary": "probe-glibc"
+      },
+      {
+        "case": "hybris-3",
+        "status": "CRASH",
+        "exit_code": 139,
+        "probe_exit_code": 139,
+        "shader_evidence_error": null,
+        "binary": "probe-glibc"
+      }
+    ]
+  }
+}

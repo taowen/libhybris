@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/auxv.h>
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <sys/vfs.h>
@@ -108,11 +109,9 @@ static const char* const kLdConfigFilePath = "/system/etc/ld.config.txt";
 static const char* const kLdConfigVndkLiteFilePath = "/system/etc/ld.config.vndk_lite.txt";
 
 #ifdef HAS_ANDROID_11_0_0
-// TAWC: Android's boot-generated config lives at /linkerconfig/ld.config.txt,
-// but the tawc rootfs no longer binds that directory in (its SELinux label
-// denies dir getattr to app domains, which breaks `ls -l /` in the guest).
-// tawc copies the file to this path inside the rootfs at each spawn instead.
-static const char* const kLdGeneratedConfigFilePath = "/usr/lib/hybris-config/ld.config.txt";
+static const char* const kLdGeneratedConfigFilePath = "/linkerconfig/ld.config.txt";
+// A host rootfs may expose a copy when it cannot expose /linkerconfig itself.
+static const char* const kLdCopiedConfigFilePath = "/usr/lib/hybris-config/ld.config.txt";
 #endif
 
 #if defined(__LP64__)
@@ -4170,6 +4169,9 @@ bool soinfo::protect_relro() {
 
 static std::vector<android_namespace_t*> init_default_namespace_no_config(bool is_asan) {
   g_default_namespace->set_isolated(false);
+  if (getauxval(AT_SECURE) || getenv("HYBRIS_LD_LIBRARY_PATH") == nullptr) {
+    parse_LD_LIBRARY_PATH(DEFAULT_HYBRIS_LD_LIBRARY_PATH);
+  }
   auto default_ld_paths = is_asan ? kAsanDefaultLdPaths : kDefaultLdPaths;
 
   char real_path[PATH_MAX];
@@ -4239,6 +4241,8 @@ static std::string get_ld_config_file_path(const char* executable_path) {
 #ifdef HAS_ANDROID_11_0_0
   if (file_exists(kLdGeneratedConfigFilePath)) {
     return kLdGeneratedConfigFilePath;
+  } else if (file_exists(kLdCopiedConfigFilePath)) {
+    return kLdCopiedConfigFilePath;
   } else {
     // TODO(b/146386369) : Adjust log level and add more condition to log only when necessary
     INFO("Warning: failed to find generated linker configuration from \"%s\"",

@@ -35,6 +35,7 @@ runner, including extended ABI and compatibility regressions; that is larger
 than the smoke test above. `python3 tests/baseline/run.py --help` lists options.
 For the standard-loader/ICD route and optional validation/capture, use
 [the loader and tools guide](loader-tools.md).
+For platform/HAL dependency resolution, see [Android namespaces](namespaces.md).
 
 ## Read the results
 

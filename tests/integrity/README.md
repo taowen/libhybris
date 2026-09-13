@@ -117,3 +117,7 @@ PJZ110's `/vendor/lib64/libziparchive.so` and
 ADB shell. Vulkan exits 2 and GLES 2/3 exit 139. An independently built
 pre-change commit `641e61594eb611c1074af33af8bf74eaf5b073b1` has the same errors
 and exit states. Those failures are not counted as passes.
+
+The subsequent [Android namespace fix](../baseline/namespaces.md) resolves
+these PJZ110 graphics failures and records a fresh four-device integrity run.
+The table above remains the historical result for the integrity-only change.

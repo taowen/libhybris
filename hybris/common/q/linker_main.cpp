@@ -808,10 +808,9 @@ extern "C" void android_linker_init(int sdk_version, void* (*get_hooked_symbol)(
     ldpreload_env = getenv("HYBRIS_LD_PRELOAD");
   }
 
-  if (ldpath_env)
-    parse_LD_LIBRARY_PATH(ldpath_env);
-  else
-    parse_LD_LIBRARY_PATH(DEFAULT_HYBRIS_LD_LIBRARY_PATH);
+  // A compiled compatibility path must not override Android's namespace
+  // search paths. Use it only when no device linker configuration is found.
+  parse_LD_LIBRARY_PATH(ldpath_env);
   parse_LD_PRELOAD(ldpreload_env);
 
   DEBUG("sdk_version %d\n", sdk_version);
