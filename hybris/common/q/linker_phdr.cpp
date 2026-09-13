@@ -794,7 +794,18 @@ bool ElfReader::LoadSegments() {
 
     // Pass 2: patch
     for (const auto& seg : exec_segments) {
+      const size_t first_patch = tls_patches_.size();
+      auto words = static_cast<uint32_t*>(seg.addr);
+      for (size_t i = 0; i < seg.size / sizeof(uint32_t); ++i) {
+        if (hybris_is_tls_mrs(words[i])) {
+          tls_patches_.push_back({reinterpret_cast<uintptr_t>(&words[i]), words[i], 0});
+        }
+      }
       _tls_patcher_funcs.patch_tls(seg.addr, seg.size, name_.c_str());
+      for (size_t i = first_patch; i < tls_patches_.size(); ++i) {
+        auto& patch = tls_patches_[i];
+        patch.replacement = *reinterpret_cast<const uint32_t*>(patch.address);
+      }
 
       // Restore original protection (remove PROT_WRITE we added for patching,
       // keep PROT_READ that hybris adds for unwind safety)

@@ -36,8 +36,7 @@ struct __attribute__((__packed__)) mrs_inst {
 _Static_assert(sizeof(struct mrs_inst) == 4, "MRS instruction size must be 4");
 
 static int is_mrs_tpidr_el0(uint32_t instruction) {
-    const struct mrs_inst* mrs = (const struct mrs_inst*)&instruction;
-    return mrs->opcode == MRS_OPCODE && mrs->sys_reg == TPIDR_EL0 && mrs->rt != 31;
+    return hybris_is_tls_mrs(instruction);
 }
 
 /* Count MRS TPIDR_EL0 instructions in a code segment */

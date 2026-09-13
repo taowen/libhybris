@@ -739,6 +739,7 @@ class LoadTask {
     si_->load_bias = elf_reader.load_bias();
     si_->phnum = elf_reader.phdr_count();
     si_->phdr = elf_reader.loaded_phdr();
+    si_->tls_patches = elf_reader.take_tls_patches();
 
     return true;
   }
@@ -4113,6 +4114,11 @@ bool soinfo::link_image(const soinfo_list_t& global_group, const soinfo_list_t& 
 #endif
 
   DEBUG("[ finished linking %s ]", get_realpath());
+
+  if (!hybris_relocate_module_integrity(this, tls_patches)) {
+    return false;
+  }
+  std::vector<HybrisTlsPatch>().swap(tls_patches);
 
 #if !defined(__LP64__)
   if (has_text_relocations) {

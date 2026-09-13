@@ -24,6 +24,8 @@ q_la_SOURCES = \
 	linker_allocator.cpp \
 	linker_block_allocator.cpp \
 	linker.cpp \
+	linker_integrity.cpp \
+	integrity_sha256.c \
 	linker_cfi.cpp \
 	linker_config.cpp \
 	linker_dlwarning.cpp \
@@ -72,7 +74,7 @@ q_la_LDFLAGS = \
 	-avoid-version \
 	-Wl,--version-script,$(srcdir)/q.ver
 
-EXTRA_DIST = q.ver
+EXTRA_DIST = q.ver linker_integrity.h integrity_sha256.h
 
 if WANT_DEBUG
 q_la_CPPFLAGS += \

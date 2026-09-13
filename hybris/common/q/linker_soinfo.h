@@ -27,6 +27,7 @@
  */
 
 #pragma once
+#include "linker_integrity.h"
 
 #include <link.h>
 
@@ -381,6 +382,8 @@ struct soinfo {
   // version >= 5
   std::unique_ptr<soinfo_tls> tls_;
   std::vector<TlsDynamicResolverArg> tlsdesc_args_;
+ public:
+  std::vector<HybrisTlsPatch> tls_patches;
 };
 
 // This function is used by dlvsym() to calculate hash of sym_ver

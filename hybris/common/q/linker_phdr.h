@@ -36,6 +36,7 @@
  */
 
 #include "linker.h"
+#include "linker_integrity.h"
 #include "linker_mapped_file_fragment.h"
 
 class ElfReader {
@@ -44,6 +45,8 @@ class ElfReader {
 
   bool Read(const char* name, int fd, off64_t file_offset, off64_t file_size);
   bool Load(address_space_params* address_space);
+
+  std::vector<HybrisTlsPatch> take_tls_patches() { return std::move(tls_patches_); }
 
   const char* name() const { return name_.c_str(); }
   size_t phdr_count() const { return phdr_num_; }
@@ -68,6 +71,7 @@ class ElfReader {
   bool CheckPhdr(ElfW(Addr));
   bool CheckFileRange(ElfW(Addr) offset, size_t size, size_t alignment);
 
+  std::vector<HybrisTlsPatch> tls_patches_;
   bool did_read_;
   bool did_load_;
   std::string name_;

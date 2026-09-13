@@ -1,0 +1,799 @@
+{
+  "date": "2026-09-13",
+  "sha256_test": {
+    "lengths": 267,
+    "status": "PASS"
+  },
+  "devices": {
+    "redmi": {
+      "properties": {
+        "ro.product.model": "M2012K11AC",
+        "ro.build.fingerprint": "Redmi/alioth/alioth:13/TKQ1.221114.001/V816.0.10.0.TKHCNXM:user/release-keys",
+        "ro.build.version.sdk": "33"
+      },
+      "integrity": [
+        {
+          "name": "native-system",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS system crypto: integrity=1 self_test=1 SHA256/RAND 9 threads, SSL_CTX\n"
+        },
+        {
+          "name": "native-libcrypto.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libcrypto.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "native-libssl.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libssl.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "native-libintegrity-shared.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-shared.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "native-libintegrity-static.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-static.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "native-libintegrity-legacy.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-legacy.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-system",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /system/lib64/libcrypto.so\nPASS system crypto: integrity=1 self_test=1 SHA256/RAND 9 threads, SSL_CTX\n"
+        },
+        {
+          "name": "hybris-libcrypto.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libcrypto.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "hybris-libssl.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libssl.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-shared.so\nPASS ./libintegrity-shared.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-static.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-static.so\nPASS ./libintegrity-static.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-legacy.so\nPASS ./libintegrity-legacy.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared-corrupt-code.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-code.so: original module HMAC mismatch; refusing to re-sign modified input\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-code.so: original module HMAC mismatch; refusing to re-sign modified input\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared-corrupt-hash.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-hash.so: original module HMAC mismatch; refusing to re-sign modified input\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-hash.so: original module HMAC mismatch; refusing to re-sign modified input\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy-corrupt-code.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-code.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-code.so: original module HMAC missing or ambiguous in legacy module\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy-corrupt-hash.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-hash.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-hash.so: original module HMAC missing or ambiguous in legacy module\n"
+        },
+        {
+          "name": "hybris-libintegrity-missing-bounds.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-missing-bounds.so: TLS-rewritten module lacks exported integrity metadata\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-missing-bounds.so: TLS-rewritten module lacks exported integrity metadata\n"
+        },
+        {
+          "name": "hybris-libintegrity-ambiguous.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-ambiguous.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-ambiguous.so: original module HMAC missing or ambiguous in legacy module\n"
+        }
+      ],
+      "disk_unchanged": true,
+      "system_libraries": [
+        "98fb273d0d8e4f88c52aace54fe152878a4c53039a2e614491d02f699e1e7710  /system/lib64/libcrypto.so",
+        "c34a37059d50001b2ac47e6d1d0ff1c035a172a3d431ca982558e6ce746207bc  /system/lib64/libssl.so"
+      ],
+      "gpu": [
+        {
+          "case": "hybris-tls-mrs",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "native-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "hybris-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ]
+    },
+    "x300": {
+      "properties": {
+        "ro.product.model": "V2509A",
+        "ro.build.fingerprint": "vivo/PD2509/PD2509:16/BP2A.250605.031.A3_V000L1/compiler260510114321:user/release-keys",
+        "ro.build.version.sdk": "36"
+      },
+      "integrity": [
+        {
+          "name": "native-system",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS system crypto: integrity=1 self_test=1 SHA256/RAND 9 threads, SSL_CTX\n"
+        },
+        {
+          "name": "native-libcrypto.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libcrypto.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "native-libssl.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libssl.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "native-libintegrity-shared.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-shared.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "native-libintegrity-static.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-static.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "native-libintegrity-legacy.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-legacy.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-system",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /system/lib64/libcrypto.so\nPASS system crypto: integrity=1 self_test=1 SHA256/RAND 9 threads, SSL_CTX\n"
+        },
+        {
+          "name": "hybris-libcrypto.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libcrypto.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "hybris-libssl.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libssl.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-shared.so\nPASS ./libintegrity-shared.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-static.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-static.so\nPASS ./libintegrity-static.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-legacy.so\nPASS ./libintegrity-legacy.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared-corrupt-code.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-code.so: original module HMAC mismatch; refusing to re-sign modified input\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-code.so: original module HMAC mismatch; refusing to re-sign modified input\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared-corrupt-hash.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-hash.so: original module HMAC mismatch; refusing to re-sign modified input\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-hash.so: original module HMAC mismatch; refusing to re-sign modified input\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy-corrupt-code.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-code.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-code.so: original module HMAC missing or ambiguous in legacy module\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy-corrupt-hash.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-hash.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-hash.so: original module HMAC missing or ambiguous in legacy module\n"
+        },
+        {
+          "name": "hybris-libintegrity-missing-bounds.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-missing-bounds.so: TLS-rewritten module lacks exported integrity metadata\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-missing-bounds.so: TLS-rewritten module lacks exported integrity metadata\n"
+        },
+        {
+          "name": "hybris-libintegrity-ambiguous.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-ambiguous.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-ambiguous.so: original module HMAC missing or ambiguous in legacy module\n"
+        }
+      ],
+      "disk_unchanged": true,
+      "system_libraries": [
+        "9e3660d42ce5c36b15a523ab252c2234f4b0a190f2c7c8f3fcf44fceec0bb6d0  /system/lib64/libcrypto.so",
+        "844a070c951bb69da5f54b7f8a48dc38a36e9bf7aaef83a20bd3b6cb293a408f  /system/lib64/libssl.so"
+      ],
+      "gpu": [
+        {
+          "case": "hybris-tls-mrs",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "native-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "hybris-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ]
+    },
+    "oneplus8t": {
+      "properties": {
+        "ro.product.model": "KB2000",
+        "ro.build.fingerprint": "OnePlus/OnePlus8T_CH/OnePlus8T:13/RKQ1.211119.001/R.13f1313_1-1f6c89:user/release-keys",
+        "ro.build.version.sdk": "33"
+      },
+      "integrity": [
+        {
+          "name": "native-system",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS system crypto: integrity=1 self_test=1 SHA256/RAND 9 threads, SSL_CTX\n"
+        },
+        {
+          "name": "native-libcrypto.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libcrypto.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "native-libssl.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libssl.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "native-libintegrity-shared.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-shared.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "native-libintegrity-static.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-static.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "native-libintegrity-legacy.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-legacy.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-system",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /system/lib64/libcrypto.so\nPASS system crypto: integrity=1 self_test=1 SHA256/RAND 9 threads, SSL_CTX\n"
+        },
+        {
+          "name": "hybris-libcrypto.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libcrypto.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "hybris-libssl.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libssl.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-shared.so\nPASS ./libintegrity-shared.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-static.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-static.so\nPASS ./libintegrity-static.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-legacy.so\nPASS ./libintegrity-legacy.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared-corrupt-code.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-code.so: original module HMAC mismatch; refusing to re-sign modified input\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-code.so: original module HMAC mismatch; refusing to re-sign modified input\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared-corrupt-hash.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-hash.so: original module HMAC mismatch; refusing to re-sign modified input\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-hash.so: original module HMAC mismatch; refusing to re-sign modified input\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy-corrupt-code.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-code.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-code.so: original module HMAC missing or ambiguous in legacy module\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy-corrupt-hash.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-hash.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-hash.so: original module HMAC missing or ambiguous in legacy module\n"
+        },
+        {
+          "name": "hybris-libintegrity-missing-bounds.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-missing-bounds.so: TLS-rewritten module lacks exported integrity metadata\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-missing-bounds.so: TLS-rewritten module lacks exported integrity metadata\n"
+        },
+        {
+          "name": "hybris-libintegrity-ambiguous.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-ambiguous.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-ambiguous.so: original module HMAC missing or ambiguous in legacy module\n"
+        }
+      ],
+      "disk_unchanged": true,
+      "system_libraries": [
+        "b8793e9b0e55cf86d91aec1c0a26b1eaac622aba2e61a84dde120b4afd7510fe  /system/lib64/libcrypto.so",
+        "c34a37059d50001b2ac47e6d1d0ff1c035a172a3d431ca982558e6ce746207bc  /system/lib64/libssl.so"
+      ],
+      "gpu": [
+        {
+          "case": "hybris-tls-mrs",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "native-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "hybris-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ]
+    },
+    "oneplus": {
+      "properties": {
+        "ro.product.model": "PJZ110",
+        "ro.build.fingerprint": "OnePlus/PJZ110/OP5D0DL1:16/BP2A.250605.015/V.3890a4c-14ef1e9-14f2de5:user/release-keys",
+        "ro.build.version.sdk": "36"
+      },
+      "integrity": [
+        {
+          "name": "native-system",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS system crypto: integrity=1 self_test=1 SHA256/RAND 9 threads, SSL_CTX\n"
+        },
+        {
+          "name": "native-libcrypto.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libcrypto.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "native-libssl.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libssl.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "native-libintegrity-shared.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-shared.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "native-libintegrity-static.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-static.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "native-libintegrity-legacy.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libintegrity-legacy.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-system",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /system/lib64/libcrypto.so\nPASS system crypto: integrity=1 self_test=1 SHA256/RAND 9 threads, SSL_CTX\n"
+        },
+        {
+          "name": "hybris-libcrypto.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libcrypto.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "hybris-libssl.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "PASS ./libssl.so constructors=1 integrity=absent\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-shared.so\nPASS ./libintegrity-shared.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-static.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-static.so\nPASS ./libintegrity-static.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "HYBRIS: verified original module and relocated integrity hash for /data/local/tmp/hybris-integrity-test/libintegrity-legacy.so\nPASS ./libintegrity-legacy.so constructors=1 integrity=1,0,1 after tamper/restore\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared-corrupt-code.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-code.so: original module HMAC mismatch; refusing to re-sign modified input\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-code.so: original module HMAC mismatch; refusing to re-sign modified input\n"
+        },
+        {
+          "name": "hybris-libintegrity-shared-corrupt-hash.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-hash.so: original module HMAC mismatch; refusing to re-sign modified input\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-shared-corrupt-hash.so: original module HMAC mismatch; refusing to re-sign modified input\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy-corrupt-code.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-code.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-code.so: original module HMAC missing or ambiguous in legacy module\n"
+        },
+        {
+          "name": "hybris-libintegrity-legacy-corrupt-hash.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-hash.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-legacy-corrupt-hash.so: original module HMAC missing or ambiguous in legacy module\n"
+        },
+        {
+          "name": "hybris-libintegrity-missing-bounds.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-missing-bounds.so: TLS-rewritten module lacks exported integrity metadata\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-missing-bounds.so: TLS-rewritten module lacks exported integrity metadata\n"
+        },
+        {
+          "name": "hybris-libintegrity-ambiguous.so",
+          "passed": true,
+          "returncode": 0,
+          "output": "module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-ambiguous.so: original module HMAC missing or ambiguous in legacy module\nPASS rejected: dlopen failed: module integrity: /data/local/tmp/hybris-integrity-test/libintegrity-ambiguous.so: original module HMAC missing or ambiguous in legacy module\n"
+        }
+      ],
+      "disk_unchanged": true,
+      "system_libraries": [
+        "b2c61624228c61c16e2d6f9b1381fb3c52bf2df2e31e2d8dd9084a08b0d93aac  /system/lib64/libcrypto.so",
+        "7de5b8c2ca832d4405e5a9b8a980be296cc234a7039692ccbc79a45adb2372a1  /system/lib64/libssl.so"
+      ],
+      "gpu": [
+        {
+          "case": "hybris-tls-mrs",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "native-vk",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-2",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "native-3",
+          "status": "PASS",
+          "exit_code": 0,
+          "probe_exit_code": 0,
+          "shader_evidence_error": null,
+          "binary": "probe-bionic"
+        },
+        {
+          "case": "hybris-vk",
+          "status": "FAIL",
+          "exit_code": 2,
+          "probe_exit_code": 2,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-2",
+          "status": "CRASH",
+          "exit_code": 139,
+          "probe_exit_code": 139,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        },
+        {
+          "case": "hybris-3",
+          "status": "CRASH",
+          "exit_code": 139,
+          "probe_exit_code": 139,
+          "shader_evidence_error": null,
+          "binary": "probe-glibc"
+        }
+      ]
+    }
+  },
+  "build": {
+    "source_commit": "641e61594eb611c1074af33af8bf74eaf5b073b1",
+    "source_dirty": true,
+    "compiler": "aarch64-linux-gnu-gcc (Debian 14.2.0-19) 14.2.0 Copyright (C) 2024 Free Software Foundation, Inc. This is free software; see the source for copying conditions.  There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  aarch64-linux-gnu 14 ",
+    "build_mode": "incremental",
+    "note": "Built from the working tree represented by source_sha256; the base source_commit alone does not identify the changes.",
+    "elfs": [
+      {
+        "path": "libhybris/linker/q.so",
+        "tree": "hybris",
+        "sha256": "21a7ab665d7b9cf5fc67b10fb48f2ecfca2c6b89df9b7ece160753a74e5fa600",
+        "build_id": "ff9c593d67f4604bb863e7141cae945bfc909bcb",
+        "size": 5361792
+      },
+      {
+        "path": "libhybris-common.so.1",
+        "tree": "hybris",
+        "sha256": "c3e6514da55b32e6901cf304ad3ac88d48c23162a537151efea65d49b0ea1914",
+        "build_id": null,
+        "size": 546328
+      }
+    ],
+    "source_sha256": {
+      "hybris/common/q/linker_integrity.cpp": "89e79cd37dffd7b4407602a9eee8904695bc756c64027f42d70257489833e12a",
+      "hybris/common/q/linker_integrity.h": "8b4ee6345b3713cf864144972c1a259b7659887ea7b82454177f89b1ec4c3f55",
+      "hybris/common/q/integrity_sha256.c": "3db5a0ee79a27232ca33c5598ab3d6431e43613c01c67895031abd6236fe25ec",
+      "hybris/common/q/integrity_sha256.h": "104e50f45bc98fdcfb9e9e65bf13df7fe0c0b4da650fdadf54febfd1551fa8a5",
+      "hybris/common/q/linker.cpp": "51ad92caca2a59d3d59180d534c31c1309d86e66c60bc02cb6c95205e08f50d9",
+      "hybris/common/q/linker_phdr.cpp": "6bd20b3d51e293dacb7574ce1e0ddba178696f6f71e3dfe46e4c3f29c0a77b05",
+      "hybris/common/q/linker_phdr.h": "050986176bdce05b196f2c7fb761b681b82ebef99c6b004a71b874e42cea6965",
+      "hybris/common/q/linker_soinfo.cpp": "4826a29bb32ea1e7c9cb0947211f86c7381ca999c50371ee053ac78058f59a21",
+      "hybris/common/q/linker_soinfo.h": "45941910e95dc42fc6416c839368a1c6f94eef4fe7b8d60fc6096ae58d8f17a6",
+      "hybris/common/q/Makefile.am": "f8b4444659bfc63e0bbff3f8d5b7d082c0c5cbd345846fdb08f66939bf0a1ed1",
+      "hybris/common/tls_patcher.h": "a72058bae8188029cbb85bd29aa8d4b756fdbbaf714aaaac6b55ad104c2b9fa9",
+      "hybris/common/tls_patcher_aarch64.c": "467917653f35ed05f7834fae4a9400d9bb0039d94109259be4aa3f85cda67ded"
+    }
+  },
+  "pjz110_prechange_control": {
+    "commit": "641e61594eb611c1074af33af8bf74eaf5b073b1",
+    "results": [
+      {
+        "case": "hybris-vk",
+        "status": "FAIL",
+        "exit_code": 2,
+        "probe_exit_code": 2,
+        "shader_evidence_error": null,
+        "binary": "probe-glibc"
+      },
+      {
+        "case": "hybris-2",
+        "status": "CRASH",
+        "exit_code": 139,
+        "probe_exit_code": 139,
+        "shader_evidence_error": null,
+        "binary": "probe-glibc"
+      },
+      {
+        "case": "hybris-3",
+        "status": "CRASH",
+        "exit_code": 139,
+        "probe_exit_code": 139,
+        "shader_evidence_error": null,
+        "binary": "probe-glibc"
+      }
+    ],
+    "errors": [
+      "/vendor/lib64/libziparchive.so phdr mmap failed: Permission denied",
+      "/vendor/lib64/libaconfig_storage_read_api_cc.so phdr mmap failed: Permission denied"
+    ]
+  }
+}

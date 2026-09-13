@@ -19,6 +19,12 @@
 #define TLS_PATCHER_H
 
 #include <stddef.h>
+#include <stdint.h>
+
+/* The decoder is shared with the linker's relocation journal. */
+static inline int hybris_is_tls_mrs(uint32_t instruction) {
+    return (instruction & 0xffffffe0U) == 0xd53bd040U && (instruction & 31U) != 31U;
+}
 
 /* Shared by the patcher and Q linker reservation; includes 16-byte alignment. */
 #define HYBRIS_TLS_THUNK_SIZE 80
