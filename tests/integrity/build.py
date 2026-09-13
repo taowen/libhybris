@@ -70,6 +70,10 @@ for name, flags in (("shared", []), ("static", ["-DSTATIC_FORMAT"]),
 for name in ("libcrypto.so", "libssl.so"):
     run(CC, "-O2", "-fPIC", "-shared", "-I", SHA.parent, SOURCE / "fixture.c",
         f"-Wl,-soname,{name}", "-o", OUT / name)
+    with (OUT / name).open("rb") as stream:
+        constructors = ELFFile(stream).get_section_by_name(".init_array")
+        if constructors is None or constructors["sh_size"] == 0:
+            raise RuntimeError(f"{name}: compiler removed the constructor fixture")
 
 baseline = ROOT / "tests/baseline/build"
 for source, target in ((baseline / "install/usr/lib/hybris", OUT / "hybris"),

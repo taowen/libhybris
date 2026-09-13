@@ -795,5 +795,31 @@
       "/vendor/lib64/libziparchive.so phdr mmap failed: Permission denied",
       "/vendor/lib64/libaconfig_storage_read_api_cc.so phdr mmap failed: Permission denied"
     ]
+  },
+  "test_sources_sha256": {
+    "tests/integrity/probe.c": "23a42b9d3035205455a6e844dd941442b3bedc5b3ae984a9e422eebf7a303be2",
+    "tests/integrity/fixture.c": "897222793abf50a0b749118ba48f8033a32420677e11c18072ea1fded3fab69d",
+    "tests/integrity/fixture.S": "408b2b06df20f4b83d22ca4b46de0e18484cd2a5bc58da409b8cd81ffdeb4913",
+    "tests/integrity/build.py": "bfb47d4571e7e917252f075c307509e1e05b8f1f68c545d37debe65bbbf86055",
+    "tests/integrity/run.py": "c3d9c52d416f1d5d8b40ab09f3d463017b0e7aa9f205b5199233706e81ac1cf3",
+    "hybris/common/q/integrity_sha256.c": "3db5a0ee79a27232ca33c5598ab3d6431e43613c01c67895031abd6236fe25ec",
+    "hybris/common/q/integrity_sha256.h": "104e50f45bc98fdcfb9e9e65bf13df7fe0c0b4da650fdadf54febfd1551fa8a5"
+  },
+  "constructor_prechange_control": {
+    "commit": "641e61594eb611c1074af33af8bf74eaf5b073b1",
+    "device": "OnePlus PJZ110",
+    "expected": "both constructor assertions fail",
+    "results": [
+      {
+        "case": "libcrypto.so",
+        "exit_code": 1,
+        "output": "FAIL line 101: count && count() == 1\n"
+      },
+      {
+        "case": "libssl.so",
+        "exit_code": 1,
+        "output": "FAIL line 101: count && count() == 1\n"
+      }
+    ]
   }
 }

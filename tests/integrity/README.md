@@ -80,6 +80,12 @@ code, changed expected hashes, missing bounds and ambiguous legacy hashes.
 Public hash pointers must remain in read-only private mappings. Device file
 hashes before and after the suite must be identical.
 
+The constructor counter is volatile and the build requires a nonempty
+`.init_array`: Clang can otherwise pre-evaluate this simple constructor and
+fold the accessor into a constant. As a negative control, both SONAME fixtures
+fail the constructor assertion under the pre-change `641e615` linker and pass
+under the fixed linker.
+
 The deliberate runtime code corruption uses an anonymous private page copy:
 Android otherwise forbids restoring execute permission to a modified file
 mapping. Production loader code does not use this test mechanism.

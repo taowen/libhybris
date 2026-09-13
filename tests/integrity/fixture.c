@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int constructed;
+/* Without volatile, Clang may evaluate this simple constructor at link time,
+ * remove .init_array, and fold the getter to 1 even when a loader skips it. */
+static volatile int constructed;
 int fixture_constructor_count(void) { return constructed; }
 
 #ifdef INTEGRITY_FIXTURE
