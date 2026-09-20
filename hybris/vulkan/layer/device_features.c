@@ -37,9 +37,6 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     int clip = hybris_clip_active(physical);
     int stores = hybris_vertex_stores_active(physical);
     if (!clip && !stores) return VK_SUCCESS;
-    if (stores) for (uint32_t i = 0; i < info->enabledExtensionCount; ++i)
-        if (!strcmp(info->ppEnabledExtensionNames[i], VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME))
-            return VK_ERROR_EXTENSION_NOT_PRESENT;
     if (info->pEnabledFeatures) {
         out->features = *info->pEnabledFeatures;
         if (clip) out->features.shaderClipDistance = VK_FALSE;

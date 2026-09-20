@@ -120,7 +120,8 @@ def inspect_batch(submit_index, batch_index, recordings, commands, views, images
                                                 'reason': 'secondary command buffers are not expanded'})
                 if name.startswith('vkCmdBind') and name not in (
                         'vkCmdBindPipeline', 'vkCmdBindDescriptorSets',
-                        'vkCmdBindVertexBuffers', 'vkCmdBindIndexBuffer'):
+                        'vkCmdBindVertexBuffers', 'vkCmdBindVertexBuffers2',
+                        'vkCmdBindVertexBuffers2EXT', 'vkCmdBindIndexBuffer'):
                     result['uncovered'].append({'index': index, 'command': name,
                                                 'reason': 'binding command is not reconstructed'})
                     pipeline, descriptor_binds, vertex_binds, index_bind = None, {}, {}, None
@@ -131,10 +132,18 @@ def inspect_batch(submit_index, batch_index, recordings, commands, views, images
                         descriptor_binds[args['firstSet'] + offset] = {
                             'index': index, 'set': descriptor, 'layout': args['layout'],
                             'dynamic_offsets': args['pDynamicOffsets']}
-                elif name == 'vkCmdBindVertexBuffers':
+                elif name in ('vkCmdBindVertexBuffers', 'vkCmdBindVertexBuffers2', 'vkCmdBindVertexBuffers2EXT'):
                     for offset, buffer in enumerate(args['pBuffers'] or []):
-                        vertex_binds[args['firstBinding'] + offset] = {
+                        binding = args['firstBinding'] + offset
+                        previous = vertex_binds.get(binding, {})
+                        vertex_binds[binding] = {
                             'index': index, 'buffer': buffer, 'offset': args['pOffsets'][offset]}
+                        if args.get('pSizes') is not None:
+                            vertex_binds[binding]['size'] = args['pSizes'][offset]
+                        if args.get('pStrides') is not None:
+                            vertex_binds[binding]['stride'] = args['pStrides'][offset]
+                        elif 'stride' in previous:
+                            vertex_binds[binding]['stride'] = previous['stride']
                 elif name == 'vkCmdBindIndexBuffer':
                     index_bind = {'index': index, **args}
                 elif name == 'vkCmdPushConstants':

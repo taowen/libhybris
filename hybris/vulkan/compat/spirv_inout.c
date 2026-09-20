@@ -10,8 +10,9 @@ static pthread_once_t once = PTHREAD_ONCE_INIT;
 static int enabled;
 static void configure(void)
 {
-    const char *value = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_VULKAN_COMPAT_INOUT");
-    enabled = value && !strcmp(value, "1");
+    if (getauxval(AT_SECURE)) return;
+    const char *value = getenv("HYBRIS_VULKAN_COMPAT_INOUT");
+    enabled = !value || !strcmp(value, "1");
 }
 int hybris_inout_enabled(void) { pthread_once(&once, configure); return enabled; }
 int hybris_inout_pipeline(const VkGraphicsPipelineCreateInfo *info)

@@ -73,11 +73,9 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     if (hybris_clip_active(physical)) out->features.shaderClipDistance = VK_TRUE;
     if (hybris_vertex_stores_active(physical)) {
         out->features.vertexPipelineStoresAndAtomics = VK_TRUE;
-        for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext)
-            if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT) {
-                VkPhysicalDeviceTransformFeedbackFeaturesEXT *tf = (void *)node;
-                tf->transformFeedback = tf->geometryStreams = VK_FALSE;
-            }
+        /* Preserve native transform feedback. Pipelines needing discard
+         * compensation and Xfb are rejected by the SPIR-V conversion rather
+         * than disabling unrelated native capture pipelines device-wide. */
     }
 }
 

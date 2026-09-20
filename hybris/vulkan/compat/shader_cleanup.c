@@ -16,8 +16,9 @@ static int enabled;
 static _Atomic unsigned reports;
 static void configure(void)
 {
-    const char *value = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_VULKAN_COMPAT_UNUSED_BUILTINS");
-    enabled = value && !strcmp(value, "1");
+    if (getauxval(AT_SECURE)) return;
+    const char *value = getenv("HYBRIS_VULKAN_COMPAT_UNUSED_BUILTINS");
+    enabled = !value || !strcmp(value, "1");
 }
 int hybris_shader_cleanup_enabled(void)
 {

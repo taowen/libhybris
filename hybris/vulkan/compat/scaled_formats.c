@@ -24,10 +24,10 @@ static void configure(void)
     if (getauxval(AT_SECURE)) return;
     const char *value = getenv("HYBRIS_VULKAN_COMPAT_SCALED_VERTEX");
     force = value && !strcmp(value, "force");
-    enabled = force || (value && !strcmp(value, "1"));
+    enabled = !value || force || !strcmp(value, "1");
     value = getenv("HYBRIS_VULKAN_COMPAT_PACKED_VERTEX");
     packed_force = value && !strcmp(value, "force");
-    packed_enabled = packed_force || (value && !strcmp(value, "1"));
+    packed_enabled = !value || packed_force || !strcmp(value, "1");
     value = getenv("HYBRIS_VULKAN_COMPAT_FORMAT_TRACE");
     trace = value && !strcmp(value, "1");
 }

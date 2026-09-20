@@ -1,5 +1,9 @@
 # What is libhybris
 
+This fork enables its implemented graphics compatibility switches by default.
+See [compatibility defaults](docs/compatibility-defaults.md) for overrides,
+capability guards and known limitations.
+
 libhybris is a way to load drivers compiled for Android from "regular linux
 processes".
 In other words it allows you to load drivers that link against the bionic c
@@ -57,4 +61,3 @@ For these kinds of drivers it's sometimes easier to use binder-IPC directly
 from a native context. For these purposes there exists a glib based binder
 implementation here: https://github.com/mer-hybris/libgbinder and some example
 how to use it can be found here: https://github.com/mer-hybris/bluebinder
-

@@ -1,5 +1,9 @@
 # Standard-loader adapter
 
+For current runtime defaults, see
+[compatibility defaults](../../../docs/compatibility-defaults.md).
+Compatibility passes no longer require opt-in environment variables.
+
 This optional library connects the glibc Khronos Vulkan loader directly to an
 Android Vulkan HAL through libhybris. It does not load Android libvulkan, modify
 dispatchable object headers, build a private layer chain or edit pNext lists.

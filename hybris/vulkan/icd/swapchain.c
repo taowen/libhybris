@@ -556,7 +556,14 @@ static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
     }
     int error = state->window->ops->queue(state->window, state->images[index].native, fence);
     // The native queue wrapper consumes the FD on every return path.
-    if (error) return VK_ERROR_SURFACE_LOST_KHR;
+    if (error) {
+        /* A rejected submission will never receive a native release event.
+         * Invalidate the chain before another acquire can wait on that image. */
+        state->window->ops->cancel(state->window, state->images[index].native, -1);
+        state->images[index].state = IMAGE_FREE;
+        state->presentation_status = VK_ERROR_SURFACE_LOST_KHR;
+        return state->presentation_status;
+    }
     state->images[index].state = IMAGE_PRESENTED;
     return result;
 }

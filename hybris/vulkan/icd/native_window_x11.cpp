@@ -56,7 +56,11 @@ static void trace(Owner *o, const char *event, const Pending *p) {
 static int check(xcb_connection_t *connection, unsigned sequence) {
     if (!sequence || xcb_connection_has_error(connection)) return -EPIPE;
     xcb_generic_error_t *error = xcb_request_check(connection, {sequence});
-    if (error) { free(error); return -EPIPE; }
+    if (error) {
+        fprintf(stderr, "hybris X11 WSI: request=%u.%u error=%u resource=%u\n",
+            error->major_code, error->minor_code, error->error_code, error->resource_id);
+        free(error); return -EPIPE;
+    }
     return xcb_connection_has_error(connection) ? -EPIPE : 0;
 }
 static int select(Owner *o, uint32_t mask) {
@@ -188,7 +192,16 @@ static int queue(hybris_icd_window *base, ANativeWindowBuffer *native, int fd) {
         p->buffer = b; b->common.incRef(&b->common); b->held = true;
         p->next = o->pending; o->pending = p;
         trace(o, "present", p);
-    } else free(p);
+    } else {
+        if (o->trace) {
+            auto *attributes = xcb_get_window_attributes_reply(o->connection,
+                xcb_get_window_attributes(o->connection, o->window), nullptr);
+            fprintf(stderr, "X11_WSI event=rejected window=%u serial=%u map_state=%d\n",
+                o->window, p->serial, attributes ? attributes->map_state : -1);
+            free(attributes);
+        }
+        free(p);
+    }
     free(data); pthread_mutex_unlock(&o->mutex); return error;
 }
 static int cancel(hybris_icd_window *base, ANativeWindowBuffer *native, int fd) {

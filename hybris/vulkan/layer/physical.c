@@ -77,7 +77,6 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     if (result != VK_SUCCESS && result != VK_INCOMPLETE) { free(all); return result; }
     uint32_t kept = 0, written = 0, capacity = properties ? *count : 0;
     for (uint32_t i = 0; i < available; ++i) {
-        if (vertex_stores && !strcmp(all[i].extensionName, VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME)) continue;
         if ((bc_mask && !hybris_bc_extension_allowed(all[i].extensionName)) ||
             ((shader_mask || vertex_stores) && !hybris_shader_extension_allowed(all[i].extensionName))) continue;
         if (properties && written < capacity) properties[written++] = all[i];

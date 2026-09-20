@@ -12,8 +12,9 @@ static pthread_once_t policy_once = PTHREAD_ONCE_INIT;
 static int policy;
 static void initialize_policy(void)
 {
-    const char *value = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_BC_TEXTURES");
-    if (value && !strcmp(value, "missing")) policy = 1;
+    if (getauxval(AT_SECURE)) return;
+    const char *value = getenv("HYBRIS_BC_TEXTURES");
+    if (!value || !strcmp(value, "missing") || !strcmp(value, "1")) policy = 1;
     else if (value && !strcmp(value, "force")) policy = 2;
 }
 int hybris_bc_enabled(void)
