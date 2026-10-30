@@ -3,7 +3,9 @@ package org.arlinux.hybrisdiagnostics;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
-import android.os.*;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.widget.TextView;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -15,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class ProbeActivity extends Activity {
     private final AtomicBoolean complete = new AtomicBoolean();
+    private final Handler watchdog = new Handler(Looper.getMainLooper());
     private volatile Process probe;
 
     @Override public void onCreate(Bundle state) {
@@ -24,7 +27,7 @@ public final class ProbeActivity extends Activity {
         text.setTextSize(20);
         text.setPadding(24, 48, 24, 24);
         setContentView(text);
-        new Handler(Looper.getMainLooper()).postDelayed(() -> finishWith("TIMEOUT: probe exceeded 180 seconds. No pass result.\n", null), 180000);
+        watchdog.postDelayed(() -> finishWith("TIMEOUT: probe exceeded 180 seconds. No pass result.\n", null), 180000);
         new Thread(() -> {
             String result;
             int[] image = null;
@@ -96,6 +99,7 @@ public final class ProbeActivity extends Activity {
 
     @Override protected void onDestroy() {
         super.onDestroy();
+        watchdog.removeCallbacksAndMessages(null);
         if (probe != null && probe.isAlive()) probe.destroyForcibly();
     }
 
