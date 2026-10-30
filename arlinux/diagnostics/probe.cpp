@@ -2,7 +2,6 @@
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
-#include <jni.h>
 #include <dlfcn.h>
 #include <array>
 #include <vector>
@@ -18,13 +17,14 @@
 #include <fstream>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/auxv.h>
 #include <android/log.h>
 #include "sample.inc"
 #include "fixtures.h"
 
 namespace {
 constexpr uint32_t sample_size=32;
-std::vector<jint> preview(256*256,static_cast<jint>(0xff202830));
+std::vector<uint32_t> preview(256*256,0xff202830u);
 void check(VkResult result,const char *operation) {
     if(result!=VK_SUCCESS) throw std::runtime_error(std::string(operation)+": VkResult="+std::to_string(result));
 }
@@ -365,7 +365,7 @@ std::string run_probe(const std::string &directory,const std::string &mode,uint3
                 uint32_t p=((y/2)*sample_size+x/2)*4;
                 auto color=[&](uint32_t c){float v=result.sampled[p+c];if(!std::isfinite(v))v=0;return static_cast<uint32_t>(std::clamp(v,0.0f,1.0f)*255+0.5f);};
                 uint32_t at=(index/4*64+y)*256+(index%4*64+x);
-                preview[at]=static_cast<jint>(0xff000000u|(color(0)<<16)|(color(1)<<8)|color(2));
+                preview[at]=0xff000000u|(color(0)<<16)|(color(1)<<8)|color(2);
             }
         } catch(const std::exception &failure) {log<<"FAIL "<<fixture.name<<": "<<failure.what()<<"\n";++failed;if(!context.idle)break;}
         ++index;
@@ -375,31 +375,29 @@ std::string run_probe(const std::string &directory,const std::string &mode,uint3
 }
 }
 
-extern "C" JNIEXPORT jstring JNICALL Java_org_arlinux_hybrisdiagnostics_ProbeActivity_run(JNIEnv *env,jclass,jstring directory,jstring mode,jint size,jstring trace_path) {
-    const char *path=env->GetStringUTFChars(directory,nullptr),*option=env->GetStringUTFChars(mode,nullptr);
-    const char *trace_name=env->GetStringUTFChars(trace_path,nullptr);
-    int saved=dup(STDERR_FILENO),trace=open(trace_name,O_CREAT|O_TRUNC|O_WRONLY|O_CLOEXEC,0600);
+int main(int argc,char **argv) {
+    if(argc!=5) {fprintf(stderr,"Expected LIBRARY_DIRECTORY MODE SIZE RESULT_DIRECTORY\n");return 2;}
+    const std::string mode=argv[2];
+    const std::array<std::string,7> modes={"native","normal","decode","auto","fast","default","high"};
+    if(std::find(modes.begin(),modes.end(),mode)==modes.end() ||
+       (std::string(argv[3])!="64" && std::string(argv[3])!="1024"))return 2;
+    const std::string files=argv[4],trace_name=files+"/trace.txt";
     std::string result;
     try {
-        if(saved<0 || trace<0 || dup2(trace,STDERR_FILENO)<0)throw std::runtime_error("Cannot capture layer trace");
-        result=run_probe(path,option,static_cast<uint32_t>(size));
+        if(getauxval(AT_SECURE))throw std::runtime_error("Secure execution disables environment-controlled diagnostics");
+        result="AT_SECURE: 0\n"+run_probe(argv[1],mode,static_cast<uint32_t>(std::stoul(argv[3])));
         fflush(stderr);
         std::ifstream input(trace_name);
         std::string line;uint32_t emulated=0;
         while(std::getline(input,line))if(line.find("HYBRIS_BC_IMAGE ")==0)++emulated;
         result+="Emulated image records: "+std::to_string(emulated)+"\n";
-        if(std::string(option)!="native" && std::string(option)!="normal" && !emulated)
+        if(mode!="native" && mode!="normal" && !emulated)
             result+="FAIL: forced BC path was not observed.\n";
+        std::ofstream image(files+"/preview.argb",std::ios::binary);
+        image.write(reinterpret_cast<const char *>(preview.data()),preview.size()*sizeof(preview[0]));
+        if(!image)throw std::runtime_error("Cannot save preview pixels");
     }
     catch(const std::exception &failure){result="FAIL: "+std::string(failure.what())+"\n";}
-    fflush(stderr);
-    if(saved>=0){dup2(saved,STDERR_FILENO);close(saved);}
-    if(trace>=0)close(trace);
-    env->ReleaseStringUTFChars(directory,path);env->ReleaseStringUTFChars(mode,option);
-    env->ReleaseStringUTFChars(trace_path,trace_name);
-    return env->NewStringUTF(result.c_str());
-}
-extern "C" JNIEXPORT jintArray JNICALL Java_org_arlinux_hybrisdiagnostics_ProbeActivity_pixels(JNIEnv *env,jclass) {
-    jintArray result=env->NewIntArray(static_cast<jsize>(preview.size()));
-    env->SetIntArrayRegion(result,0,static_cast<jsize>(preview.size()),preview.data());return result;
+    printf("%s",result.c_str());
+    return result.find("FAIL")!=std::string::npos || result.find("PASS: ")==std::string::npos ? 1:0;
 }

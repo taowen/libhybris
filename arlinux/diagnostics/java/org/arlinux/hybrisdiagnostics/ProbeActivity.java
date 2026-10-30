@@ -7,14 +7,15 @@ import android.os.*;
 import android.widget.TextView;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.security.MessageDigest;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeUnit;
 
 public final class ProbeActivity extends Activity {
-    static { System.loadLibrary("hybris_diagnostics"); }
-    private static native String run(String directory, String mode, int size, String trace);
-    private static native int[] pixels();
     private final AtomicBoolean complete = new AtomicBoolean();
+    private volatile Process probe;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -49,10 +50,27 @@ public final class ProbeActivity extends Activity {
                 if (!hash.toString().equals(new org.json.JSONObject(source).getString("compatibilityLayerSha256")))
                     throw new IOException("Loaded layer differs from its build identity");
                 android.util.Log.i("HybrisDiagnostics", source + "\nLoaded layer: " + hash);
-                result = source + "\nLoaded compatibility layer SHA-256: " + hash + "\n"
-                    + run(directory, getIntent().getStringExtra("mode"), getIntent().getIntExtra("size", 64),
-                          new File(getFilesDir(), "trace.txt").getPath());
-                image = pixels();
+                File nativeReport = new File(getFilesDir(), "native-report.txt");
+                File pixels = new File(getFilesDir(), "preview.argb");
+                if (pixels.exists() && !pixels.delete()) throw new IOException("Cannot clear previous preview");
+                // exec resets the zygote's AT_SECURE flag without weakening the
+                // compatibility layer's secure-execution environment policy.
+                probe = new ProcessBuilder(directory + "/libhybris_diagnostics_exec.so", directory,
+                    getIntent().getStringExtra("mode"), Integer.toString(getIntent().getIntExtra("size", 64)),
+                    getFilesDir().getPath())
+                    .redirectOutput(nativeReport).redirectError(new File(getFilesDir(), "trace.txt")).start();
+                if (complete.get()) { probe.destroyForcibly(); return; }
+                if (!probe.waitFor(180, TimeUnit.SECONDS)) throw new IOException("GPU probe timed out");
+                String nativeText = new String(java.nio.file.Files.readAllBytes(nativeReport.toPath()), StandardCharsets.UTF_8);
+                result = source + "\nLoaded compatibility layer SHA-256: " + hash + "\n" + nativeText;
+                if (probe.exitValue() != 0 && !nativeText.contains("FAIL"))
+                    result += "\nFAIL: native process exited " + probe.exitValue() + "\n";
+                if (pixels.isFile()) {
+                    byte[] bytes = java.nio.file.Files.readAllBytes(pixels.toPath());
+                    if (bytes.length != 256 * 256 * 4) throw new IOException("Invalid preview dimensions");
+                    image = new int[256 * 256];
+                    ByteBuffer.wrap(bytes).order(ByteOrder.nativeOrder()).asIntBuffer().get(image);
+                }
             } catch (Throwable failure) { result = "FAIL: " + failure + "\n"; }
             finishWith(result, image);
         }, "hybris-gpu-probe").start();
@@ -60,6 +78,7 @@ public final class ProbeActivity extends Activity {
 
     private void finishWith(String result, int[] image) {
         if (!complete.compareAndSet(false, true)) return;
+        if (probe != null && probe.isAlive()) probe.destroyForcibly();
         try {
             File preview = new File(getFilesDir(), "preview.png");
             if (image != null && image.length == 256 * 256) {
@@ -77,9 +96,7 @@ public final class ProbeActivity extends Activity {
 
     @Override protected void onDestroy() {
         super.onDestroy();
-        // Policy initialization is process-wide. A finished or cancelled probe
-        // must never leave it resident for the next experiment.
-        android.os.Process.killProcess(android.os.Process.myPid());
+        if (probe != null && probe.isAlive()) probe.destroyForcibly();
     }
 
     @Override public void onBackPressed() { finishWith("CANCELLED: no pass result.\n", null); }

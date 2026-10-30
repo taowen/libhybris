@@ -40,8 +40,8 @@ Install the returned APK as `org.arlinux.hybrisdiagnostics`; no ARLinux, Linux
 instance, Wine, root or system GPU-layer settings are needed. It uses Android's
 Vulkan loader and driver with the standard layer negotiation/link interfaces.
 The normal production WSI adapter is not used: these are offscreen GPU experiments,
-not window/swapchain acceptance. Each experiment runs in a fresh application
-process and checks BC upload, sampled pixels, original compressed readback and
+not window/swapchain acceptance. Each experiment executes the APK's native probe
+as a fresh child process and checks BC upload, sampled pixels, original compressed readback and
 restoration of the app's compute bindings. A preview and report remain in the app.
 
 The native route, normal compatibility policy, forced decode and forced transcode
@@ -51,6 +51,11 @@ fast quality at 1024x1024. `mode` (`native`, `normal`, `decode`, `auto`, `fast`,
 extras for device automation. Reports and layer traces can be read through ADB
 `run-as` from `files/report.txt` and `files/trace.txt`. The app can share its report.
 No test instrumentation package is installed.
+
+The native executable runs under the app's ordinary UID. Unlike the zygote's
+inherited secure-execution state, `exec` supplies the child's actual security
+state, so diagnostic environment controls work without relaxing the layer's
+`AT_SECURE` guard. Cancellation and timeout terminate only that child.
 
 The SDK 34/build-tools 36.0.0 packaging step runs on the same Linux x64 runner as
 the NDK build and does not request Wine compilation. It uses a disposable diagnostic
