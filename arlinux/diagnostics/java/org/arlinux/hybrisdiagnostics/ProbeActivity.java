@@ -66,7 +66,8 @@ public final class ProbeActivity extends Activity {
                 if (!probe.waitFor(180, TimeUnit.SECONDS)) throw new IOException("GPU probe timed out");
                 String nativeText = new String(java.nio.file.Files.readAllBytes(nativeReport.toPath()), StandardCharsets.UTF_8);
                 result = source + "\nLoaded compatibility layer SHA-256: " + hash + "\n" + nativeText;
-                if (probe.exitValue() != 0 && !nativeText.contains("FAIL"))
+                boolean unsupported = probe.exitValue() == 2 && nativeText.contains("UNSUPPORTED:");
+                if (probe.exitValue() != 0 && !unsupported && !nativeText.contains("FAIL"))
                     result += "\nFAIL: native process exited " + probe.exitValue() + "\n";
                 if (pixels.isFile()) {
                     byte[] bytes = java.nio.file.Files.readAllBytes(pixels.toPath());

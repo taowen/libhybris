@@ -399,5 +399,6 @@ int main(int argc,char **argv) {
     }
     catch(const std::exception &failure){result="FAIL: "+std::string(failure.what())+"\n";}
     printf("%s",result.c_str());
+    if(result.find("UNSUPPORTED:")!=std::string::npos)return 2;
     return result.find("FAIL")!=std::string::npos || result.find("PASS: ")==std::string::npos ? 1:0;
 }
