@@ -7,6 +7,7 @@ unsigned hybris_bc_physical_mask(VkPhysicalDevice physical);
 void hybris_bc_enable_transcode_features(VkPhysicalDevice physical, VkPhysicalDeviceFeatures *features);
 VkFormat hybris_bc_storage_format(VkPhysicalDevice physical, const VkImageCreateInfo *info);
 int hybris_bc_complete(VkPhysicalDevice physical);
+int hybris_bc_astc_hdr(VkPhysicalDevice physical);
 int hybris_bc_format_properties(VkPhysicalDevice physical, VkFormat format, VkFormatProperties *properties);
 int hybris_bc_extension_allowed(const char *name);
 VkResult hybris_bc_prepare_device(VkPhysicalDevice physical, const VkDeviceCreateInfo *info);

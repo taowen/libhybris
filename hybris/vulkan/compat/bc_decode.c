@@ -13,7 +13,7 @@ struct kernel { const uint32_t *code; size_t size; };
 static const struct kernel kernels[] = {
     K(bc1), K(bc2), K(bc3), K(bc4), K(bc5), K(bc6h), K(bc7),
     K(rgb8), K(rgb16), K(tx_bc1), K(tx_bc2), K(tx_bc3), K(tx_bc4), K(tx_bc5), K(tx_bc7),
-    K(tx_bc1_fast), K(tx_bc2_fast), K(tx_bc3_fast), K(tx_bc4_fast), K(tx_bc5_fast), K(tx_bc7_fast)
+    K(bc1_packed), K(tx_bc6h)
 };
 #undef K
 static int family(VkFormat f)
@@ -36,6 +36,9 @@ static int variant(const struct hybris_bc_region *r)
         return f == 3 ? 12 : -1;
     case VK_FORMAT_EAC_R11G11_UNORM_BLOCK: case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:
         return f == 4 ? 13 : -1;
+    case VK_FORMAT_R5G6B5_UNORM_PACK16: case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+        return f == 0 ? 15 : -1;
+    case VK_FORMAT_ASTC_4x4_SFLOAT_BLOCK: return f == 5 ? 16 : -1;
     default: return r->rgb8 ? (f == 0 ? 7 : -1) : r->rgb16 ? (f == 5 ? 8 : -1) : f;
     }
 }
@@ -43,7 +46,7 @@ uint32_t hybris_bc_output_block_bytes(const struct hybris_bc_region *r)
 {
     int v = variant(r);
     if (v < 0) return 0;
-    static const uint32_t bytes[] = {64,64,64,32,64,128,64,48,96,8,16,16,8,16,16};
+    static const uint32_t bytes[] = {64,64,64,16,32,128,64,48,96,8,16,16,8,16,16,32,16};
     return bytes[v];
 }
 void hybris_bc_decoder_destroy(struct hybris_bc_decoder *d, const VkAllocationCallbacks *a)
@@ -51,8 +54,9 @@ void hybris_bc_decoder_destroy(struct hybris_bc_decoder *d, const VkAllocationCa
     if (!d || !d->device) return;
     PROC(DestroyPipeline); PROC(DestroyPipelineLayout); PROC(DestroyDescriptorSetLayout);
     a = d->custom_allocator ? &d->allocator : NULL;
-    for (unsigned i = 0; i < HYBRIS_BC_KERNEL_COUNT; i++)
-        if (d->pipelines[i]) DestroyPipeline(d->device, d->pipelines[i], a);
+    for (unsigned q = 0; q < 3; ++q)
+        for (unsigned i = 0; i < HYBRIS_BC_KERNEL_COUNT; i++)
+            if (d->pipelines[q][i]) DestroyPipeline(d->device, d->pipelines[q][i], a);
     if (d->layout) DestroyPipelineLayout(d->device, d->layout, a);
     if (d->descriptor_layout) DestroyDescriptorSetLayout(d->device, d->descriptor_layout, a);
     pthread_mutex_destroy(&d->guard);
@@ -84,11 +88,11 @@ fail:
     hybris_bc_decoder_destroy(d, a);
     return result;
 }
-static VkResult pipeline(struct hybris_bc_decoder *d, int v, VkPipeline *out)
+static VkResult pipeline(struct hybris_bc_decoder *d, int v, uint32_t quality, VkPipeline *out)
 {
     pthread_mutex_lock(&d->guard);
     VkResult result = VK_SUCCESS;
-    if (!d->pipelines[v]) {
+    if (!d->pipelines[quality][v]) {
         PROC(CreateShaderModule); PROC(DestroyShaderModule); PROC(CreateComputePipelines);
         const VkAllocationCallbacks *a = d->custom_allocator ? &d->allocator : NULL;
         VkShaderModuleCreateInfo info = {.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -96,17 +100,21 @@ static VkResult pipeline(struct hybris_bc_decoder *d, int v, VkPipeline *out)
         VkShaderModule shader = VK_NULL_HANDLE;
         result = CreateShaderModule(d->device, &info, a, &shader);
         if (result == VK_SUCCESS) {
+            VkSpecializationMapEntry entry = {.constantID = 0, .size = sizeof(quality)};
+            VkSpecializationInfo specialization = {.mapEntryCount = 1, .pMapEntries = &entry,
+                .dataSize = sizeof(quality), .pData = &quality};
             VkComputePipelineCreateInfo create = {.sType=VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
                 .stage={.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    .stage=VK_SHADER_STAGE_COMPUTE_BIT, .module=shader, .pName="main"}, .layout=d->layout};
-            result = CreateComputePipelines(d->device, VK_NULL_HANDLE, 1, &create, a, &d->pipelines[v]);
+                    .stage=VK_SHADER_STAGE_COMPUTE_BIT, .module=shader, .pName="main",
+                    .pSpecializationInfo = v >= 9 && v != 15 ? &specialization : NULL}, .layout=d->layout};
+            result = CreateComputePipelines(d->device, VK_NULL_HANDLE, 1, &create, a, &d->pipelines[quality][v]);
             DestroyShaderModule(d->device, shader, a);
             const char *trace = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_VULKAN_TRACE");
             if (trace && !strcmp(trace, "1"))
                 fprintf(stderr, "HYBRIS_BC_KERNEL variant=%d result=%d\n", v, result);
         }
     }
-    *out = d->pipelines[v];
+    *out = d->pipelines[quality][v];
     pthread_mutex_unlock(&d->guard);
     return result;
 }
@@ -159,8 +167,8 @@ VkResult hybris_bc_decode_record(struct hybris_bc_decoder *d,
     if (result != VK_SUCCESS) return result;
     VkPipeline selected;
     int v = variant(r);
-    if (r->fast && v >= 9) v += 6;
-    result = pipeline(d, v, &selected);
+    if (r->quality > 2) return VK_ERROR_INITIALIZATION_FAILED;
+    result = pipeline(d, v, v >= 9 && v != 15 ? r->quality : 1, &selected);
     if (result != VK_SUCCESS) return result;
     PROC(CmdBindPipeline); PROC(CmdBindDescriptorSets); PROC(CmdPushConstants); PROC(CmdDispatch);
     CmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, selected);

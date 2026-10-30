@@ -234,7 +234,7 @@ static VkResult VKAPI_CALL create_view(VkDevice handle, const VkImageViewCreateI
         if (resource->emulated.decoded_format == hybris_bc_transcode_format(resource->format))
             translated.format = hybris_bc_transcode_format(info->format);
         else translated.format = (resource->emulated.flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) ?
-            hybris_bc_image_format(info->format, 0) : resource->emulated.decoded_format;
+            hybris_bc_image_format(info->format) : resource->emulated.decoded_format;
     }
     PROC(CreateImageView);
     return CreateImageView(handle, &translated, allocator, view);

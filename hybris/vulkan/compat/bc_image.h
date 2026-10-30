@@ -18,7 +18,7 @@ struct hybris_bc_image {
     uint32_t mip_levels, layers, block_bytes;
     VkDeviceSize mip_offset[32], block_size;
 };
-VkFormat hybris_bc_image_format(VkFormat format, unsigned rgb_mask);
+VkFormat hybris_bc_image_format(VkFormat format);
 VkFormat hybris_bc_transcode_format(VkFormat format);
 int hybris_bc_mutable_format(VkFormat format);
 int hybris_bc_view_format_allowed(VkFormat base, VkFormat view, VkImageCreateFlags flags);

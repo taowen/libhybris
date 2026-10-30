@@ -2,9 +2,29 @@
 #define VK_NO_PROTOTYPES
 #include "bc_transfer.h"
 #include <stdlib.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <sys/auxv.h>
 #include <string.h>
 
 #define PROC(name) PFN_vk##name name = (PFN_vk##name)t->decoder->resolver(t->decoder->device, "vk" #name)
+static pthread_once_t quality_once = PTHREAD_ONCE_INIT;
+static unsigned quality = 3;
+static void configure_quality(void)
+{
+    if (getauxval(AT_SECURE)) return;
+    const char *value = getenv("HYBRIS_BC_TRANSCODE_QUALITY");
+    if (!value || !strcmp(value, "auto")) return;
+    if (!strcmp(value, "fast")) quality = 0;
+    else if (!strcmp(value, "default")) quality = 1;
+    else if (!strcmp(value, "high")) quality = 2;
+    else fprintf(stderr, "HYBRIS_BC_TRANSCODE_QUALITY: expected auto, fast, default or high; using auto\n");
+}
+static unsigned level_quality(VkExtent3D extent)
+{
+    pthread_once(&quality_once, configure_quality);
+    return quality != 3 ? quality : (uint64_t)extent.width * extent.height >= UINT64_C(1024) * 1024 ? 0 : 1;
+}
 struct hybris_bc_transfer_pool {
     VkDescriptorPool handle;
     uint32_t used;
@@ -175,7 +195,7 @@ static VkResult decode(struct hybris_bc_transfer *t, VkCommandBuffer command,
                 buffer_barrier(t, command, t->scratch, VK_PIPELINE_STAGE_TRANSFER_BIT,
                     VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
                 struct hybris_bc_region decoding = {.format = image->format, .output_format = image->decoded_format,
-                    .fast = (uint64_t)extent.width * extent.height >= UINT64_C(1024) * 1024,
+                    .quality = level_quality(extent),
                     .rgb16 = image->decoded_format == VK_FORMAT_R16G16B16_SFLOAT,
                     .rgb8 = image->decoded_format == VK_FORMAT_R8G8B8_UNORM || image->decoded_format == VK_FORMAT_R8G8B8_SRGB,
                     .width = width, .height = height, .layers = 1,
