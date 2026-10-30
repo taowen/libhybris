@@ -14,7 +14,7 @@ import importlib.util
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ['framework', 'source', 'headers', 'ndk', 'native-prefix', 'graphics-prefix', 'output']:
+    for name in ['framework', 'source', 'headers', 'ndk', 'native-prefix', 'vulkan-headers', 'output']:
         parser.add_argument('--' + name, type=Path, required=True)
     args = parser.parse_args()
     root = args.framework.resolve()
@@ -99,7 +99,7 @@ int bionic_hw_get_module(const char*, const hw_module_t**);
     path.write_text(text)
     ndk = args.ndk.resolve() / 'toolchains/llvm/prebuilt/linux-x86_64'
     compiler = ndk / 'bin/aarch64-linux-android29-clang'
-    includes = [generated, args.graphics_prefix / 'include', args.native_prefix / 'include',
+    includes = [generated, args.vulkan_headers, args.native_prefix / 'include',
                 component / 'graphics-protocols/include', args.headers, source / 'include',
                 stage / 'platforms/common', stage / 'platforms/wayland', stage / 'vulkan/icd']
     flags = ['-fPIC', '-O2', '-fvisibility=hidden', '-D_GNU_SOURCE', '-DANDROID_BUILD', '-DHYBRIS_NO_SERVER_SIDE_BUFFERS']
