@@ -23,3 +23,43 @@ canonical templates. They only dispatch the selected pinned framework recipe;
 they do not implement another build graph. Keep the rootfs and Wine submodule
 pins synchronized when integrating a graphics change. Update both pins and
 validate each product before promoting its public release.
+
+## Standalone Android diagnostics
+
+Every Bionic Vulkan build also produces `diagnostics/libhybris-diagnostics.apk`
+and its JSON identity. The APK embeds the exact compiled compatibility layer,
+its source commit, library hashes and licenses. The component publisher exposes
+both files in the same `arlinux-wine-vulkan-debug` release. From the Android
+workstation's sole entry:
+
+```powershell
+.\build.ps1 hybris-diagnostics -WineRef FULL_PUSHED_WINE_COMMIT
+```
+
+Install the returned APK as `org.arlinux.hybrisdiagnostics`; no ARLinux, Linux
+instance, Wine, root or system GPU-layer settings are needed. It uses Android's
+Vulkan loader and driver with the standard layer negotiation/link interfaces.
+The normal production WSI adapter is not used: these are offscreen GPU experiments,
+not window/swapchain acceptance. Each experiment executes the APK's native probe
+as a fresh child process and checks BC upload, sampled pixels, original compressed readback and
+restoration of the app's compute bindings. A preview and report remain in the app.
+
+The native route, normal compatibility policy, forced decode and forced transcode
+quality modes are separate buttons. The large-texture option exercises automatic
+fast quality at 1024x1024. `mode` (`native`, `normal`, `decode`, `auto`, `fast`,
+`default`, `high`) and `size` (`64`, `1024`) are also accepted as MainActivity intent
+extras for device automation. Reports and layer traces can be read through ADB
+`run-as` from `files/report.txt` and `files/trace.txt`. The app can share its report.
+No test instrumentation package is installed.
+
+The native executable runs under the app's ordinary UID. Unlike the zygote's
+inherited secure-execution state, `exec` supplies the child's actual security
+state, so diagnostic environment controls work without relaxing the layer's
+`AT_SECURE` guard. Cancellation and timeout terminate only that child.
+
+The SDK 34/build-tools 36.0.0 packaging step runs on the same Linux x64 runner as
+the NDK build and does not request Wine compilation. It uses a disposable diagnostic
+signing key, never the product signing key. A new build may require uninstalling
+the previous diagnostic APK; its private reports are then removed. Retain useful
+evidence outside the app first. Keep device records outside Git. Real application
+and game regression remains required after these targeted experiments.

@@ -1,0 +1,14 @@
+#version 450
+layout(local_size_x=8, local_size_y=8) in;
+layout(binding=0) uniform sampler2D source_image;
+layout(binding=1,std430) writeonly buffer Result { vec4 values[]; } result;
+layout(push_constant) uniform Shape { uint width; uint output_size; } shape;
+void main() {
+    uvec2 p=gl_GlobalInvocationID.xy;
+    if (p.x>=shape.output_size || p.y>=shape.output_size) return;
+    // Retain each block's 4x4 pattern while spreading samples across the image.
+    uvec2 block=p/4u;
+    uint stride=max(1u,shape.width/shape.output_size);
+    ivec2 texel=ivec2(min(block*4u*stride+(p%4u),uvec2(shape.width-1u)));
+    result.values[p.y*shape.output_size+p.x]=texelFetch(source_image,texel,0);
+}

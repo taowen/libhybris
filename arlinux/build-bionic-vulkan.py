@@ -9,11 +9,12 @@ from pathlib import Path
 import shutil
 import subprocess
 import re
+import importlib.util
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ['framework', 'source', 'headers', 'ndk', 'native-prefix', 'graphics-prefix', 'output']:
+    for name in ['framework', 'source', 'headers', 'ndk', 'native-prefix', 'vulkan-headers', 'output']:
         parser.add_argument('--' + name, type=Path, required=True)
     args = parser.parse_args()
     root = args.framework.resolve()
@@ -98,7 +99,7 @@ int bionic_hw_get_module(const char*, const hw_module_t**);
     path.write_text(text)
     ndk = args.ndk.resolve() / 'toolchains/llvm/prebuilt/linux-x86_64'
     compiler = ndk / 'bin/aarch64-linux-android29-clang'
-    includes = [generated, args.graphics_prefix / 'include', args.native_prefix / 'include',
+    includes = [generated, args.vulkan_headers, args.native_prefix / 'include',
                 component / 'graphics-protocols/include', args.headers, source / 'include',
                 stage / 'platforms/common', stage / 'platforms/wayland', stage / 'vulkan/icd']
     flags = ['-fPIC', '-O2', '-fvisibility=hidden', '-D_GNU_SOURCE', '-DANDROID_BUILD', '-DHYBRIS_NO_SERVER_SIDE_BUFFERS']
@@ -151,11 +152,15 @@ int bionic_hw_get_module(const char*, const hw_module_t**);
     notices = output / 'licenses/libhybris-vulkan'
     notices.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(args.source / 'LICENSE.GPL3', notices / 'LICENSE.GPL3')
-    for name in ('MALIBRIDGE.md', 'NOTICE.MaliBridge', 'LICENSE.bcdec'):
+    for name in ('MALIBRIDGE.md', 'NOTICE.MaliBridge', 'LICENSE.bcdec', 'LICENSE.PanVK'):
         shutil.copyfile(source / 'vulkan/compat/shaders' / name, notices / name)
     commit = subprocess.check_output(['git', '-C', str(args.source), 'rev-parse', 'HEAD'], text=True).strip()
     (notices / 'SOURCE').write_text('https://github.com/taowen/libhybris/tree/' + commit + '\n')
     print(layer)
+    spec = importlib.util.spec_from_file_location('hybris_diagnostics_build', component/'diagnostics/build.py')
+    diagnostics = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(diagnostics)
+    diagnostics.build_diagnostics(args.source.resolve(), output, compiler, flags, layer, args.ndk.resolve())
 
 
 if __name__ == '__main__':

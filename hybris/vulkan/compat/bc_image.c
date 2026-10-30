@@ -5,31 +5,31 @@
 
 #define PROC(name) PFN_vk##name name = (PFN_vk##name)image->resolver(image->device, "vk" #name)
 
-VkFormat hybris_bc_image_format(VkFormat format, unsigned rgb_mask)
+VkFormat hybris_bc_image_format(VkFormat format)
 {
     switch (format) {
     case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
-        return rgb_mask & 1 ? VK_FORMAT_R8G8B8_UNORM : VK_FORMAT_R8G8B8A8_UNORM;
+        return VK_FORMAT_R8G8B8A8_UNORM;
     case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
     case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC3_UNORM_BLOCK:
     case VK_FORMAT_BC7_UNORM_BLOCK:
         return VK_FORMAT_R8G8B8A8_UNORM;
     case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
-        return rgb_mask & 2 ? VK_FORMAT_R8G8B8_SRGB : VK_FORMAT_R8G8B8A8_SRGB;
+        return VK_FORMAT_R8G8B8A8_SRGB;
     case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
     case VK_FORMAT_BC2_SRGB_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK:
     case VK_FORMAT_BC7_SRGB_BLOCK:
         return VK_FORMAT_R8G8B8A8_SRGB;
     case VK_FORMAT_BC4_UNORM_BLOCK:
-        return VK_FORMAT_R16_UNORM;
+        return VK_FORMAT_R8_UNORM;
     case VK_FORMAT_BC4_SNORM_BLOCK:
-        return VK_FORMAT_R16_SNORM;
+        return VK_FORMAT_R8_SNORM;
     case VK_FORMAT_BC5_UNORM_BLOCK:
-        return VK_FORMAT_R16G16_UNORM;
+        return VK_FORMAT_R8G8_UNORM;
     case VK_FORMAT_BC5_SNORM_BLOCK:
-        return VK_FORMAT_R16G16_SNORM;
+        return VK_FORMAT_R8G8_SNORM;
     case VK_FORMAT_BC6H_UFLOAT_BLOCK: case VK_FORMAT_BC6H_SFLOAT_BLOCK:
-        return rgb_mask & 4 ? VK_FORMAT_R16G16B16_SFLOAT : VK_FORMAT_R16G16B16A16_SFLOAT;
+        return VK_FORMAT_R16G16B16A16_SFLOAT;
     default: return VK_FORMAT_UNDEFINED;
     }
 }
@@ -37,26 +37,25 @@ VkFormat hybris_bc_image_format(VkFormat format, unsigned rgb_mask)
 VkFormat hybris_bc_transcode_format(VkFormat format)
 {
     switch (format) {
-    case VK_FORMAT_BC1_RGB_UNORM_BLOCK: return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
-    case VK_FORMAT_BC1_RGB_SRGB_BLOCK: return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
-    case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: return VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK;
-    case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: return VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK;
+    case VK_FORMAT_BC1_RGB_UNORM_BLOCK: case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
     case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC3_UNORM_BLOCK: case VK_FORMAT_BC7_UNORM_BLOCK:
         return VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+    case VK_FORMAT_BC1_RGB_SRGB_BLOCK: case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
     case VK_FORMAT_BC2_SRGB_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK: case VK_FORMAT_BC7_SRGB_BLOCK:
         return VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
     case VK_FORMAT_BC4_UNORM_BLOCK: return VK_FORMAT_EAC_R11_UNORM_BLOCK;
     case VK_FORMAT_BC4_SNORM_BLOCK: return VK_FORMAT_EAC_R11_SNORM_BLOCK;
     case VK_FORMAT_BC5_UNORM_BLOCK: return VK_FORMAT_EAC_R11G11_UNORM_BLOCK;
     case VK_FORMAT_BC5_SNORM_BLOCK: return VK_FORMAT_EAC_R11G11_SNORM_BLOCK;
+    case VK_FORMAT_BC6H_UFLOAT_BLOCK: case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+        return VK_FORMAT_ASTC_4x4_SFLOAT_BLOCK;
     default: return VK_FORMAT_UNDEFINED;
     }
 }
 
 int hybris_bc_mutable_format(VkFormat format)
 {
-    return (format >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && format <= VK_FORMAT_BC3_SRGB_BLOCK) ||
-        format == VK_FORMAT_BC7_UNORM_BLOCK || format == VK_FORMAT_BC7_SRGB_BLOCK;
+    return format >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && format <= VK_FORMAT_BC7_SRGB_BLOCK;
 }
 int hybris_bc_view_format_allowed(VkFormat base, VkFormat view, VkImageCreateFlags flags)
 {
@@ -103,7 +102,7 @@ VkResult hybris_bc_image_describe(const VkImageCreateInfo *info, struct hybris_b
 {
     if (!info || !image) return VK_ERROR_INITIALIZATION_FAILED;
     memset(image, 0, sizeof(*image));
-    VkFormat format = hybris_bc_image_format(info->format, 0);
+    VkFormat format = hybris_bc_image_format(info->format);
     if (format == VK_FORMAT_UNDEFINED ||
         (info->imageType != VK_IMAGE_TYPE_2D && info->imageType != VK_IMAGE_TYPE_3D) ||
         info->tiling != VK_IMAGE_TILING_OPTIMAL ||
@@ -198,9 +197,14 @@ VkResult hybris_bc_image_create(VkDevice device, PFN_vkGetDeviceProcAddr resolve
     VkImageCreateInfo decoded = *info;
     decoded.pNext = NULL;
     /* The two transfer functions must use the same storage representation. */
-    image->decoded_format = hybris_bc_image_format(info->format,
-        (info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) ? 0 : rgb_mask);
+    image->decoded_format = hybris_bc_image_format(info->format);
     if (output_format != VK_FORMAT_UNDEFINED) image->decoded_format = output_format;
+    else if (!(info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)) {
+        if (info->format == VK_FORMAT_BC1_RGB_UNORM_BLOCK && (rgb_mask & 1))
+            image->decoded_format = VK_FORMAT_R5G6B5_UNORM_PACK16;
+        if (info->format == VK_FORMAT_BC1_RGBA_UNORM_BLOCK && (rgb_mask & 2))
+            image->decoded_format = VK_FORMAT_A1R5G5B5_UNORM_PACK16;
+    }
     decoded.format = image->decoded_format;
     decoded.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     result = CreateImage(device, &decoded, allocator, &image->image);
