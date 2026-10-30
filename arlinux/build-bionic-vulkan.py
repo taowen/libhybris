@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import re
+import importlib.util
 
 
 def main():
@@ -156,6 +157,10 @@ int bionic_hw_get_module(const char*, const hw_module_t**);
     commit = subprocess.check_output(['git', '-C', str(args.source), 'rev-parse', 'HEAD'], text=True).strip()
     (notices / 'SOURCE').write_text('https://github.com/taowen/libhybris/tree/' + commit + '\n')
     print(layer)
+    spec = importlib.util.spec_from_file_location('hybris_diagnostics_build', component/'diagnostics/build.py')
+    diagnostics = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(diagnostics)
+    diagnostics.build_diagnostics(args.source.resolve(), output, compiler, flags, layer, args.ndk.resolve())
 
 
 if __name__ == '__main__':
