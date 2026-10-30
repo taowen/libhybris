@@ -55,7 +55,7 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
         classes = work/'classes'
         classes.mkdir()
         java_home = Path(os.environ['JAVA_HOME'])
-        subprocess.run([str(java_home/'bin/javac'), '-source','8','-target','8','-bootclasspath',str(platform),
+        subprocess.run([str(java_home/'bin/javac'), '--release','8','-classpath',str(platform),
                         '-d',str(classes), *map(str,sorted((recipe/'java').rglob('*.java')))], check=True)
         jar = work/'classes.jar'
         subprocess.run([str(java_home/'bin/jar'),'cf',str(jar),'-C',str(classes),'.'], check=True)
