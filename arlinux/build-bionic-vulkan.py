@@ -152,7 +152,7 @@ int bionic_hw_get_module(const char*, const hw_module_t**);
     notices = output / 'licenses/libhybris-vulkan'
     notices.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(args.source / 'LICENSE.GPL3', notices / 'LICENSE.GPL3')
-    for name in ('MALIBRIDGE.md', 'NOTICE.MaliBridge', 'LICENSE.bcdec'):
+    for name in ('MALIBRIDGE.md', 'NOTICE.MaliBridge', 'LICENSE.bcdec', 'LICENSE.PanVK'):
         shutil.copyfile(source / 'vulkan/compat/shaders' / name, notices / name)
     commit = subprocess.check_output(['git', '-C', str(args.source), 'rev-parse', 'HEAD'], text=True).strip()
     (notices / 'SOURCE').write_text('https://github.com/taowen/libhybris/tree/' + commit + '\n')

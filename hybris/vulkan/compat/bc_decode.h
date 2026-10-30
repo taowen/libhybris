@@ -9,7 +9,7 @@
  * Output is RGBA8 for BC1-3/BC7, R8 UNORM/SNORM for BC4, RG8 for BC5.
  * BC1 RGB can instead write RGB8. Scratch rows/layers are padded to 4x4 blocks;
  * output size is ceil(width/4)*ceil(height/4)*layers*output_block_bytes.
- * output_format may select packed BC1 or native ETC2/EAC/ASTC 4x4 transcoding.
+ * output_format may select packed BC1 or native EAC/ASTC 4x4 transcoding.
  * Source/destination are non-overlapping storage-buffer descriptor ranges.
  * Offsets below are relative to those ranges, not to bound device memory.
  * The caller owns buffers/descriptors and their synchronization/lifetime.

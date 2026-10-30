@@ -50,7 +50,7 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
         licenses = assets/'licenses'
         licenses.mkdir()
         shutil.copyfile(source/'LICENSE.GPL3', licenses/'LICENSE.GPL3')
-        for name in ('MALIBRIDGE.md','NOTICE.MaliBridge','LICENSE.bcdec'):
+        for name in ('MALIBRIDGE.md','NOTICE.MaliBridge','LICENSE.bcdec','LICENSE.PanVK'):
             shutil.copyfile(source/'hybris/vulkan/compat/shaders'/name, licenses/name)
         classes = work/'classes'
         classes.mkdir()

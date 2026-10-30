@@ -11,7 +11,7 @@ here = Path(__file__).resolve().parent
 variants = [(f'bc{family}', [f'FMT_BC{family}']) for family in ('1', '2', '3', '4', '5', '6H', '7')]
 variants += [('rgb8', ['FMT_BC1', 'OUT_RGB8']), ('rgb16', ['FMT_BC6H', 'OUT_RGB16'])]
 variants += [(f'tx_bc{family}', [f'FMT_BC{family}', encoder]) for family, encoder in
-             [('1', 'ENC_ETC2'), ('2', 'ENC_ASTC'), ('3', 'ENC_ASTC'),
+             [('1', 'ENC_ASTC'), ('2', 'ENC_ASTC'), ('3', 'ENC_ASTC'),
               ('4', 'ENC_EAC'), ('5', 'ENC_EAC'), ('7', 'ENC_ASTC')]]
 variants += [('bc1_packed', ['FMT_BC1', 'PACK16']), ('tx_bc6h', ['FMT_BC6H', 'ENC_ASTC_HDR'])]
 rows = ['/* SPDX-License-Identifier: GPL-3.0-or-later */',

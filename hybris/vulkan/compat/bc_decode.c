@@ -27,11 +27,8 @@ static int variant(const struct hybris_bc_region *r)
     int f = family(r->format);
     if (f < 0) return -1;
     switch (r->output_format) {
-    case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK: case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:
-    case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK: case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK:
-        return f == 0 ? 9 : -1;
     case VK_FORMAT_ASTC_4x4_UNORM_BLOCK: case VK_FORMAT_ASTC_4x4_SRGB_BLOCK:
-        return f == 1 ? 10 : f == 2 ? 11 : f == 6 ? 14 : -1;
+        return f == 0 ? 9 : f == 1 ? 10 : f == 2 ? 11 : f == 6 ? 14 : -1;
     case VK_FORMAT_EAC_R11_UNORM_BLOCK: case VK_FORMAT_EAC_R11_SNORM_BLOCK:
         return f == 3 ? 12 : -1;
     case VK_FORMAT_EAC_R11G11_UNORM_BLOCK: case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:
@@ -46,7 +43,7 @@ uint32_t hybris_bc_output_block_bytes(const struct hybris_bc_region *r)
 {
     int v = variant(r);
     if (v < 0) return 0;
-    static const uint32_t bytes[] = {64,64,64,16,32,128,64,48,96,8,16,16,8,16,16,32,16};
+    static const uint32_t bytes[] = {64,64,64,16,32,128,64,48,96,16,16,16,8,16,16,32,16};
     return bytes[v];
 }
 void hybris_bc_decoder_destroy(struct hybris_bc_decoder *d, const VkAllocationCallbacks *a)
@@ -106,7 +103,7 @@ static VkResult pipeline(struct hybris_bc_decoder *d, int v, uint32_t quality, V
             VkComputePipelineCreateInfo create = {.sType=VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
                 .stage={.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                     .stage=VK_SHADER_STAGE_COMPUTE_BIT, .module=shader, .pName="main",
-                    .pSpecializationInfo = v >= 9 && v != 15 ? &specialization : NULL}, .layout=d->layout};
+                    .pSpecializationInfo = v >= 12 && v != 15 ? &specialization : NULL}, .layout=d->layout};
             result = CreateComputePipelines(d->device, VK_NULL_HANDLE, 1, &create, a, &d->pipelines[quality][v]);
             DestroyShaderModule(d->device, shader, a);
             const char *trace = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_VULKAN_TRACE");
@@ -168,7 +165,7 @@ VkResult hybris_bc_decode_record(struct hybris_bc_decoder *d,
     VkPipeline selected;
     int v = variant(r);
     if (r->quality > 2) return VK_ERROR_INITIALIZATION_FAILED;
-    result = pipeline(d, v, v >= 9 && v != 15 ? r->quality : 1, &selected);
+    result = pipeline(d, v, v >= 12 && v != 15 ? r->quality : 1, &selected);
     if (result != VK_SUCCESS) return result;
     PROC(CmdBindPipeline); PROC(CmdBindDescriptorSets); PROC(CmdPushConstants); PROC(CmdDispatch);
     CmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, selected);

@@ -15,8 +15,17 @@ linking these kernels must be distributed under GPL-3.0-or-later, together
 with corresponding source. This does not relicense unrelated upstream files;
 their existing notices remain in place.
 
-The application path follows MaliBridge's default format policy: BC1 uses ETC2,
-BC2/3/7 ASTC 4x4, BC4/5 EAC, and BC6H ASTC 4x4 HDR where the device supports
+BC1/2/3 use the dedicated ASTC 4x4 endpoint/index repacker from
+[JimVulkan/mali-panvk](https://github.com/JimVulkan/mali-panvk/blob/d896b0a9c10b92f0f9d53ef3373006b79ed709e8/src/compiler/glsl/bc_decoder.glsl),
+commit `d896b0a9c10b92f0f9d53ef3373006b79ed709e8` (MIT, see LICENSE.PanVK).
+Its helper names are scoped in astc_repack.glsl; its format and weight packing
+are retained. BC2/3 alpha is refit to four levels. BC1's opaque three-colour
+mode approximates an off-line black palette entry, as in that source; this
+transcode is not a lossless replacement for native BC. BC7 continues to use
+the MaliBridge ASTC encoder.
+
+The application path uses ASTC 4x4 for BC1/2/3/7, EAC for BC4/5, and BC6H
+ASTC 4x4 HDR where the device supports
 the required native features and image parameters. Native ASTC HDR is enabled
 through Vulkan 1.3 or its extension during device creation. Unsupported targets
 fall back to RGBA8, R8, RG8 or RGBA16F; eligible non-mutable BC1 UNORM images
@@ -24,7 +33,8 @@ can use R5G6B5 or A1R5G5B5. As upstream, BC6H signed values lose negative
 components when transcoded to ASTC HDR. `HYBRIS_BC_TRANSCODE=0` selects decoding.
 
 `HYBRIS_BC_TRANSCODE_QUALITY` accepts `auto` (default), `fast`, `default` and
-`high`. Quality uses the upstream specialization constant. Auto selects fast
+`high`. Quality uses the upstream specialization constant for searched encoders;
+the BC1/2/3 repacker has no quality search. Auto selects fast
 for mip levels of at least 1,048,576 texels and default for smaller levels;
 all pieces of a mip use the same quality. Optional upstream ASTC 6x6/8x8
 transcoding is not exposed by this adapter.
