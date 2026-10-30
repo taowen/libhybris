@@ -52,7 +52,7 @@ extras for device automation. Reports and layer traces can be read through ADB
 `run-as` from `files/report.txt` and `files/trace.txt`. The app can share its report.
 No test instrumentation package is installed.
 
-The SDK 34/build-tools 34.0.0 packaging step runs on the same Linux x64 runner as
+The SDK 34/build-tools 36.0.0 packaging step runs on the same Linux x64 runner as
 the NDK build and does not request Wine compilation. It uses a disposable diagnostic
 signing key, never the product signing key. A new build may require uninstalling
 the previous diagnostic APK; its private reports are then removed. Retain useful

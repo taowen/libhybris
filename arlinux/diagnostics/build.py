@@ -17,10 +17,10 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
     recipe = Path(__file__).resolve().parent
     sdk = Path(os.environ['ANDROID_HOME'])
     platform = sdk / 'platforms/android-34/android.jar'
-    tools = sdk / 'build-tools/34.0.0'
+    tools = sdk / 'build-tools/36.0.0'
     if not platform.is_file() or not (tools/'aapt2').is_file():
         manager = sdk / 'cmdline-tools/latest/bin/sdkmanager'
-        subprocess.run([str(manager), 'platforms;android-34', 'build-tools;34.0.0'], check=True)
+        subprocess.run([str(manager), 'platforms;android-34', 'build-tools;36.0.0'], check=True)
     target = output / 'diagnostics'
     target.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='diagnostics-', dir=output) as temporary:
@@ -44,7 +44,7 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
         commit = subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'], text=True).strip()
         sha = lambda file: hashlib.sha256(file.read_bytes()).hexdigest()
         identity = dict(libhybrisCommit=commit, mode='bionic', minSdk=29,
-                        androidPlatform=34, androidBuildTools='34.0.0',
+                        androidPlatform=34, androidBuildTools='36.0.0',
                         compatibilityLayerSha256=sha(layer), diagnosticsSha256=sha(jni))
         (assets/'build.json').write_text(json.dumps(identity, indent=2)+'\n')
         licenses = assets/'licenses'
