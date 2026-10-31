@@ -51,6 +51,7 @@ process cancellation, identity verification and report display are shared.
 
 | Probe | Activity | Native executable | Result directory |
 | --- | --- | --- | --- |
+| Maintenance5 | `.Maintenance5ProbeActivity` | `libhybris_maintenance5_probe.so` | `files/maintenance5/` |
 | Dynamic rendering | `.DynamicRenderingProbeActivity` | `libhybris_dynamic_rendering_probe.so` | `files/dynamic_rendering/` |
 | BC textures | `.BcProbeActivity` | `libhybris_bc_probe.so` | `files/bc/` |
 | Robustness2 | `.RobustnessProbeActivity` | `libhybris_robustness_probe.so` | `files/robustness/` |
@@ -341,3 +342,30 @@ and Features2 device creation, GIPA/GDPA command lookup, static/dynamic viewport
 state and caller-input preservation. Native devices without dynamic rendering
 run a traditional RenderPass reference. These checks do not replace Steam or
 other real application acceptance.
+
+## Maintenance5 compatibility
+
+For devices without native maintenance5, the layer follows MaliBridge's
+translation policy when dynamic rendering is available. It folds supported
+32-bit pipeline and buffer flags from flags2 input, normalizes inline shader
+modules through the existing shader capture path, and translates index binding,
+rendering granularity and image-layout queries. Remaining image layers and
+whole-size vertex ranges are resolved from the existing image/buffer records;
+caller-owned inputs are retained. No second resource registry or application
+matching is introduced. Higher flags2 bits fail with FEATURE_NOT_PRESENT.
+
+`HYBRIS_MAINTENANCE5=0` disables the fallback; `force` selects it for diagnosis.
+Native maintenance5 devices pass through by default. This is an approximation,
+not Vulkan conformance: native index binding cannot enforce the supplied index
+range, optional image-layout output chains require the driver's EXT query,
+unknown image records fail command recording, and optional rasterization
+properties are conservatively false. It does not advertise a higher API version.
+
+The separate Maintenance5 probe accepts `maintenance-native`,
+`maintenance-normal` and `maintenance-force`. It performs real indexed rendering
+with inline shader modules, flags2 buffer/pipeline input and remaining-layer
+readback, covering secondary buffers, pool reset/free, both device-create styles
+and command resolvers. Shared graphics fixtures avoid duplicate test engines;
+Activities, executables and reports remain independent. Native references do
+not exercise unavailable extension operations. Real application acceptance is
+still required before publishing a runtime.

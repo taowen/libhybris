@@ -265,7 +265,6 @@ VkResult hybris_bc_prepare_device(VkPhysicalDevice physical, const VkDeviceCreat
 VkResult hybris_bc_attach_device(VkDevice device, VkPhysicalDevice physical,
     PFN_vkGetDeviceProcAddr resolver, const VkAllocationCallbacks *allocator)
 {
-    if (!hybris_bc_enabled()) return VK_SUCCESS;
     struct hybris_layer_physical context;
     if (!hybris_layer_lookup_physical(physical, &context)) return VK_ERROR_INITIALIZATION_FAILED;
     PHYSICAL_PROC(GetPhysicalDeviceProperties); PHYSICAL_PROC(GetPhysicalDeviceMemoryProperties);
@@ -468,7 +467,8 @@ PFN_vkVoidFunction hybris_bc_policy_proc(const char *name)
 }
 PFN_vkVoidFunction hybris_bc_proc(const char *name)
 {
-    if (!hybris_bc_enabled()) return NULL;
+    /* Image identity is shared resource metadata, independent of BC emulation. */
+    if (!hybris_bc_enabled()) return !strcmp(name,"vkCreateImage") || !strcmp(name,"vkDestroyImage") ? hybris_bc_resources_proc(name) : NULL;
     PFN_vkVoidFunction function = hybris_bc_commands_proc(name);
     if (!function) function = hybris_bc_resources_proc(name);
     if (!function) function = hybris_bc_record_proc(name);

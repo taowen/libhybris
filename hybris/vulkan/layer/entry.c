@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/maintenance5.h"
 #include "../compat/dynamic_rendering.h"
 #include "layer.h"
 #include "../compat/application_policy.h"
@@ -154,7 +155,7 @@ static PFN_vkVoidFunction VKAPI_CALL get_instance_proc(VkInstance instance, cons
     struct instance_state state;
     if (!instance || !instance_snapshot(instance, &state)) return NULL;
     PFN_vkVoidFunction next = state.resolver(instance, name);
-    if (!next && strcmp(name,"vkCmdBeginRendering") && strcmp(name,"vkCmdBeginRenderingKHR") &&
+    if (!next && !hybris_maintenance5_added_proc(name) && strcmp(name,"vkCmdBeginRendering") && strcmp(name,"vkCmdBeginRenderingKHR") &&
         strcmp(name,"vkCmdEndRendering") && strcmp(name,"vkCmdEndRenderingKHR")) return NULL;
     if (!strcmp(name, "vkDestroyInstance")) return (PFN_vkVoidFunction)destroy_instance;
     if (!strcmp(name, "vkDestroyDevice")) return (PFN_vkVoidFunction)hybris_layer_destroy_device;

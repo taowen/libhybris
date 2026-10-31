@@ -71,3 +71,8 @@ MaliBridge server/server_emu_dynrend.c at commit
 Copyright (C) 2026 ASEbrahim and MaliBridge contributors.
 Device registration, command-resource retirement, caller-owned input copying,
 feature negotiation and diagnostics are modified here.
+
+The maintenance5 translations in ../maintenance5.c follow
+server/server_emu_layer.c at the same 2d674a5f commit. Copyright (C) 2026
+ASEbrahim and MaliBridge contributors, GPL-3.0-or-later. Integration uses
+private copies and existing layer resource records rather than the server arena.

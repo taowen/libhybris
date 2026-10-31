@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "dynamic_rendering.h"
+#include "maintenance5.h"
 #include "dual_source.h"
 #include "multidraw.h"
 #include "multiviewport.h"
@@ -92,6 +93,7 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     if(hybris_multiviewport_active(physical))out->features.multiViewport=VK_TRUE;
     hybris_robustness2_features(physical,out);
     hybris_dynamic_features(physical,out);
+    hybris_maintenance5_features(physical,out);
     int polygon=hybris_shader_polygon_emulated(physical);
     if(polygon) out->features.fillModeNonSolid=VK_TRUE;
     if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical) && !polygon && !hybris_dual_source_active(physical)) return;
@@ -128,6 +130,7 @@ static void properties2(VkPhysicalDevice physical, VkPhysicalDeviceProperties2 *
     if (!hybris_layer_lookup_physical(physical, &context)) return;
     PFN_vkGetPhysicalDeviceProperties2 query = (PFN_vkGetPhysicalDeviceProperties2)context.resolver(context.instance, name);
     query(physical, out);
+    hybris_maintenance5_properties(physical,out);
     VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT *legacy = NULL;
     for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext)
         if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT)

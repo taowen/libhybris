@@ -16,4 +16,5 @@ VkResult hybris_memory_visibility_readback_range(const struct hybris_layer_devic
     VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, struct hybris_readback_range *range);
 VkResult hybris_memory_visibility_invalidate(const struct hybris_layer_device *device,
     const struct hybris_readback_range *range);
+VkResult hybris_memory_visibility_buffer_size(const struct hybris_layer_device *device, VkBuffer buffer, VkDeviceSize *size);
 #endif

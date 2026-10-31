@@ -23,6 +23,7 @@ public final class MainActivity extends Activity {
         addProbe(content, "Indirect multi-draw compatibility", MultiDrawProbeActivity.class);
         addProbe(content, "Multi-viewport compatibility", MultiViewportProbeActivity.class);
         addProbe(content, "Dynamic rendering", DynamicRenderingProbeActivity.class);
+        addProbe(content, "Maintenance5", Maintenance5ProbeActivity.class);
         addProbe(content, "BC textures", BcProbeActivity.class);
         addProbe(content, "Robustness2", RobustnessProbeActivity.class);
         addProbe(content, "Mali specialization constants", SpecConstantsProbeActivity.class);

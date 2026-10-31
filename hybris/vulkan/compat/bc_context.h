@@ -19,6 +19,7 @@ struct hybris_bc_resource {
     VkImageType type;
     VkExtent3D extent;
     uint32_t levels, layers;
+    VkSampleCountFlagBits samples;
     struct hybris_bc_image emulated;
     VkAllocationCallbacks allocator;
     int custom_allocator;

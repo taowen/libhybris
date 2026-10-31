@@ -6,6 +6,7 @@
 #define VK_NO_PROTOTYPES
 #include "dynamic_rendering.h"
 #include "../layer/layer.h"
+#include "bc_context.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,18 +43,11 @@ typedef struct view_rec {
     struct view_rec *next;
 } view_rec;
 
-typedef struct img_rec {
-    VkImage image;
-    VkSampleCountFlagBits samples;
-    struct img_rec *next;
-} img_rec;
-
 typedef struct hybris_dynamic_state {
     VkDevice device;
     pthread_mutex_t lock;
     rp_rec *rps[MAP_BUCKETS];
     view_rec *views[MAP_BUCKETS];
-    img_rec *imgs[MAP_BUCKETS];
     uint32_t nrp;
     int ds_resolve; /* VK_KHR_depth_stencil_resolve enabled */
     PFN_vkCreateRenderPass2 create_rp2;
@@ -64,8 +58,6 @@ typedef struct hybris_dynamic_state {
     PFN_vkCmdEndRenderPass end_rp;
     PFN_vkCreateGraphicsPipelines create_gp;
     PFN_vkBeginCommandBuffer begin_cb;
-    PFN_vkCreateImage create_image;
-    PFN_vkDestroyImage destroy_image;
     PFN_vkCreateImageView create_view;
     PFN_vkDestroyImageView destroy_view;
     uint64_t renderings;
@@ -94,45 +86,6 @@ static unsigned key_hash(const rp_key *k)
 
 /* ------------------------------------------------------------------ images and views */
 
-static VKAPI_ATTR VkResult VKAPI_CALL d_CreateImage(VkDevice device, const VkImageCreateInfo *ci, const VkAllocationCallbacks *a, VkImage *out)
-{
-    dr_state *s = st(device);
-    if (!s) { return ((PFN_vkCreateImage)hybris_layer_device_inner_proc(device,"vkCreateImage"))(device, ci, a, out); }
-    VkResult r = s->create_image(device, ci, a, out);
-    if (r == VK_SUCCESS && ci->samples > VK_SAMPLE_COUNT_1_BIT) {
-        img_rec *m = calloc(1, sizeof(*m));
-        if (!m) { s->destroy_image(device, *out, a); *out=VK_NULL_HANDLE; return VK_ERROR_OUT_OF_HOST_MEMORY; }
-        {
-            m->image = *out;
-            m->samples = ci->samples;
-            pthread_mutex_lock(&s->lock);
-            unsigned b = hb((uint64_t)(uintptr_t)*out);
-            m->next = s->imgs[b];
-            s->imgs[b] = m;
-            pthread_mutex_unlock(&s->lock);
-        }
-    }
-    return r;
-}
-
-static VKAPI_ATTR void VKAPI_CALL d_DestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks *a)
-{
-    dr_state *s = st(device);
-    if (!s) { ((PFN_vkDestroyImage)hybris_layer_device_inner_proc(device,"vkDestroyImage"))(device, image, a); return; }
-    if (image) {
-        pthread_mutex_lock(&s->lock);
-        for (img_rec **pp = &s->imgs[hb((uint64_t)(uintptr_t)image)]; *pp; pp = &(*pp)->next)
-            if ((*pp)->image == image) {
-                img_rec *m = *pp;
-                *pp = m->next;
-                free(m);
-                break;
-            }
-        pthread_mutex_unlock(&s->lock);
-    }
-    s->destroy_image(device, image, a);
-}
-
 static VKAPI_ATTR VkResult VKAPI_CALL d_CreateImageView(VkDevice device, const VkImageViewCreateInfo *ci, const VkAllocationCallbacks *a,
                                                         VkImageView *out)
 {
@@ -145,12 +98,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL d_CreateImageView(VkDevice device, const V
     v->view = *out;
     v->format = ci->format;
     v->samples = VK_SAMPLE_COUNT_1_BIT;
+    struct hybris_bc_device *images=hybris_bc_device_find(device);
+    struct hybris_bc_resource *image=images?hybris_bc_resource_find(images,ci->image):NULL;
+    if(image)v->samples=image->samples;
     pthread_mutex_lock(&s->lock);
-    for (img_rec *m = s->imgs[hb((uint64_t)(uintptr_t)ci->image)]; m; m = m->next)
-        if (m->image == ci->image) {
-            v->samples = m->samples;
-            break;
-        }
     unsigned b = hb((uint64_t)(uintptr_t)*out);
     v->next = s->views[b];
     s->views[b] = v;
@@ -653,11 +604,10 @@ VkResult hybris_dynamic_attach(struct hybris_layer_device *device,
     LOAD(create_fb,CreateFramebuffer,"CreateFramebuffer");LOAD(destroy_fb,DestroyFramebuffer,"DestroyFramebuffer");
     LOAD(begin_rp,CmdBeginRenderPass,"CmdBeginRenderPass");LOAD(end_rp,CmdEndRenderPass,"CmdEndRenderPass");
     LOAD(create_gp,CreateGraphicsPipelines,"CreateGraphicsPipelines");LOAD(begin_cb,BeginCommandBuffer,"BeginCommandBuffer");
-    LOAD(create_image,CreateImage,"CreateImage");LOAD(destroy_image,DestroyImage,"DestroyImage");
     LOAD(create_view,CreateImageView,"CreateImageView");LOAD(destroy_view,DestroyImageView,"DestroyImageView");
 #undef LOAD
     if(!s->create_rp2 || !s->destroy_rp || !s->create_fb || !s->destroy_fb || !s->begin_rp || !s->end_rp || !s->create_gp ||
-        !s->begin_cb || !s->create_image || !s->destroy_image || !s->create_view || !s->destroy_view) {
+        !s->begin_cb || !s->create_view || !s->destroy_view) {
         free(s);return VK_ERROR_FEATURE_NOT_PRESENT;
     }
     if(pthread_mutex_init(&s->lock,NULL)){free(s);return VK_ERROR_OUT_OF_HOST_MEMORY;}
@@ -670,14 +620,12 @@ void hybris_dynamic_release(struct hybris_dynamic_state *state)
     for(unsigned i=0;i<MAP_BUCKETS;++i) {
         while(s->rps[i]){rp_rec *r=s->rps[i];s->rps[i]=r->next;s->destroy_rp(s->device,r->rp,NULL);free(r);}
         while(s->views[i]){view_rec *v=s->views[i];s->views[i]=v->next;free(v);}
-        while(s->imgs[i]){img_rec *m=s->imgs[i];s->imgs[i]=m->next;free(m);}
     }
     pthread_mutex_destroy(&s->lock);free(s);
 }
 PFN_vkVoidFunction hybris_dynamic_dispatch(const char *name)
 {
 #define PROC(n,f) if(!strcmp(name,"vk" #n))return (PFN_vkVoidFunction)f
-    PROC(CreateImage,d_CreateImage);PROC(DestroyImage,d_DestroyImage);
     PROC(CreateImageView,d_CreateImageView);PROC(DestroyImageView,d_DestroyImageView);
     PROC(CreateGraphicsPipelines,d_CreateGraphicsPipelines);PROC(BeginCommandBuffer,d_BeginCommandBuffer);
     PROC(CmdBeginRendering,d_CmdBeginRendering);PROC(CmdBeginRenderingKHR,d_CmdBeginRendering);

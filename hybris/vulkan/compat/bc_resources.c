@@ -24,7 +24,7 @@ static VkResult VKAPI_CALL create_image(VkDevice handle, const VkImageCreateInfo
             ((const VkImageSwapchainCreateInfoKHR *)next)->swapchain)
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
     PROC(CreateImage);
-    if (!device->format_mask) return CreateImage(handle, info, allocator, out);
+
     struct hybris_bc_resource *resource = hybris_bc_alloc(device, sizeof(*resource));
     if (!resource) return VK_ERROR_OUT_OF_HOST_MEMORY;
     VkResult result;
@@ -47,6 +47,7 @@ static VkResult VKAPI_CALL create_image(VkDevice handle, const VkImageCreateInfo
     resource->extent = info->extent;
     resource->levels = info->mipLevels;
     resource->layers = info->arrayLayers;
+    resource->samples = info->samples;
     resource->custom_allocator = allocator != NULL;
     if (allocator) resource->allocator = *allocator;
     pthread_mutex_lock(&device->guard);

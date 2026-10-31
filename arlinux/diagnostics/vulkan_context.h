@@ -183,9 +183,11 @@ struct Buffer {
     VkBuffer handle=VK_NULL_HANDLE;
     VkDeviceMemory memory=VK_NULL_HANDLE;
     void *mapped=nullptr;
-    Buffer(Context &context,VkDeviceSize bytes,VkBufferUsageFlags usage):c(context) {
+    Buffer(Context &context,VkDeviceSize bytes,VkBufferUsageFlags usage,bool flags2=false):c(context) {
         VkBufferCreateInfo create{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        create.size=bytes;create.usage=usage;create.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
+        VkBufferUsageFlags2CreateInfo usage2{VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO};usage2.usage=usage;
+        if(flags2)create.pNext=&usage2;
+        create.size=bytes;create.usage=flags2?0:usage;create.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
         CHECK(c.CreateBuffer(c.device,&create,nullptr,&handle));
         VkMemoryRequirements need;c.GetBufferMemoryRequirements(c.device,handle,&need);
         VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};

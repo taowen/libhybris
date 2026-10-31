@@ -11,6 +11,7 @@
         <activity android:name=".BcProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".RobustnessProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".SpecConstantsProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
+        <activity android:name=".Maintenance5ProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".DynamicRenderingProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".MultiViewportProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".MultiDrawProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />

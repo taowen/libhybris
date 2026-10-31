@@ -37,6 +37,7 @@ struct hybris_layer_command_dispatch {
 };
 struct hybris_layer_device {
     struct hybris_dynamic_state *dynamic_rendering;
+    int maintenance5;
     VkDevice handle;
     PFN_vkGetDeviceProcAddr resolver;
     VkPhysicalDevice physical;
@@ -83,4 +84,5 @@ void hybris_layer_commands_release_device(VkDevice device);
 struct hybris_polygon_recording;
 struct hybris_polygon_recording *hybris_layer_polygon_recording(VkCommandBuffer command);
 PFN_vkVoidFunction hybris_layer_commands_proc(const char *name);
+PFN_vkVoidFunction hybris_layer_legacy_proc(VkDevice handle,const char *name);
 #endif

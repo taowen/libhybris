@@ -743,7 +743,7 @@ static VkResult VKAPI_CALL create_compute_pipelines(VkDevice handle,VkPipelineCa
     struct shader_device *device=find_device(handle);
     if(!device)return VK_ERROR_INITIALIZATION_FAILED;
     int needs_copy=0;
-    if(device->mali_spec)for(uint32_t i=0;i<count;++i)
+    for(uint32_t i=0;i<count;++i)
         for(const VkBaseInStructure *node=infos[i].stage.module?NULL:infos[i].stage.pNext;node;node=node->pNext)
             needs_copy|=node->sType==VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     if(!needs_copy)return device->create_compute(handle,cache,count,infos,allocator,pipelines);

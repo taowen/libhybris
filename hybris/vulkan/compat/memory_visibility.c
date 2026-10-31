@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "maintenance5.h"
 #include "memory_visibility.h"
 #include "readback.h"
 #include "application_policy.h"
@@ -29,7 +30,7 @@ struct buffer {
     uint64_t generation, vertex_upload_epoch, vertex_upload_revision;
     VkBuffer handle;
     VkDeviceMemory memory;
-    VkDeviceSize size, offset;
+    VkDeviceSize size, logical_size, offset;
     VkBufferUsageFlags usage;
     VkAllocationCallbacks allocator;
     int custom_allocator;
@@ -81,6 +82,14 @@ static struct buffer *find_buffer(const struct hybris_layer_device *device, VkBu
         if (b->device == device->handle && b->device_generation == device->generation && b->handle == handle)
             return b;
     return NULL;
+}
+VkResult hybris_memory_visibility_buffer_size(const struct hybris_layer_device *device,VkBuffer handle,VkDeviceSize *size)
+{
+    pthread_mutex_lock(&guard);
+    const struct buffer *b=find_buffer(device,handle);
+    *size=b?b->logical_size:0;
+    pthread_mutex_unlock(&guard);
+    return b?VK_SUCCESS:VK_ERROR_INITIALIZATION_FAILED;
 }
 VkResult hybris_memory_visibility_storage_buffer(const struct hybris_layer_device *device,
     VkBuffer handle, VkDeviceSize offset, VkDeviceSize size, VkDescriptorBufferInfo *out)
@@ -270,13 +279,15 @@ static VkResult VKAPI_CALL create_buffer(VkDevice handle, const VkBufferCreateIn
     struct hybris_layer_device device;
     if (!hybris_layer_lookup_device(handle, &device)) return VK_ERROR_INITIALIZATION_FAILED;
     VkBufferCreateInfo translated=*info;
-    if((info->usage&VK_BUFFER_USAGE_INDEX_BUFFER_BIT) && !(info->flags&(VK_BUFFER_CREATE_SPARSE_BINDING_BIT|VK_BUFFER_CREATE_PROTECTED_BIT)) && hybris_shader_polygon_active(handle) && info->size<=UINT64_MAX-3) {
+    VkResult normalized=hybris_maintenance5_buffer_usage(&device,info->pNext,&translated.usage);
+    if(normalized!=VK_SUCCESS){*out=VK_NULL_HANDLE;return normalized;}
+    if((translated.usage&VK_BUFFER_USAGE_INDEX_BUFFER_BIT) && !(info->flags&(VK_BUFFER_CREATE_SPARSE_BINDING_BIT|VK_BUFFER_CREATE_PROTECTED_BIT)) && hybris_shader_polygon_active(handle) && info->size<=UINT64_MAX-3) {
         translated.usage|=VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;translated.size=(info->size+3)&~UINT64_C(3);
     }
     struct buffer *b = hybris_scaled_alloc(allocator, sizeof(*b), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!b) return VK_ERROR_OUT_OF_HOST_MEMORY;
     *b = (struct buffer){.device = handle, .device_generation = device.generation,
-        .size = translated.size, .usage = translated.usage, .custom_allocator = allocator != NULL};
+        .size = translated.size, .logical_size=info->size, .usage = translated.usage, .custom_allocator = allocator != NULL};
     if (allocator) b->allocator = *allocator;
     pthread_mutex_lock(&guard);
     if (next_generation == UINT64_MAX) {
