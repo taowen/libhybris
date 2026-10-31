@@ -62,6 +62,7 @@ struct shader_device {
 static pthread_mutex_t guard = PTHREAD_MUTEX_INITIALIZER;
 static struct shader_device *devices;
 static _Atomic unsigned point_reports;
+static _Atomic unsigned inout_reports;
 int hybris_shader_enabled(void)
 {
     return hybris_scaled_enabled() || hybris_point_size_enabled() ||
@@ -608,7 +609,11 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
             unsigned widened = 0;
             result = hybris_spirv_inout(vs->code, vs->size, code, size, allocator, &wide, &wide_size, &widened);
             if (result != VK_SUCCESS) { hybris_scaled_free(allocator, code); goto done; }
-            if (wide) { hybris_scaled_free(allocator, code); code = wide; size = wide_size; }
+            if (wide) {
+                if (atomic_fetch_add(&inout_reports, 1) < 8)
+                    fprintf(stderr, "HYBRIS_INOUT widened=%u\n", widened);
+                hybris_scaled_free(allocator, code); code = wide; size = wide_size;
+            }
             else if (!count && !stage_point && !stage_clip && !stage_cull && !stage_dual) { hybris_scaled_free(allocator, code); continue; }
         }
         if (hybris_shader_cleanup_enabled()) {

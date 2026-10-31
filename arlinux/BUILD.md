@@ -58,6 +58,7 @@ process cancellation, identity verification and report display are shared.
 | Indirect multi-draw | `.MultiDrawProbeActivity` | `libhybris_multidraw_probe.so` | `files/multidraw/` |
 | Dual-source blend | `.DualSourceProbeActivity` | `libhybris_dual_source_probe.so` | `files/dual_source/` |
 | Polygon modes | `.PolygonProbeActivity` | `libhybris_polygon_probe.so` | `files/polygon/` |
+| Shader interfaces | `.InOutProbeActivity` | `libhybris_inout_probe.so` | `files/inout/` |
 
 For device automation, start the relevant Activity directly with a `mode` extra.
 BC accepts `native`, `normal`, `decode`, `auto`, `fast`, `default` or `high`, and
@@ -271,3 +272,20 @@ restoration, strip restart and
 explicit primary/secondary write-hazard rejection. Native/disabled modes use
 legal explicit line/point references on GPUs missing fillModeNonSolid. These
 checks do not establish native polygon-mode conformance or game acceptance.
+
+## Shader interface normalization
+
+The existing VS-to-FS normalization widens a narrower scalar/vector fragment
+input to its matching vertex output, then extracts the originally consumed
+components. It applies to plain VS/FS pipelines with captured modules. Pipeline
+rendering formats and creation-feedback chains are preserved and do not disable
+the pass. Pipeline libraries, stage extension chains and unknown pipeline chains
+remain outside this path; geometry/tessellation linkage is not implemented here.
+
+The independent shader-interface probe accepts `inout-native`, `inout-normal`
+and `inout-off`. It reuses a VS vec4 / FS vec2 module pair across render-pass,
+creation-feedback and native dynamic-rendering paths, reads back GPU pixels,
+checks caller inputs remain unchanged, and requires a production rewrite trace
+for every automatic-mode case. Unsupported native API paths are reported as
+skipped. This checks interface normalization, not Clip/Cull Distance support.
+`HYBRIS_VULKAN_COMPAT_INOUT=0` disables normalization for diagnosis.
