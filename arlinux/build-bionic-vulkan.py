@@ -32,17 +32,6 @@ def main():
             target = stage / subdir / path.relative_to(source / subdir)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, target)
-    # Correct the HAL's float-control capability at the shared Vulkan layer.
-    # Applications such as DXVK then use the ordinary capability query path.
-    patch = component / 'libhybris-adreno-float-properties.patch'
-    with patch.open('rb') as patch_input:
-        check = subprocess.run(['patch', '-d', str(stage), '-p1', '--batch', '--fuzz=0', '--dry-run'],
-                               stdin=patch_input, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    with patch.open('rb') as patch_input:
-        command = ['patch', '-d', str(stage), '-p1', '--batch', '--fuzz=0']
-        if check.returncode:
-            command += ['--reverse', '--dry-run']
-        subprocess.run(command, stdin=patch_input, check=True)
     generated = output / 'include'
     (generated / 'hybris/common').mkdir(parents=True, exist_ok=True)
     (generated / 'config.h').write_text('#define WANT_WAYLAND 1\n')

@@ -120,6 +120,31 @@ static void VKAPI_CALL features2_core(VkPhysicalDevice physical, VkPhysicalDevic
 { features2(physical, out, "vkGetPhysicalDeviceFeatures2"); }
 static void VKAPI_CALL features2_khr(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out)
 { features2(physical, out, "vkGetPhysicalDeviceFeatures2KHR"); }
+/* Use a conservative FTZ32 policy for the proprietary Qualcomm backend.
+ * Its advertised mode can corrupt fragment coordinates. Do not key this
+ * workaround to a phone model or driver release; Mesa is a separate backend. */
+static void filter_float_controls(VkPhysicalDevice physical, VkPhysicalDeviceProperties2 *out,
+    PFN_vkGetPhysicalDeviceProperties2 query)
+{
+    int requested = 0;
+    for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext)
+        requested |= node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES ||
+            node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+    if (!requested) return;
+    VkPhysicalDeviceDriverProperties driver = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+    VkPhysicalDeviceProperties2 native = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &driver};
+    query(physical, &native);
+    if (driver.driverID != VK_DRIVER_ID_QUALCOMM_PROPRIETARY) return;
+    for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext) {
+        if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES)
+            ((VkPhysicalDeviceFloatControlsProperties *)node)->shaderDenormFlushToZeroFloat32 = VK_FALSE;
+        else if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES)
+            ((VkPhysicalDeviceVulkan12Properties *)node)->shaderDenormFlushToZeroFloat32 = VK_FALSE;
+    }
+}
+
 /* KHR promotion added supportsNonZeroFirstInstance and a distinct properties
  * sType. Some clients enable KHR but still request the old EXT max field. On
  * KHR-only drivers, supply that field from its real KHR value without exposing
@@ -131,6 +156,7 @@ static void properties2(VkPhysicalDevice physical, VkPhysicalDeviceProperties2 *
     PFN_vkGetPhysicalDeviceProperties2 query = (PFN_vkGetPhysicalDeviceProperties2)context.resolver(context.instance, name);
     query(physical, out);
     hybris_maintenance5_properties(physical,out);
+    filter_float_controls(physical,out,query);
     VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT *legacy = NULL;
     for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext)
         if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT)
