@@ -9,10 +9,12 @@ struct hybris_polygon_recording {
     VkCommandBufferUsageFlags usage;VkPipeline graphics;VkBuffer index;VkDeviceSize index_offset,index_size;
     VkIndexType index_type;VkPrimitiveTopology topology;VkBool32 restart;
     int topology_known,restart_known,unknown_writes,pre_open,has_prepass;VkCommandPool pre_pool;VkCommandBuffer pre_command;
+    struct hybris_polygon_storage *storage;
     struct hybris_polygon_edges *edges;struct hybris_polygon_link *links;
 };
 VkResult hybris_polygon_record_end(VkCommandBuffer command);
 void hybris_polygon_record_reset(struct hybris_polygon_recording *record);
+void hybris_polygon_record_finish(struct hybris_polygon_recording *record);
 void hybris_polygon_record_index(VkCommandBuffer c,VkBuffer b,VkDeviceSize offset,VkDeviceSize size,VkIndexType type);
 void hybris_polygon_record_written(VkCommandBuffer c,VkBuffer b);
 void hybris_polygon_record_execute(VkCommandBuffer c,uint32_t count,const VkCommandBuffer *children);

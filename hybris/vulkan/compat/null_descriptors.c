@@ -16,6 +16,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <sys/auxv.h>
 #define NULL_LOG(...) do { fprintf(stderr,"HYBRIS_NULL: "); fprintf(stderr,__VA_ARGS__); fputc('\n',stderr); } while(0)
@@ -109,6 +110,7 @@ typedef struct nd_template {
     VkDescriptorUpdateTemplate tmpl;
     VkDescriptorSetLayout layout; /* the set layout it writes (push templates: of its pipeline layout's set) */
     uint32_t count;
+    size_t data_size;
     VkDescriptorUpdateTemplateEntry *entries;
     struct nd_template *next;
 } nd_template;
@@ -868,6 +870,15 @@ static nd_template *find_template(null_descriptors *n, VkDescriptorUpdateTemplat
     return NULL;
 }
 
+static size_t template_element_size(VkDescriptorType type)
+{
+    if(image_type(type) || type==VK_DESCRIPTOR_TYPE_SAMPLER)return sizeof(VkDescriptorImageInfo);
+    if(buffer_type(type))return sizeof(VkDescriptorBufferInfo);
+    if(texel_type(type))return sizeof(VkBufferView);
+    if(type==VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)return 1;
+    if(type==VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)return sizeof(VkAccelerationStructureKHR);
+    return 0;
+}
 static VkResult VKAPI_CALL nd_CreateDescriptorUpdateTemplate(VkDevice device, const VkDescriptorUpdateTemplateCreateInfo *ci,
                                                              const VkAllocationCallbacks *a, VkDescriptorUpdateTemplate *out)
 {
@@ -883,6 +894,20 @@ static VkResult VKAPI_CALL nd_CreateDescriptorUpdateTemplate(VkDevice device, co
     }
     if(ci->descriptorUpdateEntryCount)memcpy(t->entries, ci->pDescriptorUpdateEntries, (size_t)ci->descriptorUpdateEntryCount * sizeof(*t->entries));
     t->count = ci->descriptorUpdateEntryCount;
+    for (uint32_t i = 0; i < t->count; ++i) {
+        const VkDescriptorUpdateTemplateEntry *e = &t->entries[i];
+        size_t size = template_element_size(e->descriptorType);
+        size_t stride = e->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK ? 1 : e->stride;
+        if (!e->descriptorCount) continue;
+        if (!size || e->offset > SIZE_MAX - size ||
+            (e->descriptorCount > 1 && stride > (SIZE_MAX - e->offset - size) / (e->descriptorCount - 1))) {
+            free(t->entries); free(t);
+            n->destroy_template(device, *out, a); *out = VK_NULL_HANDLE;
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
+        size_t end = e->offset + (size_t)(e->descriptorCount - 1) * stride + size;
+        if (end > t->data_size) t->data_size = end;
+    }
     t->tmpl = *out;
     pthread_mutex_lock(&n->lock);
     t->layout = ci->templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS ? layout_set(n, ci->pipelineLayout, ci->set)
@@ -922,65 +947,88 @@ static unsigned fix_template_data(null_descriptors *n, VkDescriptorUpdateTemplat
         if (!image_type(ty) && !buffer_type(ty) && !texel_type(ty)) continue;
         for (uint32_t j = 0; j < e->descriptorCount; j++) {
             uint8_t *p = (uint8_t *)data + e->offset + (size_t)j * e->stride;
-            int null = image_type(ty) ? !((VkDescriptorImageInfo *)p)->imageView
-                     : buffer_type(ty) ? !((VkDescriptorBufferInfo *)p)->buffer
-                                       : !*(VkBufferView *)p;
+            union { VkDescriptorImageInfo image; VkDescriptorBufferInfo buffer; VkBufferView texel; } value;
+            size_t size = template_element_size(ty);
+            memcpy(&value, p, size);
+            int null = image_type(ty) ? !value.image.imageView
+                     : buffer_type(ty) ? !value.buffer.buffer : !value.texel;
             if (!null) continue;
             if (ready < 0) ready = make_dummies(n); /* the lock is held */
-            if (ready) k += (unsigned)fix_one(n, ty, image_type(ty) ? binding_kind(n, t->layout, e->dstBinding) : 0, p);
+            if (!ready) { __atomic_store_n(&n->lost, 1, __ATOMIC_RELEASE); continue; }
+            k += (unsigned)fix_one(n, ty, image_type(ty) ? binding_kind(n, t->layout, e->dstBinding) : 0, &value);
+            memcpy(p, &value, size);
         }
     }
     pthread_mutex_unlock(&n->lock);
     return k;
 }
 
-static size_t template_element_size(VkDescriptorType type)
+/* The bridge can patch its serialized input in place; an ICD cannot modify
+ * caller-owned template data. Preserve that contract, allocating only on nulls. */
+static int prepare_template(null_descriptors *n, VkDescriptorUpdateTemplate handle,
+    const void *data, void **out)
 {
-    if(image_type(type) || type==VK_DESCRIPTOR_TYPE_SAMPLER)return sizeof(VkDescriptorImageInfo);
-    if(buffer_type(type))return sizeof(VkDescriptorBufferInfo);
-    if(texel_type(type))return sizeof(VkBufferView);
-    if(type==VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)return 1;
-    if(type==VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)return sizeof(VkAccelerationStructureKHR);
-    return 0;
-}
-static void *copy_template(null_descriptors *n,VkDescriptorUpdateTemplate handle,const void *data)
-{
+    *out = NULL;
+    if (__atomic_load_n(&n->lost, __ATOMIC_ACQUIRE)) return 0;
     pthread_mutex_lock(&n->lock);
-    nd_template *t=find_template(n,handle);
-    size_t bytes=0;
-    for(uint32_t i=0;t && i<t->count;++i) {
-        const VkDescriptorUpdateTemplateEntry *e=&t->entries[i];
-        size_t size=template_element_size(e->descriptorType),stride=e->descriptorType==VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK?1:e->stride;
-        if(!e->descriptorCount)continue;
-        if(!size || e->offset>SIZE_MAX-size || (e->descriptorCount>1 && stride>(SIZE_MAX-e->offset-size)/(e->descriptorCount-1)))goto fail;
-        size_t end=e->offset+(size_t)(e->descriptorCount-1)*stride+size;
-        if(end>bytes)bytes=end;
-    }
-    if(!t || (bytes && !data))goto fail;
-    if(!bytes)bytes=1;
-    uint8_t *copy=calloc(1,bytes);
-    if(!copy)goto fail;
-    for(uint32_t i=0;i<t->count;++i) {
-        const VkDescriptorUpdateTemplateEntry *e=&t->entries[i];
-        size_t size=template_element_size(e->descriptorType);
-        for(uint32_t j=0;j<e->descriptorCount;++j) {
-            size_t stride=e->descriptorType==VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK?1:e->stride;
-            size_t offset=e->offset+(size_t)j*stride;
-            memcpy(copy+offset,(const uint8_t*)data+offset,size);
+    nd_template *t = find_template(n, handle);
+    if (!t || (t->data_size && !data)) goto fail;
+    int needs_copy = 0;
+    for (uint32_t i = 0; i < t->count && !needs_copy; ++i) {
+        const VkDescriptorUpdateTemplateEntry *e = &t->entries[i];
+        VkDescriptorType type = e->descriptorType;
+        if (!image_type(type) && !buffer_type(type) && !texel_type(type)) continue;
+        for (uint32_t j = 0; j < e->descriptorCount; ++j) {
+            const uint8_t *p = (const uint8_t *)data + e->offset + (size_t)j * e->stride;
+            /* Template entries need not be naturally aligned. */
+            VkImageView view;
+            VkBuffer buffer;
+            VkBufferView texel;
+            if (image_type(type)) {
+                memcpy(&view, p + offsetof(VkDescriptorImageInfo, imageView), sizeof(view));
+                needs_copy = view == VK_NULL_HANDLE;
+            } else if (buffer_type(type)) {
+                memcpy(&buffer, p + offsetof(VkDescriptorBufferInfo, buffer), sizeof(buffer));
+                needs_copy = buffer == VK_NULL_HANDLE;
+            } else {
+                memcpy(&texel, p, sizeof(texel));
+                needs_copy = texel == VK_NULL_HANDLE;
+            }
+            if (needs_copy) break;
         }
     }
-    pthread_mutex_unlock(&n->lock);return copy;
+    if (needs_copy) {
+        uint8_t *copy = calloc(1, t->data_size ? t->data_size : 1);
+        if (!copy) goto fail;
+        for (uint32_t i = 0; i < t->count; ++i) {
+            const VkDescriptorUpdateTemplateEntry *e = &t->entries[i];
+            size_t size = template_element_size(e->descriptorType);
+            size_t stride = e->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK ? 1 : e->stride;
+            if (e->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
+                if (e->descriptorCount) memcpy(copy + e->offset, (const uint8_t *)data + e->offset, e->descriptorCount);
+            } else for (uint32_t j = 0; j < e->descriptorCount; ++j) {
+                size_t offset = e->offset + (size_t)j * stride;
+                memcpy(copy + offset, (const uint8_t *)data + offset, size);
+            }
+        }
+        *out = copy;
+    }
+    pthread_mutex_unlock(&n->lock);
+    return 1;
 fail:
-    pthread_mutex_unlock(&n->lock);__atomic_store_n(&n->lost,1,__ATOMIC_RELEASE);return NULL;
+    pthread_mutex_unlock(&n->lock);
+    __atomic_store_n(&n->lost, 1, __ATOMIC_RELEASE);
+    return 0;
 }
+
 static void VKAPI_CALL nd_UpdateDescriptorSetWithTemplate(VkDevice device, VkDescriptorSet set, VkDescriptorUpdateTemplate tmpl,
                                                           const void *data)
 {
     null_descriptors *n = cur(device);
-    void *copy=copy_template(n,tmpl,data);
-    if(!copy)return;
-    count(n, fix_template_data(n, tmpl, copy));
-    if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->update_template(device, set, tmpl, copy);
+    void *copy;
+    if (!prepare_template(n, tmpl, data, &copy)) return;
+    if (copy) count(n, fix_template_data(n, tmpl, copy));
+    if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->update_template(device, set, tmpl, copy ? copy : data);
     free(copy);
 }
 
@@ -1032,20 +1080,21 @@ static void VKAPI_CALL nd_CmdPushDescriptorSetWithTemplate(VkCommandBuffer cb, V
                                                            uint32_t set, const void *data)
 {
     null_descriptors *n = cur(cb);
-    void *copy=copy_template(n,tmpl,data);
-    if(!copy)return;
-    count_push(n, fix_template_data(n, tmpl, copy));
-    if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->push_template(cb, tmpl, layout, set, copy);
+    void *copy;
+    if (!prepare_template(n, tmpl, data, &copy)) return;
+    if (copy) count_push(n, fix_template_data(n, tmpl, copy));
+    if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->push_template(cb, tmpl, layout, set, copy ? copy : data);
     free(copy);
 }
 
 static void VKAPI_CALL nd_CmdPushDescriptorSetWithTemplate2(VkCommandBuffer cb,const VkPushDescriptorSetWithTemplateInfo *info)
 {
     null_descriptors *n=cur(cb);
-    void *data=copy_template(n,info->descriptorUpdateTemplate,info->pData);
-    if(!data)return;
-    count_push(n,fix_template_data(n,info->descriptorUpdateTemplate,data));
-    VkPushDescriptorSetWithTemplateInfo copy=*info;copy.pData=data;
+    void *data;
+    if (!prepare_template(n, info->descriptorUpdateTemplate, info->pData, &data)) return;
+    if (data) count_push(n,fix_template_data(n,info->descriptorUpdateTemplate,data));
+    VkPushDescriptorSetWithTemplateInfo copy=*info;
+    if (data) copy.pData=data;
     if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->push_template2(cb,&copy);
     free(data);
 }

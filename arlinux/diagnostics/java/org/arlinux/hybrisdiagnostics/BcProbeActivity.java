@@ -18,7 +18,7 @@ public final class BcProbeActivity extends ProbeActivity {
         for (String[] mode : modes) addMode(content, mode[1], () -> runProbe(mode[0], large.isChecked() ? 1024 : 64));
     }
     @Override protected boolean accepts(String mode, int size) {
-        return java.util.Arrays.asList("native", "normal", "decode", "auto", "fast", "default", "high").contains(mode) && (size == 64 || size == 1024);
+        return java.util.Arrays.asList("native", "normal", "decode", "auto", "fast", "default", "high").contains(mode) && (size == 64 || size == 1024 || size == 4096);
     }
     @Override protected String[] arguments(String directory, String mode, int size, File output) {
         return new String[]{directory + "/libhybris_bc_probe.so", directory, mode, Integer.toString(size), output.getPath()};

@@ -65,7 +65,7 @@ process cancellation, identity verification and report display are shared.
 
 For device automation, start the relevant Activity directly with a `mode` extra.
 BC accepts `native`, `normal`, `decode`, `auto`, `fast`, `default` or `high`, and
-`size=64` or `1024`. Robustness2 accepts `robust-native`, `robust`, `robust-force`
+`size=64`, `1024` or `4096`. Robustness2 accepts `robust-native`, `robust`, `robust-force`
 or `robust-off`; it has no texture-size option. For example:
 
 ```sh
@@ -91,6 +91,22 @@ signing key, never the product signing key. A new build may require uninstalling
 the previous diagnostic APK; its private reports are then removed. Retain useful
 evidence outside the app first. Keep device records outside Git. Real application
 and game regression remains required after these targeted experiments.
+
+## Compatibility scratch ownership
+
+BC transfers use MaliBridge's bounded 1–16 MiB chunks, a 16 MiB command-buffer
+budget, a process-wide 32 MiB idle cache and a soft 96 MiB live budget. A command
+with no chunk can acquire enough scratch to progress even at the live budget.
+Queued compute results are copied in batches before scratch wraps. Completed
+recordings return their chunks to the device cache at reset/free; device teardown
+releases idle storage. The BC probe's 4096 size exercises scratch reuse for
+outputs larger than the command budget, alongside sampling and raw BC readback.
+
+Polygon LINE emulation caches non-indexed topology patterns per device. Indexed
+prepasses suballocate output and descriptor sets from command-owned pools;
+reset reuses storage only after the application has retired the recording.
+Pattern growth retains preceding buffers for live recordings until device
+teardown. No CPU queue wait or application-specific policy is added.
 
 ## Robustness2 compatibility
 

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "bc_context.h"
+#include "polygon_buffers.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
@@ -176,8 +177,12 @@ void hybris_bc_device_remove(VkDevice handle)
         device->images = next;
     }
     hybris_bc_layouts_finish(&device->layouts);
+    hybris_polygon_patterns_destroy(device);
     if(device->polygon.device) hybris_polygon_indices_destroy(&device->polygon,NULL);
-    if (device->decoder.device) hybris_bc_decoder_destroy(&device->decoder, NULL);
+    if (device->decoder.device) {
+        hybris_bc_transfer_device_finish(&device->decoder);
+        hybris_bc_decoder_destroy(&device->decoder, NULL);
+    }
     pthread_mutex_destroy(&device->guard);
     hybris_bc_free(device, device);
 }

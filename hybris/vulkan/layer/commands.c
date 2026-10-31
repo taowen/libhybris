@@ -116,7 +116,7 @@ static void free_commands(struct command_state *list)
         struct command_state *next = list->next;
         if (list->handle) hybris_readback_reset_command(list->handle);
         destroy_resources(list->resources, list->custom_allocator ? &list->allocator : NULL);
-        hybris_polygon_record_reset(&list->polygon);
+        hybris_polygon_record_finish(&list->polygon);
         hybris_scaled_free(list->custom_allocator ? &list->allocator : NULL, list);
         list = next;
     }

@@ -17,9 +17,12 @@ void hybris_polygon_record_reset(struct hybris_polygon_recording *s)
     const VkAllocationCallbacks *a=s->custom?&s->allocator:NULL;
     if(s->pre_pool)((PFN_vkDestroyCommandPool)s->resolver(s->device,"vkDestroyCommandPool"))(s->device,s->pre_pool,a);
     while(s->links){struct hybris_polygon_link *n=s->links->next;hybris_scaled_free(a,s->links);s->links=n;}
+    hybris_polygon_storage_reset(s->storage);
     s->pre_pool=VK_NULL_HANDLE;s->pre_command=VK_NULL_HANDLE;s->pre_open=s->has_prepass=0;s->edges=NULL;s->graphics=VK_NULL_HANDLE;s->index=VK_NULL_HANDLE;
     s->topology_known=s->restart_known=s->unknown_writes=0;
 }
+void hybris_polygon_record_finish(struct hybris_polygon_recording *s)
+{hybris_polygon_record_reset(s);hybris_polygon_storage_destroy(s->storage);s->storage=NULL;}
 void hybris_polygon_record_index(VkCommandBuffer c,VkBuffer b,VkDeviceSize offset,VkDeviceSize size,VkIndexType type)
 {struct hybris_layer_device d;struct hybris_polygon_recording *s=active(c,&d);if(s){s->index=b;s->index_offset=offset;s->index_size=size;s->index_type=type;}}
 static int written(const struct hybris_polygon_recording *s,VkBuffer b)
@@ -123,13 +126,13 @@ static int draw_polygon(VkCommandBuffer c,const struct hybris_layer_device *d,Vk
             byte_offset=(uint32_t)(first_byte-base);VkResult result=prepass(s,&pre);if(result){if(result!=VK_ERROR_FEATURE_NOT_PRESENT)hybris_layer_command_error(c,result);goto unsupported;}
         }
         struct hybris_polygon_edges *edges=NULL;
-        VkResult r=hybris_polygon_edges_create(bc,p,count,shape,indexed?&source:NULL,byte_offset,index_size,restart,pre,a,&edges);
+        VkResult r=hybris_polygon_edges_create(bc,p,&s->storage,count,shape,indexed?&source:NULL,byte_offset,index_size,restart,pre,a,&edges);
         if(r!=VK_SUCCESS){if(r!=VK_ERROR_FEATURE_NOT_PRESENT)hybris_layer_command_error(c,r);goto unsupported;}
         r=hybris_layer_command_retain(c,edges,hybris_polygon_edges_destroy);if(r){hybris_polygon_edges_destroy(edges);hybris_layer_command_error(c,r);return 0;}
         if(pre)s->has_prepass=1;edges->source=indexed?s->index:VK_NULL_HANDLE;edges->next=s->edges;s->edges=edges;
         ((PFN_vkCmdBindPipeline)d->resolver(d->handle,"vkCmdBindPipeline"))(c,VK_PIPELINE_BIND_POINT_GRAPHICS,p->variant);
         if(p->dynamic_topology)set_topology(c,VK_PRIMITIVE_TOPOLOGY_LINE_LIST);if(p->dynamic_restart)set_restart(c,VK_FALSE);
-        ((PFN_vkCmdBindIndexBuffer)d->resolver(d->handle,"vkCmdBindIndexBuffer"))(c,edges->buffer,0,VK_INDEX_TYPE_UINT32);
+        ((PFN_vkCmdBindIndexBuffer)d->resolver(d->handle,"vkCmdBindIndexBuffer"))(c,edges->buffer,edges->offset,VK_INDEX_TYPE_UINT32);
         d->recording->CmdDrawIndexed(c,tris*6,instances,0,indexed?vertex_offset:(int32_t)first,first_instance);
         if(s->index) {
             if(s->index_size!=VK_WHOLE_SIZE)(d->recording->CmdBindIndexBuffer2?d->recording->CmdBindIndexBuffer2:d->recording->CmdBindIndexBuffer2KHR)(c,s->index,s->index_offset,s->index_size,s->index_type);

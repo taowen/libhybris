@@ -190,7 +190,7 @@ int main(int argc,char **argv) {
     const std::string mode=argv[2];
     const std::array<std::string,7> modes={"native","normal","decode","auto","fast","default","high"};
     if(std::find(modes.begin(),modes.end(),mode)==modes.end() ||
-       (std::string(argv[3])!="64" && std::string(argv[3])!="1024"))return 2;
+       (std::string(argv[3])!="64" && std::string(argv[3])!="1024" && std::string(argv[3])!="4096"))return 2;
     const std::string files=argv[4],trace_name=files+"/trace.txt";
     std::string result;
     try {

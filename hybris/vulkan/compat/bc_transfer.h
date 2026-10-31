@@ -10,15 +10,15 @@ struct hybris_bc_transfer {
     const VkPhysicalDeviceMemoryProperties *memory;
     const VkPhysicalDeviceLimits *limits;
     struct hybris_bc_transfer_pool *pools;
-    VkBuffer scratch;
-    VkDeviceMemory scratch_memory;
-    VkDeviceSize scratch_size;
+    struct hybris_bc_scratch *chunks, *current;
+    VkDeviceSize held_bytes;
 };
 void hybris_bc_transfer_init(struct hybris_bc_transfer *transfer,
     struct hybris_bc_decoder *decoder, const VkPhysicalDeviceMemoryProperties *memory,
     const VkPhysicalDeviceLimits *limits);
 /* Retire only when the owning command buffer may be reset/freed. */
 void hybris_bc_transfer_finish(struct hybris_bc_transfer *transfer);
+void hybris_bc_transfer_device_finish(struct hybris_bc_decoder *decoder);
 VkResult hybris_bc_decode_image(struct hybris_bc_transfer *transfer,
     VkCommandBuffer command, struct hybris_bc_command_state *state,
     const struct hybris_bc_image *image, VkImageLayout layout, const VkBufferImageCopy *region);

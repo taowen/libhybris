@@ -25,6 +25,7 @@ struct hybris_bc_decoder {
     pthread_mutex_t guard;
     VkAllocationCallbacks allocator;
     int custom_allocator;
+    struct hybris_bc_scratch *idle_scratch;
 };
 struct hybris_bc_region {
     VkFormat format;

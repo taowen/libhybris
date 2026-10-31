@@ -40,6 +40,7 @@ struct hybris_bc_device {
     struct hybris_bc_decoder decoder;
     struct hybris_bc_layouts layouts;
     struct hybris_polygon_indices polygon;
+    struct hybris_polygon_pattern *patterns[3], *retired_patterns;
     unsigned format_mask, rgb_mask;
     VkAllocationCallbacks allocator;
     int custom_allocator;
