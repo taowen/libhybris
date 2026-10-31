@@ -53,6 +53,7 @@ process cancellation, identity verification and report display are shared.
 | --- | --- | --- | --- |
 | BC textures | `.BcProbeActivity` | `libhybris_bc_probe.so` | `files/bc/` |
 | Robustness2 | `.RobustnessProbeActivity` | `libhybris_robustness_probe.so` | `files/robustness/` |
+| Specialization constants | `.SpecConstantsProbeActivity` | `libhybris_spec_constants_probe.so` | `files/spec_constants/` |
 
 For device automation, start the relevant Activity directly with a `mode` extra.
 BC accepts `native`, `normal`, `decode`, `auto`, `fast`, `default` or `high`, and
@@ -106,3 +107,31 @@ The diagnostic APK accepts `robust-native`, `robust`, `robust-force` and
 and out-of-bounds descriptors, checks normal/template updates leave caller-owned
 memory intact, and reports compatibility limitations separately from failures.
 These focused probes do not replace real application acceptance.
+
+## Mali specialization-composite normalization
+
+The compatibility layer follows MaliBridge's `server_spvfix.c`: an
+`OpConstantComposite` whose constituents depend on specialization constants is
+normalized to `OpSpecConstantComposite`, including transitive composite
+references. Ordinary constant composites and `VkSpecializationInfo` are retained.
+The pass operates on the layer's private captured code, before other shader
+rewrites and backend module creation. Graphics and compute inline modules use
+the same module path; inline chains currently require the module node first,
+consistent with the existing graphics path. Unsupported chain layouts fail
+explicitly instead of mutating caller-owned structures.
+
+`HYBRIS_MALI_SPEC_CONSTANTS` defaults to Arm vendor GPUs, `0` disables the pass,
+and `force` selects it on other GPUs for diagnosis. Secure execution disables
+this policy. This repairs a historical application SPIR-V form; it is not a
+claim that every affected module is valid under the current SPIR-V rules or
+that all Mali drivers miscompile valid specialization constants.
+
+The independent specialization probe accepts `spec-native`, `spec-normal`,
+`spec-force` and `spec-off` modes. It uses a build-time validated reference and
+a deliberate historical composite variant only on an enabled repair route.
+Native/disabled routes run references, never the historical variant. Checks
+sample an actual texture with defaults, partial/full overrides, specialization
+operations and nested composites; reuse one module across specializations;
+and verify caller code remains unchanged. Inline compute is checked when native
+maintenance5 is available. A repair trace confirms that force mode executed the
+pass. These are targeted GPU checks, not application/game acceptance.
