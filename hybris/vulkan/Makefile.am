@@ -26,8 +26,10 @@ libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/device.c layer/physica
     compat/vertex_stores.c compat/vertex_stores.h compat/spirv_discard.c \
     compat/point_size.c compat/point_size.h \
     compat/spirv_inout.c compat/spirv_inout.h \
-    compat/clip_distance.c compat/clip_distance.h compat/spirv_clip.c \
-    compat/primitive_adapter.c compat/primitive_adapter.h \
+    compat/clip_distance.c compat/clip_distance.h compat/distance_lowering.c compat/distance_lowering.h \
+    compat/malibridge/spirv_edit.c compat/malibridge/spirv_edit.h \
+    compat/malibridge/spirv_clip.c compat/malibridge/spirv_clip.h \
+    compat/malibridge/spirv_pervertex.c compat/malibridge/spirv_pervertex.h \
     compat/polygon_pipeline.c compat/polygon_pipeline.h \
     compat/polygon_indices.c compat/polygon_indices.h compat/shaders/polygon_indices.inc \
     compat/polygon_buffers.c compat/polygon_buffers.h \

@@ -53,3 +53,14 @@ follow server/server_emu_polygon.c, server/shaders/polygon/lines.comp and its
 generated server/polygon_spv.h at the same 95a1e600 commit. Copyright (C) 2026
 ASEbrahim and MaliBridge contributors, GPL-3.0-or-later. The layer's command
 journal, allocation, submission and hazard integration are modified here.
+
+The unchanged files in ../malibridge/spirv_edit.[ch], spirv_clip.[ch] and
+spirv_pervertex.[ch] come from MaliBridge server/ at commit
+95a1e600a51299294e06bb09db2db8cc509fe6a3, GPL-3.0-or-later.
+Copyright (C) 2026 ASEbrahim and MaliBridge contributors.
+../distance_lowering.c adapts server/server_emu_shader.c pipeline ordering;
+allocator, lifetime, entry selection, diagnostics and error integration are
+modified here. This replaces the previous handwritten distance/geometry adapter.
+
+arlinux/diagnostics/distance_gs.spvasm is the unchanged upstream test corpus
+pervertex_gs_whole.spvasm from the same commit, GPL-3.0-or-later.
