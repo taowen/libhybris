@@ -34,7 +34,9 @@ inline void check(VkResult result,const char *operation) {
  V(GetImageMemoryRequirements) V(BindImageMemory) V(CreateImageView) V(DestroyImageView) \
  V(CreateSampler) V(DestroySampler) V(CreateShaderModule) V(DestroyShaderModule) \
  V(CreateDescriptorSetLayout) V(DestroyDescriptorSetLayout) V(CreatePipelineLayout) V(DestroyPipelineLayout) \
- V(CreateComputePipelines) V(DestroyPipeline) V(CreateDescriptorPool) V(DestroyDescriptorPool) \
+ V(CreateRenderPass) V(DestroyRenderPass) V(CreateFramebuffer) V(DestroyFramebuffer) \
+ V(CreateGraphicsPipelines) V(CmdBeginRenderPass) V(CmdEndRenderPass) V(CmdDraw) \
+ V(CmdSetViewport) V(CmdSetScissor) V(CreateComputePipelines) V(DestroyPipeline) V(CreateDescriptorPool) V(DestroyDescriptorPool) \
  V(AllocateDescriptorSets) V(FreeDescriptorSets) V(ResetDescriptorPool) V(UpdateDescriptorSets) V(CreateCommandPool) V(DestroyCommandPool) \
  V(AllocateCommandBuffers) V(FreeCommandBuffers) V(BeginCommandBuffer) V(EndCommandBuffer) \
  V(CmdPipelineBarrier) V(CmdCopyBufferToImage) V(CmdCopyImageToBuffer) V(CmdBindPipeline) \
@@ -124,7 +126,7 @@ struct Context {
         if(family==count) throw std::runtime_error("No compute queue");
     }
     void create_device(const VkPhysicalDeviceFeatures &enabled,VkBaseOutStructure *extended=nullptr,
-                       uint32_t extension_count=0,const char *const *extensions=nullptr) {
+                       uint32_t extension_count=0,const char *const *extensions=nullptr,bool features2=false) {
         native_gdpa=reinterpret_cast<PFN_vkGetDeviceProcAddr>(native_gipa(instance,"vkGetDeviceProcAddr"));
         gdpa=layered?layer_gdpa:native_gdpa;
         VkLayerDeviceLink device_next{};
@@ -146,7 +148,7 @@ struct Context {
         device_create.pNext=extended?extended:(layered?static_cast<void*>(&device_link):nullptr);
         device_create.enabledExtensionCount=extension_count;
         device_create.ppEnabledExtensionNames=extensions;
-        device_create.pEnabledFeatures=&enabled;
+        device_create.pEnabledFeatures=features2?nullptr:&enabled;
         device_create.queueCreateInfoCount=1;
         device_create.pQueueCreateInfos=&queue_create;
         auto create_device=instance_proc<PFN_vkCreateDevice>("vkCreateDevice");

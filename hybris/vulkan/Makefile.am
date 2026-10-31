@@ -13,6 +13,7 @@ lib_LTLIBRARIES = \
 libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/device.c layer/physical.c layer/commands.c layer/layer.h \
     layer/device_features.c layer/device_features.h layer/device_create_sizes.inc \
     compat/spirv_mali.c compat/spirv_mali.h \
+    compat/multiviewport.c compat/multiviewport.h \
     compat/robustness2.c compat/robustness2.h compat/null_descriptors.c compat/null_descriptors.h compat/null_map.h \
     compat/bc_decode.c compat/bc_decode.h compat/shaders/bc_decode.inc \
     compat/bc_image.c compat/bc_image.h compat/bc_command_state.c compat/bc_command_state.h compat/bc_transfer.c compat/bc_transfer.h \

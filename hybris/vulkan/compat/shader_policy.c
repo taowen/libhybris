@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "multiviewport.h"
 #include "shader_policy.h"
 #include "robustness2.h"
 #include "vertex_stores.h"
@@ -65,6 +66,7 @@ static void VKAPI_CALL features(VkPhysicalDevice physical,VkPhysicalDeviceFeatur
     PFN_vkGetPhysicalDeviceFeatures query=(void*)hybris_bc_policy_proc("vkGetPhysicalDeviceFeatures");
     if(!query) query=(void*)context.resolver(context.instance,"vkGetPhysicalDeviceFeatures");
     query(physical,out);
+    if(hybris_multiviewport_active(physical))out->multiViewport=VK_TRUE;
     if(hybris_shader_polygon_emulated(physical)) out->fillModeNonSolid=VK_TRUE;
 }
 static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out, const char *name)
@@ -76,6 +78,7 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     PFN_vkGetPhysicalDeviceFeatures2 query = (PFN_vkGetPhysicalDeviceFeatures2)hybris_bc_policy_proc(name);
     if (!query) query = (PFN_vkGetPhysicalDeviceFeatures2)context.resolver(context.instance, name);
     query(physical, out);
+    if(hybris_multiviewport_active(physical))out->features.multiViewport=VK_TRUE;
     hybris_robustness2_features(physical,out);
     int polygon=hybris_shader_polygon_emulated(physical);
     if(polygon) out->features.fillModeNonSolid=VK_TRUE;

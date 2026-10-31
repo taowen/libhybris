@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
+#include "multiviewport.h"
 #include "clip_distance.h"
 #include "vertex_stores.h"
 #include "shader_policy.h"
@@ -100,6 +101,7 @@ static void VKAPI_CALL features2_khr(VkPhysicalDevice physical, VkPhysicalDevice
 
 static void apply_limits(VkPhysicalDevice physical, VkPhysicalDeviceLimits *limits)
 {
+    if(hybris_multiviewport_active(physical) && limits->maxViewports<16)limits->maxViewports=16;
     if (!hybris_clip_active(physical) && !hybris_cull_active(physical)) return;
     if (hybris_clip_active(physical) && limits->maxClipDistances < 8) limits->maxClipDistances = 8;
     if (hybris_cull_active(physical) && limits->maxCullDistances < 8) limits->maxCullDistances = 8;

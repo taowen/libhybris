@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/multiviewport.h"
 #include "layer.h"
 #include "device_features.h"
 #include "../compat/vertex_stores.h"
@@ -103,6 +104,7 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
          * application-specific rendering workaround. Flush/readback changes
          * remain gated by application_policy inside their own hooks. */
         .track_commands = 1,
+        .multi_viewport=hybris_multiviewport_requested(info) && hybris_multiviewport_active(physical),
         .instance_generation = instance.generation}, .custom_allocator = allocator != NULL};
     if (allocator) state->allocator = *allocator;
     pthread_mutex_lock(&guard);

@@ -24,6 +24,11 @@ struct hybris_layer_physical {
     X(CmdBindIndexBuffer2, CmdBindIndexBuffer2KHR) \
     X(CmdBindIndexBuffer2KHR, CmdBindIndexBuffer2KHR) \
     X(CmdSetViewport, CmdSetViewport) \
+    X(CmdSetScissor, CmdSetScissor) \
+    X(CmdSetViewportWithCount, CmdSetViewportWithCount) \
+    X(CmdSetViewportWithCountEXT, CmdSetViewportWithCountEXT) \
+    X(CmdSetScissorWithCount, CmdSetScissorWithCount) \
+    X(CmdSetScissorWithCountEXT, CmdSetScissorWithCountEXT) \
     X(CmdBeginQuery, CmdBeginQuery) \
     X(CmdEndQuery, CmdEndQuery) \
     X(CmdBeginQueryIndexedEXT, CmdBeginQueryIndexedEXT) \
@@ -40,6 +45,7 @@ struct hybris_layer_device {
     uint64_t generation;
     unsigned application_policy;
     int track_commands;
+    int multi_viewport;
     const struct hybris_layer_command_dispatch *recording;
     uint64_t instance_generation;
     /* Set only in command_device's returned copy, never in device state. */

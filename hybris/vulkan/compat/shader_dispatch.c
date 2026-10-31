@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
+#include "multiviewport.h"
 #include "shader_dispatch.h"
 #include "scaled_vertex.h"
 #include "scaled_formats.h"
@@ -48,6 +49,7 @@ struct shader_device {
     int vertex_stores;
     int polygon;
     int mali_spec;
+    int multi_viewport;
     _Atomic unsigned spec_changes;
     VkAllocationCallbacks allocator;
     int custom;
@@ -114,6 +116,7 @@ VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
     for(const VkBaseInStructure *node=requested->pNext;node;node=node->pNext)
         if(node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2)
             polygon_requested=((const VkPhysicalDeviceFeatures2*)node)->features.fillModeNonSolid;
+    device->multi_viewport=hybris_multiviewport_requested(requested) && hybris_multiviewport_active(physical);
     device->polygon=polygon_requested && hybris_shader_polygon_emulated(physical);
     device->mask = hybris_scaled_mask(handle, physical, query);
     device->point_size = hybris_point_size_enabled();
@@ -344,6 +347,12 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
     struct pipeline_copy *copy, const VkAllocationCallbacks *allocator, const char **reason)
 {
     *reason = "unsupported pipeline state for experimental scaled conversion";
+    if(device->multi_viewport && info->pViewportState) {
+        copy->viewport_state=*info->pViewportState;
+        copy->viewport_state.viewportCount=hybris_multiviewport_count(0,0,copy->viewport_state.viewportCount);
+        copy->viewport_state.scissorCount=hybris_multiviewport_count(1,0,copy->viewport_state.scissorCount);
+        info->pViewportState=&copy->viewport_state;
+    }
     /* Filled is the complete fallback for unsupported/overcapacity polygon
      * conversion. Do not submit LINE/POINT to a native driver lacking them.
      * Admission failure keeps the whole filled draw, never a partial prefix. */
@@ -808,7 +817,7 @@ inline_done:
     }
     struct shader_device *device = find_device(handle);
     if (!device) return VK_ERROR_INITIALIZATION_FAILED;
-    if (!device->mask && !device->point_size && !device->inout && !device->clip && !device->cull && !device->vertex_stores && !device->polygon)
+    if (!device->mask && !device->point_size && !device->inout && !device->clip && !device->cull && !device->vertex_stores && !device->polygon && !device->multi_viewport)
         return device->create_pipelines(handle, cache, count, infos, allocator, pipelines);
     VkGraphicsPipelineCreateInfo *changed = hybris_scaled_alloc(allocator, count * sizeof(*changed), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
     struct pipeline_copy *copies = hybris_scaled_alloc(allocator, count * sizeof(*copies), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
