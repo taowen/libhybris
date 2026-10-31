@@ -23,12 +23,7 @@ std::string run(const std::string &directory,const std::string &mode,bool featur
     else c.create_device(enabled,rendering?(VkBaseOutStructure*)&dynamic:nullptr,extension_count,extension_count?extensions:nullptr);
     Buffer output(c,W*H*4,VK_BUFFER_USAGE_TRANSFER_DST_BIT);Graphics graphics(c,rendering,enabled_maintenance);
     std::ostringstream log;log<<"GPU: "<<c.properties.deviceName<<" maintenance="<<enabled_maintenance<<" dynamic="<<rendering<<" features2="<<features2<<"\n";
-    unsigned cases=0,failed=0;
-    for(int state=0;state<2;++state)for(int resolver=0;resolver<2;++resolver)for(int secondary=0;secondary<2;++secondary) {
-        bool pass=graphics.render(output,state,resolver,secondary);++cases;if(!pass)++failed;
-        log<<(pass?"PASS ":"FAIL ")<<"state="<<state<<" resolver="<<(resolver?"GIPA":"GDPA")<<" secondary="<<secondary<<" RGBA pixels and caller-owned input\n";
-    }
-    log<<(failed?"FAIL: ":"PASS: ")<<cases<<" actual GPU graphics cases, "<<failed<<" failed\n";return log.str();
+    log<<run_cases(graphics,output);return log.str();
 }
 }
 int main(int argc,char **argv) {

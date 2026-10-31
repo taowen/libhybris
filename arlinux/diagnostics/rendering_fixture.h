@@ -43,9 +43,9 @@ struct Graphics {
     ~Graphics(){if(!c.idle)return;if(secondary)c.FreeCommandBuffers(c.device,c.pool,1,&secondary);if(pipeline)c.DestroyPipeline(c.device,pipeline,nullptr);if(vertex)c.DestroyShaderModule(c.device,vertex,nullptr);if(fragment)c.DestroyShaderModule(c.device,fragment,nullptr);if(layout)c.DestroyPipelineLayout(c.device,layout,nullptr);if(frame)c.DestroyFramebuffer(c.device,frame,nullptr);if(pass)c.DestroyRenderPass(c.device,pass,nullptr);}
     bool render(Buffer &output,bool dynamic,int resolver,bool use_secondary) {
         if(pipeline){c.DestroyPipeline(c.device,pipeline,nullptr);pipeline=VK_NULL_HANDLE;}
-        VkViewport views[]={{0,0,W/2.0f,float(H),0,1},{W/2.0f,0,W/2.0f,float(H),0,1}};
-        VkRect2D scissors[]={{{0,0},{W,H/2}},{{0,H/2},{W,H/2}}};
-        VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};vp.viewportCount=vp.scissorCount=1;vp.pViewports=views;vp.pScissors=scissors;
+        VkViewport viewport{0,0,W/2.0f,float(H),0,1};
+        VkRect2D scissor{{0,0},{W,H/2}};
+        VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};vp.viewportCount=vp.scissorCount=1;vp.pViewports=&viewport;vp.pScissors=&scissor;
         const auto before=vp;
         VkPipelineShaderStageCreateInfo stages[2]{};
         for(auto &s:stages){s.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;s.pName="main";}
@@ -119,8 +119,8 @@ struct Graphics {
         c.CmdBindPipeline(draw,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
         auto proc=[&](const char *name){auto p=resolver?c.gipa(c.instance,name):c.gdpa(c.device,name);if(!p)throw std::runtime_error(std::string("Missing ")+name);return p;};
         if(dynamic) {
-            ((PFN_vkCmdSetViewport)proc("vkCmdSetViewport"))(draw,0,1,views);
-            ((PFN_vkCmdSetScissor)proc("vkCmdSetScissor"))(draw,0,1,scissors);
+            ((PFN_vkCmdSetViewport)proc("vkCmdSetViewport"))(draw,0,1,&viewport);
+            ((PFN_vkCmdSetScissor)proc("vkCmdSetScissor"))(draw,0,1,&scissor);
         }
         Buffer indices(c,3*sizeof(uint16_t),VK_BUFFER_USAGE_INDEX_BUFFER_BIT,maintenance);
         if(maintenance) {
@@ -149,4 +149,13 @@ struct Graphics {
         return true;
     }
 };
+inline std::string run_cases(Graphics &graphics,Buffer &output) {
+    std::ostringstream log;
+    unsigned cases=0,failed=0;
+    for(int state=0;state<2;++state)for(int resolver=0;resolver<2;++resolver)for(int secondary=0;secondary<2;++secondary) {
+        bool pass=graphics.render(output,state,resolver,secondary);++cases;if(!pass)++failed;
+        log<<(pass?"PASS ":"FAIL ")<<"state="<<state<<" resolver="<<(resolver?"GIPA":"GDPA")<<" secondary="<<secondary<<" RGBA pixels and caller-owned input\n";
+    }
+    log<<(failed?"FAIL: ":"PASS: ")<<cases<<" actual GPU graphics cases, "<<failed<<" failed\n";return log.str();
+}
 }

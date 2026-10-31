@@ -206,34 +206,24 @@ static void VKAPI_CALL wrap_CmdCopyImage(VkCommandBuffer command,VkImage src,VkI
     else hybris_layer_command_error(command,result);
     free(copy);
 }
+static void copy_image2(VkCommandBuffer command,const VkCopyImageInfo2 *info,const char *name)
+{
+    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
+    PFN_vkCmdCopyImage2 next=(void*)hybris_layer_legacy_proc(device.handle,name);
+    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].srcSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS || info->pRegions[i].dstSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
+    if(!needed){next(command,info);return;}
+    VkImageCopy2 *copy=calloc(info->regionCount,sizeof(*copy));
+    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
+    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
+    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].srcSubresource);if(result==VK_SUCCESS)result=layers(&device,info->dstImage,&copy[i].dstSubresource);}
+    VkCopyImageInfo2 translated=*info;translated.pRegions=copy;
+    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
+    free(copy);
+}
 static void VKAPI_CALL wrap_CmdCopyImage2(VkCommandBuffer command,const VkCopyImageInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdCopyImage2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdCopyImage2");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].srcSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS || info->pRegions[i].dstSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkImageCopy2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].srcSubresource);if(result==VK_SUCCESS)result=layers(&device,info->dstImage,&copy[i].dstSubresource);}
-    VkCopyImageInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{copy_image2(command,info,"vkCmdCopyImage2");}
 static void VKAPI_CALL wrap_CmdCopyImage2KHR(VkCommandBuffer command,const VkCopyImageInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdCopyImage2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdCopyImage2KHR");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].srcSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS || info->pRegions[i].dstSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkImageCopy2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].srcSubresource);if(result==VK_SUCCESS)result=layers(&device,info->dstImage,&copy[i].dstSubresource);}
-    VkCopyImageInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{copy_image2(command,info,"vkCmdCopyImage2KHR");}
 static void VKAPI_CALL wrap_CmdResolveImage(VkCommandBuffer command,VkImage src,VkImageLayout sl,VkImage dst,VkImageLayout dl,uint32_t count,const VkImageResolve *regions)
 {
     struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
@@ -248,34 +238,24 @@ static void VKAPI_CALL wrap_CmdResolveImage(VkCommandBuffer command,VkImage src,
     else hybris_layer_command_error(command,result);
     free(copy);
 }
+static void resolve_image2(VkCommandBuffer command,const VkResolveImageInfo2 *info,const char *name)
+{
+    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
+    PFN_vkCmdResolveImage2 next=(void*)hybris_layer_legacy_proc(device.handle,name);
+    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].srcSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS || info->pRegions[i].dstSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
+    if(!needed){next(command,info);return;}
+    VkImageResolve2 *copy=calloc(info->regionCount,sizeof(*copy));
+    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
+    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
+    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].srcSubresource);if(result==VK_SUCCESS)result=layers(&device,info->dstImage,&copy[i].dstSubresource);}
+    VkResolveImageInfo2 translated=*info;translated.pRegions=copy;
+    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
+    free(copy);
+}
 static void VKAPI_CALL wrap_CmdResolveImage2(VkCommandBuffer command,const VkResolveImageInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdResolveImage2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdResolveImage2");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].srcSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS || info->pRegions[i].dstSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkImageResolve2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].srcSubresource);if(result==VK_SUCCESS)result=layers(&device,info->dstImage,&copy[i].dstSubresource);}
-    VkResolveImageInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{resolve_image2(command,info,"vkCmdResolveImage2");}
 static void VKAPI_CALL wrap_CmdResolveImage2KHR(VkCommandBuffer command,const VkResolveImageInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdResolveImage2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdResolveImage2KHR");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].srcSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS || info->pRegions[i].dstSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkImageResolve2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].srcSubresource);if(result==VK_SUCCESS)result=layers(&device,info->dstImage,&copy[i].dstSubresource);}
-    VkResolveImageInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{resolve_image2(command,info,"vkCmdResolveImage2KHR");}
 static void VKAPI_CALL wrap_CmdBlitImage(VkCommandBuffer command,VkImage src,VkImageLayout sl,VkImage dst,VkImageLayout dl,uint32_t count,const VkImageBlit *regions,VkFilter filter)
 {
     struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
@@ -290,34 +270,24 @@ static void VKAPI_CALL wrap_CmdBlitImage(VkCommandBuffer command,VkImage src,VkI
     else hybris_layer_command_error(command,result);
     free(copy);
 }
+static void blit_image2(VkCommandBuffer command,const VkBlitImageInfo2 *info,const char *name)
+{
+    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
+    PFN_vkCmdBlitImage2 next=(void*)hybris_layer_legacy_proc(device.handle,name);
+    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].srcSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS || info->pRegions[i].dstSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
+    if(!needed){next(command,info);return;}
+    VkImageBlit2 *copy=calloc(info->regionCount,sizeof(*copy));
+    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
+    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
+    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].srcSubresource);if(result==VK_SUCCESS)result=layers(&device,info->dstImage,&copy[i].dstSubresource);}
+    VkBlitImageInfo2 translated=*info;translated.pRegions=copy;
+    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
+    free(copy);
+}
 static void VKAPI_CALL wrap_CmdBlitImage2(VkCommandBuffer command,const VkBlitImageInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdBlitImage2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdBlitImage2");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].srcSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS || info->pRegions[i].dstSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkImageBlit2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].srcSubresource);if(result==VK_SUCCESS)result=layers(&device,info->dstImage,&copy[i].dstSubresource);}
-    VkBlitImageInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{blit_image2(command,info,"vkCmdBlitImage2");}
 static void VKAPI_CALL wrap_CmdBlitImage2KHR(VkCommandBuffer command,const VkBlitImageInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdBlitImage2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdBlitImage2KHR");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].srcSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS || info->pRegions[i].dstSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkImageBlit2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].srcSubresource);if(result==VK_SUCCESS)result=layers(&device,info->dstImage,&copy[i].dstSubresource);}
-    VkBlitImageInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{blit_image2(command,info,"vkCmdBlitImage2KHR");}
 static void VKAPI_CALL wrap_CmdCopyBufferToImage(VkCommandBuffer command,VkBuffer buffer,VkImage image,VkImageLayout layout,uint32_t count,const VkBufferImageCopy *regions)
 {
     struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
@@ -332,34 +302,24 @@ static void VKAPI_CALL wrap_CmdCopyBufferToImage(VkCommandBuffer command,VkBuffe
     else hybris_layer_command_error(command,result);
     free(copy);
 }
+static void copy_buffer_image2(VkCommandBuffer command,const VkCopyBufferToImageInfo2 *info,const char *name)
+{
+    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
+    PFN_vkCmdCopyBufferToImage2 next=(void*)hybris_layer_legacy_proc(device.handle,name);
+    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].imageSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
+    if(!needed){next(command,info);return;}
+    VkBufferImageCopy2 *copy=calloc(info->regionCount,sizeof(*copy));
+    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
+    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
+    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->dstImage,&copy[i].imageSubresource);}
+    VkCopyBufferToImageInfo2 translated=*info;translated.pRegions=copy;
+    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
+    free(copy);
+}
 static void VKAPI_CALL wrap_CmdCopyBufferToImage2(VkCommandBuffer command,const VkCopyBufferToImageInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdCopyBufferToImage2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdCopyBufferToImage2");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].imageSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkBufferImageCopy2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->dstImage,&copy[i].imageSubresource);}
-    VkCopyBufferToImageInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{copy_buffer_image2(command,info,"vkCmdCopyBufferToImage2");}
 static void VKAPI_CALL wrap_CmdCopyBufferToImage2KHR(VkCommandBuffer command,const VkCopyBufferToImageInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdCopyBufferToImage2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdCopyBufferToImage2KHR");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].imageSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkBufferImageCopy2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->dstImage,&copy[i].imageSubresource);}
-    VkCopyBufferToImageInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{copy_buffer_image2(command,info,"vkCmdCopyBufferToImage2KHR");}
 static void VKAPI_CALL wrap_CmdCopyImageToBuffer(VkCommandBuffer command,VkImage image,VkImageLayout layout,VkBuffer buffer,uint32_t count,const VkBufferImageCopy *regions)
 {
     struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
@@ -374,34 +334,24 @@ static void VKAPI_CALL wrap_CmdCopyImageToBuffer(VkCommandBuffer command,VkImage
     else hybris_layer_command_error(command,result);
     free(copy);
 }
+static void copy_image_buffer2(VkCommandBuffer command,const VkCopyImageToBufferInfo2 *info,const char *name)
+{
+    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
+    PFN_vkCmdCopyImageToBuffer2 next=(void*)hybris_layer_legacy_proc(device.handle,name);
+    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].imageSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
+    if(!needed){next(command,info);return;}
+    VkBufferImageCopy2 *copy=calloc(info->regionCount,sizeof(*copy));
+    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
+    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
+    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].imageSubresource);}
+    VkCopyImageToBufferInfo2 translated=*info;translated.pRegions=copy;
+    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
+    free(copy);
+}
 static void VKAPI_CALL wrap_CmdCopyImageToBuffer2(VkCommandBuffer command,const VkCopyImageToBufferInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdCopyImageToBuffer2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdCopyImageToBuffer2");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].imageSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkBufferImageCopy2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].imageSubresource);}
-    VkCopyImageToBufferInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{copy_image_buffer2(command,info,"vkCmdCopyImageToBuffer2");}
 static void VKAPI_CALL wrap_CmdCopyImageToBuffer2KHR(VkCommandBuffer command,const VkCopyImageToBufferInfo2 *info)
-{
-    struct hybris_layer_device device;if(!hybris_layer_command_device(command,&device))return;
-    PFN_vkCmdCopyImageToBuffer2 next=(void*)hybris_layer_legacy_proc(device.handle,"vkCmdCopyImageToBuffer2KHR");
-    int needed=0;if(device.maintenance5)for(uint32_t i=0;i<info->regionCount;++i)needed|=info->pRegions[i].imageSubresource.layerCount==VK_REMAINING_ARRAY_LAYERS;
-    if(!needed){next(command,info);return;}
-    VkBufferImageCopy2 *copy=calloc(info->regionCount,sizeof(*copy));
-    if(!copy){hybris_layer_command_error(command,VK_ERROR_OUT_OF_HOST_MEMORY);return;}
-    memcpy(copy,info->pRegions,info->regionCount*sizeof(*copy));VkResult result=VK_SUCCESS;
-    for(uint32_t i=0;i<info->regionCount && result==VK_SUCCESS;++i){result=layers(&device,info->srcImage,&copy[i].imageSubresource);}
-    VkCopyImageToBufferInfo2 translated=*info;translated.pRegions=copy;
-    if(result==VK_SUCCESS)next(command,&translated);else hybris_layer_command_error(command,result);
-    free(copy);
-}
+{copy_image_buffer2(command,info,"vkCmdCopyImageToBuffer2KHR");}
 PFN_vkVoidFunction hybris_maintenance5_added_proc(const char *name)
 {
     if(!strcmp(name,"vkCmdBindIndexBuffer2") || !strcmp(name,"vkCmdBindIndexBuffer2KHR"))return (PFN_vkVoidFunction)bind_index;

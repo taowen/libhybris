@@ -15,8 +15,7 @@
 #include <sys/auxv.h>
 #define MAXC 8
 #define MAP_BUCKETS 512
-#define VKB_ERR(...) do { fprintf(stderr,"HYBRIS_DYNAMIC_RENDERING: "); fprintf(stderr,__VA_ARGS__); fputc('\n',stderr); } while (0)
-#define VKB_INFO(...) VKB_ERR(__VA_ARGS__)
+#define DYNAMIC_LOG(...) do { fprintf(stderr,"HYBRIS_DYNAMIC_RENDERING: "); fprintf(stderr,__VA_ARGS__); fputc('\n',stderr); } while (0)
 /* What a render pass is made from (zeroed, then filled: compared and hashed as bytes). */
 typedef struct att_key {
     uint32_t format, samples, load, store, layout;
@@ -49,7 +48,6 @@ typedef struct hybris_dynamic_state {
     rp_rec *rps[MAP_BUCKETS];
     view_rec *views[MAP_BUCKETS];
     uint32_t nrp;
-    int ds_resolve; /* VK_KHR_depth_stencil_resolve enabled */
     PFN_vkCreateRenderPass2 create_rp2;
     PFN_vkDestroyRenderPass destroy_rp;
     PFN_vkCreateFramebuffer create_fb;
@@ -247,7 +245,7 @@ static VkRenderPass make_pass(dr_state *s, VkDevice device, const rp_key *k, VkR
         }
         na++;
         sp.pDepthStencilAttachment = &dsref;
-        if (k->ds_res_format && s->ds_resolve) {
+        if (k->ds_res_format) {
             VkImageLayout rdl = (VkImageLayout)k->ds_res_dlayout, rsl = (VkImageLayout)k->ds_res_slayout;
             att[na] = (VkAttachmentDescription2){VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2, NULL, 0, (VkFormat)k->ds_res_format,
                                                  VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_STORE,
@@ -272,7 +270,7 @@ static VkRenderPass make_pass(dr_state *s, VkDevice device, const rp_key *k, VkR
     if (r != VK_SUCCESS) {
         static int told;
         if (__atomic_fetch_add(&told, 1, __ATOMIC_RELAXED) < 4)
-            VKB_ERR("dynamic rendering emulation: vkCreateRenderPass2 failed (%d): %u colour, depth/stencil %u (format %u), view mask 0x%x",
+            DYNAMIC_LOG("dynamic rendering emulation: vkCreateRenderPass2 failed (%d): %u colour, depth/stencil %u (format %u), view mask 0x%x",
                     r, k->ncolor, k->has_ds, k->ds_format, k->view_mask);
         *error=r;
         return VK_NULL_HANDLE;
@@ -296,7 +294,7 @@ static VkRenderPass make_pass(dr_state *s, VkDevice device, const rp_key *k, VkR
     uint32_t total = ++s->nrp;
     pthread_mutex_unlock(&s->lock);
     if (total == 1 || total == 64 || total == 1024)
-        VKB_INFO("dynamic rendering emulation: %u render pass(es) made on device %llu", total, (unsigned long long)(uintptr_t)device);
+        DYNAMIC_LOG("dynamic rendering emulation: %u render pass(es) made on device %llu", total, (unsigned long long)(uintptr_t)device);
     return rp;
 }
 
@@ -343,8 +341,7 @@ static void release_framebuffer(void *resource)
     owned->destroy(owned->device,owned->framebuffer,NULL);
     free(owned);
 }
-#define VKB_LOG_ERROR 0
-#define VKB_ONCE(level, ...) do { static unsigned count; if (__atomic_fetch_add(&count,1,__ATOMIC_RELAXED)==0) VKB_ERR(__VA_ARGS__); } while (0)
+#define DYNAMIC_LOG_ONCE(...) do { static unsigned count; if (__atomic_fetch_add(&count,1,__ATOMIC_RELAXED)==0) DYNAMIC_LOG(__VA_ARGS__); } while (0)
 static VkAttachmentLoadOp load_op(VkAttachmentLoadOp op, int resuming)
 {
     return resuming ? VK_ATTACHMENT_LOAD_OP_LOAD : op;
@@ -380,7 +377,7 @@ static VKAPI_ATTR void VKAPI_CALL d_CmdBeginRendering(VkCommandBuffer cb, const 
         c->format = view_info(s, a->imageView, &sm);
         if (!c->format) {
             c->layout = 0;
-            VKB_ONCE(VKB_LOG_ERROR, "dynamic rendering emulation: colour attachment %u's view %p has no tracked metadata", i,
+            DYNAMIC_LOG_ONCE("dynamic rendering emulation: colour attachment %u's view %p has no tracked metadata", i,
                      (void *)a->imageView);
             hybris_layer_command_error(cb, VK_ERROR_INITIALIZATION_FAILED); return;
         }
@@ -403,7 +400,7 @@ static VKAPI_ATTR void VKAPI_CALL d_CmdBeginRendering(VkCommandBuffer cb, const 
     const VkRenderingAttachmentInfo *da = ri->pDepthAttachment && ri->pDepthAttachment->imageView ? ri->pDepthAttachment : NULL;
     const VkRenderingAttachmentInfo *sa = ri->pStencilAttachment && ri->pStencilAttachment->imageView ? ri->pStencilAttachment : NULL;
     if (da && sa && da->imageView != sa->imageView) {
-        VKB_ONCE(VKB_LOG_ERROR, "dynamic rendering emulation: depth and stencil on different views; unsupported by render-pass translation");
+        DYNAMIC_LOG_ONCE("dynamic rendering emulation: depth and stencil on different views; unsupported by render-pass translation");
         hybris_layer_command_error(cb, VK_ERROR_FEATURE_NOT_PRESENT); return;
     }
     if((da && da->pNext) || (sa && sa->pNext) ||
@@ -438,7 +435,7 @@ static VKAPI_ATTR void VKAPI_CALL d_CmdBeginRendering(VkCommandBuffer cb, const 
             /* depth/stencil resolve: the depth's view and modes, the stencil's mode */
             const VkRenderingAttachmentInfo *ra = da && da->resolveMode && da->resolveImageView ? da
                                                 : sa && sa->resolveMode && sa->resolveImageView ? sa : NULL;
-            if (ra && s->ds_resolve) {
+            if (ra) {
                 VkSampleCountFlagBits rs;
                 VkFormat rf = view_info(s, ra->resolveImageView, &rs);
                 if(!rf){hybris_layer_command_error(cb,VK_ERROR_INITIALIZATION_FAILED);return;}
@@ -454,8 +451,6 @@ static VKAPI_ATTR void VKAPI_CALL d_CmdBeginRendering(VkCommandBuffer cb, const 
                     memset(&clears[nv], 0, sizeof(clears[nv]));
                     views[nv++] = ra->resolveImageView;
                 }
-            } else if (ra) {
-                hybris_layer_command_error(cb, VK_ERROR_FEATURE_NOT_PRESENT); return;
             }
         }
     }
@@ -469,7 +464,7 @@ static VKAPI_ATTR void VKAPI_CALL d_CmdBeginRendering(VkCommandBuffer cb, const 
     VkFramebuffer fb = VK_NULL_HANDLE;
     VkResult r = s->create_fb(s->device, &fci, NULL, &fb);
     if (r != VK_SUCCESS) {
-        VKB_ONCE(VKB_LOG_ERROR, "dynamic rendering emulation: vkCreateFramebuffer failed (%d); command recording failed", r);
+        DYNAMIC_LOG_ONCE("dynamic rendering emulation: vkCreateFramebuffer failed (%d); command recording failed", r);
         hybris_layer_command_error(cb, r);
         return;
     }
@@ -483,7 +478,7 @@ static VKAPI_ATTR void VKAPI_CALL d_CmdBeginRendering(VkCommandBuffer cb, const 
     s->begin_rp(cb, &bi, (ri->flags & VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT) ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS
                                                                                             : VK_SUBPASS_CONTENTS_INLINE);
     uint64_t nr = __atomic_add_fetch(&s->renderings, 1, __ATOMIC_RELAXED);
-    if (nr == 1) VKB_INFO("dynamic rendering emulation: first vkCmdBeginRendering as a render pass (%u colour, depth/stencil %u)", k.ncolor, k.has_ds);
+    if (nr == 1) DYNAMIC_LOG("dynamic rendering emulation: first vkCmdBeginRendering as a render pass (%u colour, depth/stencil %u)", k.ncolor, k.has_ds);
 }
 
 static VKAPI_ATTR void VKAPI_CALL d_CmdEndRendering(VkCommandBuffer cb)
@@ -596,7 +591,7 @@ VkResult hybris_dynamic_attach(struct hybris_layer_device *device,
     if(!(r&&r->dynamicRendering) && !(v&&v->dynamicRendering))return VK_SUCCESS;
     dr_state *s=calloc(1,sizeof(*s));
     if(!s)return VK_ERROR_OUT_OF_HOST_MEMORY;
-    s->device=device->handle;s->ds_resolve=1;
+    s->device=device->handle;
 #define LOAD(field,type,name) s->field=(PFN_vk##type)resolve(device,"vk" name)
     LOAD(create_rp2,CreateRenderPass2,"CreateRenderPass2");
     if(!s->create_rp2)LOAD(create_rp2,CreateRenderPass2,"CreateRenderPass2KHR");
