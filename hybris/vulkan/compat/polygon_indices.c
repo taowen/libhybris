@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 #define VK_NO_PROTOTYPES
 #include "polygon_indices.h"
 #include <string.h>
@@ -25,12 +25,12 @@ VkResult hybris_polygon_indices_create(VkDevice device,PFN_vkGetDeviceProcAddr r
         !DestroyShaderModule || !DestroyPipeline || !DestroyPipelineLayout || !DestroyDescriptorSetLayout) {
         memset(p,0,sizeof(*p));return VK_ERROR_INITIALIZATION_FAILED;
     }
-    VkDescriptorSetLayoutBinding bindings[4];
-    for(unsigned i=0;i<4;++i) bindings[i]=(VkDescriptorSetLayoutBinding){.binding=i,
+    VkDescriptorSetLayoutBinding bindings[2];
+    for(unsigned i=0;i<2;++i) bindings[i]=(VkDescriptorSetLayoutBinding){.binding=i,
         .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.descriptorCount=1,
         .stageFlags=VK_SHADER_STAGE_COMPUTE_BIT};
     VkDescriptorSetLayoutCreateInfo sets={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount=4,.pBindings=bindings};
+        .bindingCount=2,.pBindings=bindings};
     VkResult result=CreateDescriptorSetLayout(device,&sets,a,&p->descriptors);
     if(result) goto fail;
     VkPushConstantRange push={VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(struct hybris_polygon_push)};
@@ -49,27 +49,4 @@ VkResult hybris_polygon_indices_create(VkDevice device,PFN_vkGetDeviceProcAddr r
     if(!result) return VK_SUCCESS;
 fail:
     hybris_polygon_indices_destroy(p,a);return result;
-}
-VkResult hybris_polygon_indices_record(const struct hybris_polygon_indices *p,VkCommandBuffer command,
-    VkDescriptorSet descriptors,const struct hybris_polygon_push *push)
-{
-    if(!p || !p->pipeline || !command || !descriptors || !push)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    if(push->triangle_count>UINT32_MAX/3 || (push->mode!=1 && push->mode!=2) ||
-        push->cull_mode>VK_CULL_MODE_FRONT_AND_BACK || push->front_ccw>1 || push->inverted_viewport>1)
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    /* Flatten only complete triangles per instance. A leftover vertex must
-     * not be joined to vertices from the next instance; select original draw
-     * before emitting commands rather than inventing cross-instance edges. */
-    if(push->filled.indexCount%3 ||
-        (uint64_t)(push->filled.indexCount/3)*push->filled.instanceCount!=push->triangle_count)
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    PROC(CmdBindPipeline); PROC(CmdBindDescriptorSets); PROC(CmdPushConstants); PROC(CmdDispatch);
-    if(!CmdBindPipeline || !CmdBindDescriptorSets || !CmdPushConstants || !CmdDispatch)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    CmdBindPipeline(command,VK_PIPELINE_BIND_POINT_COMPUTE,p->pipeline);
-    CmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,p->layout,0,1,&descriptors,0,NULL);
-    CmdPushConstants(command,p->layout,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(*push),push);
-    CmdDispatch(command,1,1,1);
-    return VK_SUCCESS;
 }

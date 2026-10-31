@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "readback.h"
+#include "polygon_record.h"
 #include "memory_visibility.h"
 #include "scaled_vertex.h"
 #include "../layer/layer.h"
@@ -113,6 +114,7 @@ void hybris_readback_reset_pool(VkDevice device, VkCommandPool pool)
 static void write_buffer(const struct hybris_layer_device *device, VkCommandBuffer command,
     VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size)
 {
+    hybris_polygon_record_written(command,buffer);
     struct hybris_readback_range range;
     VkResult result = hybris_memory_visibility_readback_range(device, buffer, offset, size, &range);
     if (result == VK_SUCCESS && range.memory) result = remember(command, &range);
@@ -187,6 +189,7 @@ static void VKAPI_CALL execute_commands(VkCommandBuffer command, uint32_t count,
         result = remember(command, &w->range);
     hybris_readback_free_writes(writes, custom ? &allocator : NULL);
     if (result != VK_SUCCESS) hybris_layer_command_error(command, result);
+    hybris_polygon_record_execute(command,count,children);
     ((PFN_vkCmdExecuteCommands)hybris_layer_device_inner_proc(device.handle, "vkCmdExecuteCommands"))(
         command, count, children);
 }

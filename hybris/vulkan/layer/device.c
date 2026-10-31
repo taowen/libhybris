@@ -14,7 +14,6 @@
 #include "../compat/bc_context.h"
 #include "../compat/clip_distance.h"
 #include "../compat/memory_visibility.h"
-#include "../compat/polygon_layouts.h"
 #include "../compat/polygon_pipeline.h"
 #include "../compat/null_descriptors.h"
 #include <vulkan/vk_layer.h>
@@ -179,7 +178,6 @@ void VKAPI_CALL hybris_layer_destroy_device(VkDevice handle, const VkAllocationC
     hybris_null_release(handle);
     hybris_layer_commands_release_device(handle);
     hybris_polygon_pipelines_release_device(handle);
-    hybris_polygon_layouts_release_device(handle);
     hybris_bc_device_remove(handle);
     hybris_vertex_stores_release_device(handle);
     hybris_shader_device_destroy(handle);
@@ -204,7 +202,7 @@ PFN_vkVoidFunction hybris_layer_device_inner_proc(VkDevice handle,const char *na
 { return hybris_layer_handle_inner_proc(handle,name); }
 PFN_vkVoidFunction hybris_layer_device_dispatch(const char *name, int track_commands)
 {
-    PFN_vkVoidFunction compat = hybris_polygon_layouts_proc(name);
+    PFN_vkVoidFunction compat = NULL;
     if (track_commands) {
         if (!compat) compat = hybris_layer_commands_proc(name);
         if (!compat) compat = hybris_memory_visibility_proc(name);

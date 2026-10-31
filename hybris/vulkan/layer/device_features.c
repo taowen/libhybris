@@ -117,7 +117,6 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
         }
         if (polygon && out->features.fillModeNonSolid) {
             out->features.fillModeNonSolid=VK_FALSE;
-            out->features.drawIndirectFirstInstance=VK_TRUE;
         }
         out->info.pEnabledFeatures = &out->features;
     }
@@ -209,7 +208,6 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
             }
             if (polygon && ((VkPhysicalDeviceFeatures2*)copy)->features.fillModeNonSolid) {
                 ((VkPhysicalDeviceFeatures2*)copy)->features.fillModeNonSolid=VK_FALSE;
-                ((VkPhysicalDeviceFeatures2*)copy)->features.drawIndirectFirstInstance=VK_TRUE;
             }
         }
         if (node == hdr_node) {
