@@ -44,13 +44,32 @@ not window/swapchain acceptance. Each experiment executes the APK's native probe
 as a fresh child process and checks BC upload, sampled pixels, original compressed readback and
 restoration of the app's compute bindings. A preview and report remain in the app.
 
-The native route, normal compatibility policy, forced decode and forced transcode
-quality modes are separate buttons. The large-texture option exercises automatic
-fast quality at 1024x1024. `mode` (`native`, `normal`, `decode`, `auto`, `fast`,
-`default`, `high`) and `size` (`64`, `1024`) are also accepted as MainActivity intent
-extras for device automation. Reports and layer traces can be read through ADB
-`run-as` from `files/report.txt` and `files/trace.txt`. The app can share its report.
-No test instrumentation package is installed.
+The home screen opens independent probe pages. Each page owns its controls,
+native executable and result directory; reports from different probes remain
+available when switching pages. Vulkan loading/resource lifetime and Android
+process cancellation, identity verification and report display are shared.
+
+| Probe | Activity | Native executable | Result directory |
+| --- | --- | --- | --- |
+| BC textures | `.BcProbeActivity` | `libhybris_bc_probe.so` | `files/bc/` |
+| Robustness2 | `.RobustnessProbeActivity` | `libhybris_robustness_probe.so` | `files/robustness/` |
+
+For device automation, start the relevant Activity directly with a `mode` extra.
+BC accepts `native`, `normal`, `decode`, `auto`, `fast`, `default` or `high`, and
+`size=64` or `1024`. Robustness2 accepts `robust-native`, `robust`, `robust-force`
+or `robust-off`; it has no texture-size option. For example:
+
+```sh
+adb -s SERIAL shell am start -n org.arlinux.hybrisdiagnostics/.BcProbeActivity --es mode normal --ei size 64
+adb -s SERIAL shell am start -n org.arlinux.hybrisdiagnostics/.RobustnessProbeActivity --es mode robust-force
+```
+
+Read `report.txt` and `trace.txt` in each result directory using ADB `run-as`.
+BC also saves `preview.png`; robustness2 does not produce a texture preview.
+The APK identity records a separate executable name and SHA-256 for each probe,
+and each run verifies both its executable and the shared compatibility layer.
+Back cancels the running child and returns its page to the controls; Back from
+an idle page returns to the home screen. No instrumentation package is installed.
 
 The native executable runs under the app's ordinary UID. Unlike the zygote's
 inherited secure-execution state, `exec` supplies the child's actual security

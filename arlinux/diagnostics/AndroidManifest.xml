@@ -8,6 +8,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".ProbeActivity" android:exported="false" android:configChanges="orientation|screenSize" />
+        <activity android:name=".BcProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
+        <activity android:name=".RobustnessProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
     </application>
 </manifest>

@@ -36,17 +36,22 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
             words = struct.unpack('<'+'I'*(spv.stat().st_size//4), spv.read_bytes())
             (work/(name+'.inc')).write_text('static const uint32_t '+name+'_spv[] = {'+
                 ','.join(hex(word) for word in words)+'};\n')
-        probe = work/'libhybris_diagnostics_exec.so'
-        subprocess.run([str(compiler)+'++', *flags, '-std=gnu++17', '-I'+str(work),
-                        '-pie', '-static-libstdc++', str(recipe/'probe.cpp'), '-ldl', '-llog',
-                        '-Wl,--no-undefined,-z,max-page-size=16384', '-o', str(probe)], check=True)
         strip = ndk/'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
-        subprocess.run([str(strip), '--strip-debug', str(probe)], check=True)
-        commit = subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'], text=True).strip()
         sha = lambda file: hashlib.sha256(file.read_bytes()).hexdigest()
+        probes = {}
+        executables = []
+        for name in ('bc', 'robustness'):
+            executable = work/('libhybris_'+name+'_probe.so')
+            subprocess.run([str(compiler)+'++', *flags, '-std=gnu++17', '-I'+str(work),
+                            '-pie', '-static-libstdc++', str(recipe/(name+'_probe.cpp')), '-ldl', '-llog',
+                            '-Wl,--no-undefined,-z,max-page-size=16384', '-o', str(executable)], check=True)
+            subprocess.run([str(strip), '--strip-debug', str(executable)], check=True)
+            executables.append(executable)
+            probes[name] = dict(executable=executable.name, sha256=sha(executable))
+        commit = subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'], text=True).strip()
         identity = dict(libhybrisCommit=commit, mode='bionic', minSdk=29,
                         androidPlatform=34, androidBuildTools='36.0.0',
-                        compatibilityLayerSha256=sha(layer), probeExecutableSha256=sha(probe))
+                        compatibilityLayerSha256=sha(layer), probes=probes)
         (assets/'build.json').write_text(json.dumps(identity, indent=2)+'\n')
         licenses = assets/'licenses'
         licenses.mkdir()
@@ -72,7 +77,8 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
         with zipfile.ZipFile(apk,'a',compression=zipfile.ZIP_DEFLATED) as archive:
             archive.write(dex/'classes.dex','classes.dex')
             archive.write(layer,'lib/arm64-v8a/'+layer.name)
-            archive.write(probe,'lib/arm64-v8a/'+probe.name)
+            for executable in executables:
+                archive.write(executable,'lib/arm64-v8a/'+executable.name)
         aligned = work/'aligned.apk'
         subprocess.run([str(tools/'zipalign'),'-P','16','-f','4',str(apk),str(aligned)], check=True)
         # A disposable diagnostics-only key: never use or distribute the

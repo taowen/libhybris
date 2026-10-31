@@ -1,4 +1,50 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+#include "vulkan_context.h"
+#include "robust_null.inc"
+#include "robust_buffer.inc"
+#include "robust_image.inc"
+using namespace diagnostics;
+namespace {
+struct RobustnessContext:Context {
+    VkPhysicalDeviceRobustness2FeaturesEXT robust{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
+    VkPhysicalDeviceRobustness2FeaturesEXT native_robust{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
+    VkPhysicalDeviceRobustness2PropertiesEXT robust_limits{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_PROPERTIES_EXT};
+    bool native_ext=false,native_khr=false,route_available=false;
+    std::string requested_extension;
+    void initialize(const std::string &directory,bool compat) {
+        Context::initialize(directory,compat,VK_API_VERSION_1_3);
+        auto enumerate_extensions=reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(native_gipa(instance,"vkEnumerateDeviceExtensionProperties"));
+        uint32_t extension_count=0;
+        CHECK(enumerate_extensions(physical,nullptr,&extension_count,nullptr));
+        std::vector<VkExtensionProperties> extension_properties(extension_count);
+        CHECK(enumerate_extensions(physical,nullptr,&extension_count,extension_properties.data()));
+        for(const auto &extension:extension_properties) {
+            native_ext|=!strcmp(extension.extensionName,VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
+            native_khr|=!strcmp(extension.extensionName,VK_KHR_ROBUSTNESS_2_EXTENSION_NAME);
+        }
+        requested_extension=native_khr?VK_KHR_ROBUSTNESS_2_EXTENSION_NAME:VK_EXT_ROBUSTNESS_2_EXTENSION_NAME;
+        auto exposed=instance_proc<PFN_vkEnumerateDeviceExtensionProperties>("vkEnumerateDeviceExtensionProperties");
+        CHECK(exposed(physical,nullptr,&extension_count,nullptr));
+        extension_properties.resize(extension_count);
+        CHECK(exposed(physical,nullptr,&extension_count,extension_properties.data()));
+        for(const auto &extension:extension_properties)
+            route_available|=requested_extension==extension.extensionName;
+        if(native_ext || native_khr) {
+            VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,&native_robust};
+            reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(native_gipa(instance,"vkGetPhysicalDeviceFeatures2"))(physical,&query);
+        }
+        if(route_available) {
+            VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,&robust};
+            instance_proc<PFN_vkGetPhysicalDeviceFeatures2>("vkGetPhysicalDeviceFeatures2")(physical,&query);
+            VkPhysicalDeviceProperties2 limits{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,&robust_limits};
+            instance_proc<PFN_vkGetPhysicalDeviceProperties2>("vkGetPhysicalDeviceProperties2")(physical,&limits);
+        }
+        if(!route_available)return;
+        VkPhysicalDeviceFeatures enabled{};enabled.robustBufferAccess=robust.robustBufferAccess2;
+        const char *extension=requested_extension.c_str();
+        create_device(enabled,reinterpret_cast<VkBaseOutStructure*>(&robust),1,&extension);
+    }
+};
 // Device-side probes for native robustness and the compatibility approximation.
 struct RobustDispatch {
     Context &c;
@@ -66,7 +112,7 @@ std::string run_robust(const std::string &directory,const std::string &mode) {
     setenv("HYBRIS_BC_TEXTURES","0",1);
     setenv("HYBRIS_ROBUSTNESS2",mode=="robust-force"?"force":mode=="robust-off"?"0":"auto",1);
     setenv("HYBRIS_VULKAN_TRACE","1",1);
-    Context c;c.initialize(directory,mode!="robust-native","native");
+    RobustnessContext c;c.initialize(directory,mode!="robust-native");
     std::ostringstream log;
     log<<"GPU: "<<c.properties.deviceName<<"\nMode: "<<mode<<"\nNative robustness2: buffer="<<c.native_robust.robustBufferAccess2
        <<" image="<<c.native_robust.robustImageAccess2<<" null="<<c.native_robust.nullDescriptor<<"\nReported: buffer="<<c.robust.robustBufferAccess2
@@ -184,4 +230,25 @@ std::string run_robust(const std::string &directory,const std::string &mode) {
     if(!checks)return log.str()+"UNSUPPORTED: no robustness2 feature is exposed.\n";
     log<<(failed?"FAIL: ":"PASS: ")<<checks<<" GPU checks, "<<failed<<" failures, "<<limits<<" compatibility limitations. This is not a Vulkan conformance result.\n";
     return log.str();
+}
+
+} // namespace
+int main(int argc,char **argv) {
+    if(argc!=4){fprintf(stderr,"Expected LIBRARY_DIRECTORY MODE RESULT_DIRECTORY\n");return 2;}
+    const std::string mode=argv[2];
+    const std::array<std::string,4> modes={"robust-native","robust","robust-force","robust-off"};
+    if(std::find(modes.begin(),modes.end(),mode)==modes.end())return 2;
+    std::string result;
+    try {
+        if(getauxval(AT_SECURE))throw std::runtime_error("Secure execution disables environment-controlled diagnostics");
+        result="AT_SECURE: 0\n"+run_robust(argv[1],mode);
+        if(mode=="robust-force") {
+            fflush(stderr);
+            std::ifstream trace(std::string(argv[3])+"/trace.txt");
+            std::string line;bool observed=false;
+            while(std::getline(trace,line))if(line.find("HYBRIS_ROBUSTNESS2 compatibility=")==0)observed=true;
+            if(!observed)result+="FAIL: forced robustness2 compatibility was not observed.\n";
+        }
+    } catch(const std::exception &failure){result="FAIL: "+std::string(failure.what())+"\n";}
+    return report_result(result);
 }
