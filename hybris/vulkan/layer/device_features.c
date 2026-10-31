@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/dynamic_rendering.h"
 #include "../compat/dual_source.h"
 #include "../compat/multidraw.h"
 #include "../compat/multiviewport.h"
@@ -88,6 +89,28 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
             hybris_scaled_free(allocator,out->extensions);out->extensions=names;out->info.ppEnabledExtensionNames=names;
         }
     }
+    int dynamic=hybris_dynamic_emulated(physical);
+    if(dynamic) {
+        uint32_t capacity=out->info.enabledExtensionCount+2;
+        const char **names=hybris_scaled_alloc(allocator,capacity*sizeof(*names),VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+        if(!names){hybris_device_features_release(out,allocator);return VK_ERROR_OUT_OF_HOST_MEMORY;}
+        uint32_t n=0;
+        for(uint32_t i=0;i<out->info.enabledExtensionCount;++i) {
+            const char *name=out->info.ppEnabledExtensionNames[i];
+            if(!strcmp(name,VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME))continue;
+            if(!strcmp(name,"VK_KHR_dynamic_rendering_local_read") || !strcmp(name,"VK_EXT_dynamic_rendering_unused_attachments")) {
+                hybris_scaled_free(allocator,names);hybris_device_features_release(out,allocator);return VK_ERROR_EXTENSION_NOT_PRESENT;
+            }
+            names[n++]=name;
+        }
+        const char *dependencies[]={VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME};
+        for(unsigned j=0;j<2;++j)if(hybris_dynamic_native_extension(physical,dependencies[j])) {
+            int present=0;for(uint32_t i=0;i<n;++i)present|=!strcmp(names[i],dependencies[j]);
+            if(!present)names[n++]=dependencies[j];
+        }
+        hybris_scaled_free(allocator,out->extensions);out->extensions=names;
+        out->info.ppEnabledExtensionNames=names;out->info.enabledExtensionCount=n;
+    }
     int dual_src=hybris_dual_source_active(physical);
     int multi_draw=hybris_multidraw_active(physical);
     int multi_viewport=hybris_multiviewport_active(physical);
@@ -101,7 +124,7 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     int cull = hybris_cull_active(physical);
     int stage_point = hybris_stage_point_active(physical);
     int polygon=hybris_shader_polygon_emulated(physical);
-    if (!dual_src && !multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !stage_point && !polygon && !transcode && !hdr && !(robust_node && robust.emulated)) return VK_SUCCESS;
+    if (!dual_src && !multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !stage_point && !polygon && !transcode && !hdr && !(robust_node && robust.emulated) && !dynamic) return VK_SUCCESS;
     if (info->pEnabledFeatures) {
         out->features = *info->pEnabledFeatures;
         if(dual_src)out->features.dualSrcBlend=VK_FALSE;
@@ -119,7 +142,7 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
         }
         out->info.pEnabledFeatures = &out->features;
     }
-    const VkBaseInStructure *features2 = NULL, *hdr_node = NULL, *target = NULL;
+    const VkBaseInStructure *features2 = NULL, *hdr_node = NULL, *target = NULL, *dynamic_node = NULL;
     for (const VkBaseInStructure *node = info->pNext; node; node = node->pNext) {
         if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2) {
             features2 = node;
@@ -131,6 +154,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
             target = node;
         }
         if(node==robust_node && robust.emulated)target=node;
+        if(dynamic && (node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES ||
+            node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES)){dynamic_node=node;target=node;}
         if(force_image && (node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ROBUSTNESS_FEATURES ||
                           node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES)) {
             image_node=node;target=node;
@@ -173,7 +198,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     out->suffix = target->pNext;
     VkBaseOutStructure **slot = &out->copies;
     for (const VkBaseInStructure *node = info->pNext; ; node = node->pNext) {
-        if(node==robust_node && robust.emulated && !robust.native_extensions) {
+        if((node==dynamic_node && node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES) ||
+            (node==robust_node && robust.emulated && !robust.native_extensions)) {
             if(node==target){*slot=(void*)out->suffix;break;}
             continue;
         }
@@ -207,6 +233,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
                 ((VkPhysicalDeviceFeatures2*)copy)->features.fillModeNonSolid=VK_FALSE;
             }
         }
+        if(node==dynamic_node && node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES)
+            ((VkPhysicalDeviceVulkan13Features*)copy)->dynamicRendering=VK_FALSE;
         if (node == hdr_node) {
             if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES)
                 ((VkPhysicalDeviceVulkan13Features *)copy)->textureCompressionASTC_HDR = VK_TRUE;

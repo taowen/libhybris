@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/dynamic_rendering.h"
 #include "../compat/multidraw.h"
 #include "../compat/multiviewport.h"
 #include "layer.h"
@@ -78,7 +79,8 @@ static PFN_vkVoidFunction resolve_inner(const struct hybris_layer_device *device
     PFN_vkVoidFunction next=resolve_base(device,name);
     if(!next)return NULL;
     PFN_vkVoidFunction hook=hybris_null_proc(device->handle,name);
-    return hook?hook:next;
+    PFN_vkVoidFunction dynamic=hybris_dynamic_proc(device,name);
+    return dynamic?dynamic:hook?hook:next;
 }
 
 VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
@@ -130,6 +132,7 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
     result = hybris_shader_device_create(*out, physical, resolver, query, allocator, info);
     if (result == VK_SUCCESS) result = hybris_bc_attach_device(*out, physical, resolver, allocator);
     if(result==VK_SUCCESS)result=hybris_null_attach(&state->device,resolve_base,info);
+    if(result==VK_SUCCESS)result=hybris_dynamic_attach(&state->device,resolve_inner,info);
     if (result != VK_SUCCESS) {
         hybris_null_release(*out);
         hybris_bc_device_remove(*out);
@@ -177,6 +180,8 @@ void VKAPI_CALL hybris_layer_destroy_device(VkDevice handle, const VkAllocationC
     hybris_memory_visibility_release_device(handle);
     hybris_null_release(handle);
     hybris_layer_commands_release_device(handle);
+    struct hybris_layer_device dynamic_device;
+    if(hybris_layer_lookup_device(handle,&dynamic_device))hybris_dynamic_release(dynamic_device.dynamic_rendering);
     hybris_polygon_pipelines_release_device(handle);
     hybris_bc_device_remove(handle);
     hybris_vertex_stores_release_device(handle);
@@ -207,6 +212,7 @@ PFN_vkVoidFunction hybris_layer_device_dispatch(const char *name, int track_comm
         if (!compat) compat = hybris_layer_commands_proc(name);
         if (!compat) compat = hybris_memory_visibility_proc(name);
     }
+    if (!compat) compat = hybris_dynamic_dispatch(name);
     if (!compat) compat = hybris_null_dispatch(name);
     if (!compat) compat = hybris_bc_proc(name);
     if (!compat) compat = hybris_shader_cleanup_proc(name);
@@ -220,7 +226,7 @@ PFN_vkVoidFunction VKAPI_CALL hybris_layer_get_device_proc(VkDevice handle, cons
     if (!name || !hybris_layer_lookup_device(handle, &device) ||
         !hybris_shader_device_proc_allowed(handle, name)) return NULL;
     PFN_vkVoidFunction next = device.resolver(handle, name);
-    if (!next) return NULL;
+    if (!next && !hybris_dynamic_proc(&device,name)) return NULL;
     if (!strcmp(name, "vkGetDeviceProcAddr")) return (PFN_vkVoidFunction)hybris_layer_get_device_proc;
     if (!strcmp(name, "vkDestroyDevice")) return (PFN_vkVoidFunction)hybris_layer_destroy_device;
     PFN_vkVoidFunction compat = hybris_layer_device_dispatch(name, device.track_commands);

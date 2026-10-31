@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/dynamic_rendering.h"
 #include "layer.h"
 #include "../compat/application_policy.h"
 #include "../compat/scaled_vertex.h"
@@ -153,7 +154,8 @@ static PFN_vkVoidFunction VKAPI_CALL get_instance_proc(VkInstance instance, cons
     struct instance_state state;
     if (!instance || !instance_snapshot(instance, &state)) return NULL;
     PFN_vkVoidFunction next = state.resolver(instance, name);
-    if (!next) return NULL;
+    if (!next && strcmp(name,"vkCmdBeginRendering") && strcmp(name,"vkCmdBeginRenderingKHR") &&
+        strcmp(name,"vkCmdEndRendering") && strcmp(name,"vkCmdEndRenderingKHR")) return NULL;
     if (!strcmp(name, "vkDestroyInstance")) return (PFN_vkVoidFunction)destroy_instance;
     if (!strcmp(name, "vkDestroyDevice")) return (PFN_vkVoidFunction)hybris_layer_destroy_device;
     /* GIPA is instance-scoped, so a device's policy cannot select the address.

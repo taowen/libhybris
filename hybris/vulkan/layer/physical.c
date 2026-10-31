@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/dynamic_rendering.h"
 #include "../compat/dual_source.h"
 #include "layer.h"
 #include "../compat/vertex_stores.h"
@@ -69,12 +70,13 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     unsigned shader_mask = layer ? 0 : hybris_shader_physical_mask(physical);
     int pipeline_compat = !layer && (hybris_dual_source_active(physical) || hybris_shader_polygon_emulated(physical));
     int vertex_stores = !layer && hybris_vertex_stores_active(physical);
+    int dynamic = !layer && hybris_dynamic_emulated(physical);
     struct hybris_robustness2_policy robust={0};
     if(!layer) {
         VkResult policy_result=hybris_robustness2_policy(physical,&robust);
         if(policy_result!=VK_SUCCESS)return policy_result;
     }
-    if (layer || (!bc_mask && !shader_mask && !pipeline_compat && !vertex_stores && !robust.emulated))
+    if (layer || (!bc_mask && !shader_mask && !pipeline_compat && !vertex_stores && !robust.emulated && !dynamic))
         return enumerate(physical, layer, count, properties);
     uint32_t available = 0;
     VkResult result = enumerate(physical, NULL, &available, NULL);
@@ -85,6 +87,8 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     if (result != VK_SUCCESS && result != VK_INCOMPLETE) { free(all); return result; }
     uint32_t kept = 0, written = 0, capacity = properties ? *count : 0;
     for (uint32_t i = 0; i < available; ++i) {
+        if(dynamic && (!strcmp(all[i].extensionName,"VK_KHR_dynamic_rendering_local_read") ||
+            !strcmp(all[i].extensionName,"VK_EXT_dynamic_rendering_unused_attachments")))continue;
         if((robust.emulated & HYBRIS_ROBUST_NULL) &&
             (!strcmp(all[i].extensionName,"VK_EXT_descriptor_buffer") ||
              !strcmp(all[i].extensionName,"VK_EXT_shader_object") ||
@@ -101,6 +105,10 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
             properties[written]=(VkExtensionProperties){.extensionName=VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,.specVersion=1};
             ++written;
         }
+        ++kept;
+    }
+    if(dynamic && !hybris_dynamic_native_extension(physical,VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)) {
+        if(properties && written<capacity)properties[written++]=(VkExtensionProperties){.extensionName=VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,.specVersion=1};
         ++kept;
     }
     free(all);

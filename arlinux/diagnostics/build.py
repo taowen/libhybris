@@ -66,7 +66,7 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
         sha = lambda file: hashlib.sha256(file.read_bytes()).hexdigest()
         probes = {}
         executables = []
-        for name in ('bc', 'robustness', 'spec_constants', 'multiviewport', 'multidraw', 'dual_source', 'polygon', 'inout', 'distance'):
+        for name in ('bc', 'robustness', 'spec_constants', 'multiviewport', 'multidraw', 'dual_source', 'polygon', 'inout', 'distance', 'dynamic_rendering'):
             executable = work/('libhybris_'+name+'_probe.so')
             subprocess.run([str(compiler)+'++', *flags, '-std=gnu++17', '-I'+str(work),
                             '-pie', '-static-libstdc++', str(recipe/(name+'_probe.cpp')), '-ldl', '-llog',

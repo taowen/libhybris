@@ -10,6 +10,7 @@
 #include "../compat/memory_visibility.h"
 #include "../compat/bc_context.h"
 #include "../compat/polygon_record.h"
+#include "../compat/dynamic_rendering.h"
 #include <pthread.h>
 #include <string.h>
 
@@ -32,6 +33,7 @@ struct command_state {
     int custom_allocator;
     VkCommandBufferLevel level;
     struct hybris_polygon_recording polygon;
+    struct hybris_dynamic_recording dynamic_rendering;
     unsigned touched;
     struct retained_resource *resources;
     struct command_state *next;
@@ -103,7 +105,7 @@ static void reset_resources(VkCommandBuffer command)
         }
     pthread_mutex_unlock(&guard);
     destroy_resources(list, custom ? &allocator : NULL);
-    struct command_state *state=find_command(command);if(state){hybris_polygon_record_reset(&state->polygon);state->polygon.epoch=state->upload_epoch;}
+    struct command_state *state=find_command(command);if(state){hybris_polygon_record_reset(&state->polygon);state->polygon.epoch=state->upload_epoch;state->dynamic_rendering=(struct hybris_dynamic_recording){0};}
 }
 static void free_commands(struct command_state *list)
 {
@@ -411,7 +413,9 @@ static void begin_rendering(VkCommandBuffer command, const VkRenderingInfo *info
 {
     struct hybris_layer_device device;
     if (!hybris_layer_command_device(command, &device)) return;
-    PFN_vkCmdBeginRendering begin = (PFN_vkCmdBeginRendering)device.resolver(device.handle, name);
+    PFN_vkCmdBeginRendering begin = (PFN_vkCmdBeginRendering)hybris_dynamic_proc(&device,name);
+    if(!begin)begin=(PFN_vkCmdBeginRendering)device.resolver(device.handle,name);
+    if(!begin){hybris_layer_command_error(command,VK_ERROR_FEATURE_NOT_PRESENT);return;}
     if (!(device.application_policy & HYBRIS_APP_RENDERING_SEGMENTS)) {
         begin(command, info);
         return;
@@ -435,7 +439,9 @@ static void end_rendering(VkCommandBuffer command,const char *name)
 {
     struct hybris_layer_device device;
     if(!hybris_layer_command_device(command,&device)) return;
-    PFN_vkCmdEndRendering end=(void*)device.resolver(device.handle,name);
+    PFN_vkCmdEndRendering end=(void*)hybris_dynamic_proc(&device,name);
+    if(!end)end=(void*)device.resolver(device.handle,name);
+    if(!end){hybris_layer_command_error(command,VK_ERROR_FEATURE_NOT_PRESENT);return;}
     end(command);
 }
 static void VKAPI_CALL end_core(VkCommandBuffer c) {end_rendering(c,"vkCmdEndRendering");}
@@ -546,3 +552,5 @@ PFN_vkVoidFunction hybris_layer_commands_proc(const char *name)
 
 struct hybris_polygon_recording *hybris_layer_polygon_recording(VkCommandBuffer command)
 {struct command_state *state=find_command(command);if(state)state->touched=1;return state?&state->polygon:NULL;}
+struct hybris_dynamic_recording *hybris_layer_dynamic_recording(VkCommandBuffer command)
+{struct command_state *state=find_command(command);if(state)state->touched=1;return state?&state->dynamic_rendering:NULL;}

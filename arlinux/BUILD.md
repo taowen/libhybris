@@ -51,6 +51,7 @@ process cancellation, identity verification and report display are shared.
 
 | Probe | Activity | Native executable | Result directory |
 | --- | --- | --- | --- |
+| Dynamic rendering | `.DynamicRenderingProbeActivity` | `libhybris_dynamic_rendering_probe.so` | `files/dynamic_rendering/` |
 | BC textures | `.BcProbeActivity` | `libhybris_bc_probe.so` | `files/bc/` |
 | Robustness2 | `.RobustnessProbeActivity` | `libhybris_robustness_probe.so` | `files/robustness/` |
 | Specialization constants | `.SpecConstantsProbeActivity` | `libhybris_spec_constants_probe.so` | `files/spec_constants/` |
@@ -316,3 +317,27 @@ The independent distance probe accepts `distance-normal` and `distance-native`.
 It checks GPU pixels for Clip, Cull, combined and fragment ClipDistance-input
 paths, and logs the Cull approximation separately. Native dynamic rendering is
 exercised when available; unsupported native features are reported as skipped.
+
+## Dynamic rendering compatibility
+
+On devices lacking dynamic rendering, the layer can translate it to native
+RenderPass2 and framebuffer objects when depth/stencil resolve is available.
+It retains framebuffer resources until command reset/free, uses device-owned
+render-pass caching, and copies pipeline and secondary inheritance inputs.
+Native-capable devices pass through. `HYBRIS_DYNAMIC_RENDERING=0` disables the
+fallback; `force` exercises it on a native-capable device. The device API version
+is not raised. This is bounded compatibility, not a Vulkan conformance claim.
+
+The translator supports up to eight color attachments; devices advertising a
+larger attachment limit are not selected. Dynamic-rendering local read, unused
+attachment extensions, graphics pipeline libraries, attachment extension chains
+and separate depth/stencil views are unsupported and fail explicitly. Rendering
+suspension/resumption is translated through attachment load/store operations;
+it does not provide the native driver's render-pass suspension optimization.
+
+The independent diagnostic accepts `rendering-native`, `rendering-normal` and
+`rendering-force`. It compares actual offscreen graphics pixels using legacy
+and Features2 device creation, GIPA/GDPA command lookup, static/dynamic viewport
+state and caller-input preservation. Native devices without dynamic rendering
+run a traditional RenderPass reference. These checks do not replace Steam or
+other real application acceptance.

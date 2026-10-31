@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "dynamic_rendering.h"
 #include "dual_source.h"
 #include "multidraw.h"
 #include "multiviewport.h"
@@ -90,6 +91,7 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     if(hybris_multidraw_active(physical))out->features.multiDrawIndirect=VK_TRUE;
     if(hybris_multiviewport_active(physical))out->features.multiViewport=VK_TRUE;
     hybris_robustness2_features(physical,out);
+    hybris_dynamic_features(physical,out);
     int polygon=hybris_shader_polygon_emulated(physical);
     if(polygon) out->features.fillModeNonSolid=VK_TRUE;
     if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical) && !polygon && !hybris_dual_source_active(physical)) return;

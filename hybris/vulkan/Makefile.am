@@ -13,6 +13,7 @@ lib_LTLIBRARIES = \
 libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/device.c layer/physical.c layer/commands.c layer/layer.h \
     layer/device_features.c layer/device_features.h layer/device_create_sizes.inc \
     compat/spirv_mali.c compat/spirv_mali.h \
+    compat/dynamic_rendering.c compat/dynamic_rendering.h \
     compat/dual_source.c compat/dual_source.h \
     compat/multidraw.c compat/multidraw.h \
     compat/multiviewport.c compat/multiviewport.h \

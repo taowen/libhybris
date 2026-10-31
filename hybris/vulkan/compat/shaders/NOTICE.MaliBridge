@@ -64,3 +64,10 @@ modified here. This replaces the previous handwritten distance/geometry adapter.
 
 arlinux/diagnostics/distance_gs.spvasm is the unchanged upstream test corpus
 pervertex_gs_whole.spvasm from the same commit, GPL-3.0-or-later.
+
+The RenderPass2 translation in ../dynamic_rendering.c is adapted from
+MaliBridge server/server_emu_dynrend.c at commit
+2d674a5f8c64cf4f7183684f58321102878d6b8b, GPL-3.0-or-later.
+Copyright (C) 2026 ASEbrahim and MaliBridge contributors.
+Device registration, command-resource retirement, caller-owned input copying,
+feature negotiation and diagnostics are modified here.
