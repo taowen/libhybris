@@ -111,6 +111,7 @@ static int hal_format(VkFormat format)
 {
     if (format == VK_FORMAT_R8G8B8A8_UNORM) return HAL_PIXEL_FORMAT_RGBA_8888;
     if (format == VK_FORMAT_B8G8R8A8_UNORM) return HAL_PIXEL_FORMAT_BGRA_8888;
+    if (format == VK_FORMAT_A2B10G10R10_UNORM_PACK32) return HAL_PIXEL_FORMAT_RGBA_1010102;
     return 0;
 }
 

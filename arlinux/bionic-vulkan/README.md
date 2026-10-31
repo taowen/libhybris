@@ -21,8 +21,10 @@ stay together. The runtime manifest enables the layer explicitly; its
 capability policies select missing features, rather than forcing conversions
 on drivers that already implement them.
 
-The WSI exposes RGBA surface formats so opaque swapchains can use native RGBX
-buffers. The Android compositor uses OpenGL ES/EGL.
+The WSI queries Android hardware-buffer import support before advertising
+8-bit RGBA/BGRA or 10-bit RGBA surfaces. Native buffers retain the chosen
+channel order and precision. Opaque RGBX backing is available only when the
+reported format set supports that format-independent guarantee. The Android
+compositor uses OpenGL ES/EGL.
 
-See `docs/WINDOWS-BIONIC.md` for build instructions and device validation,
-including the remaining Mali WoW64 host-memory restriction.
+Build and validation procedures are in the [component guide](../BUILD.md).
