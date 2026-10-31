@@ -17,8 +17,15 @@ static void configure(void)
 int hybris_inout_enabled(void) { pthread_once(&once, configure); return enabled; }
 int hybris_inout_pipeline(const VkGraphicsPipelineCreateInfo *info)
 {
-    if (!hybris_inout_enabled() || info->pNext || (info->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR))
+    if (!hybris_inout_enabled() || (info->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR))
         return 0;
+    /* Rendering formats and creation feedback do not change stage linkage.
+     * Preserve their chains for the backend. Unknown linkage-affecting nodes
+     * still require an explicit implementation before admitting this pass. */
+    for (const VkBaseInStructure *node = info->pNext; node; node = node->pNext)
+        if (node->sType != VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO &&
+            node->sType != VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO)
+            return 0;
     unsigned vertex = 0, fragment = 0;
     for (uint32_t i = 0; i < info->stageCount; ++i) {
         if (info->pStages[i].pNext) return 0;
