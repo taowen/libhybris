@@ -55,6 +55,7 @@ process cancellation, identity verification and report display are shared.
 | Robustness2 | `.RobustnessProbeActivity` | `libhybris_robustness_probe.so` | `files/robustness/` |
 | Specialization constants | `.SpecConstantsProbeActivity` | `libhybris_spec_constants_probe.so` | `files/spec_constants/` |
 | Multi-viewport | `.MultiViewportProbeActivity` | `libhybris_multiviewport_probe.so` | `files/multiviewport/` |
+| Indirect multi-draw | `.MultiDrawProbeActivity` | `libhybris_multidraw_probe.so` | `files/multidraw/` |
 
 For device automation, start the relevant Activity directly with a `mode` extra.
 BC accepts `native`, `normal`, `decode`, `auto`, `fast`, `default` or `high`, and
@@ -159,3 +160,32 @@ and Features2 device creation, GDPA/GIPA, static/dynamic state and available
 core/EXT with-count commands. The probe renders only viewport zero; a passing
 result proves that bounded compatibility path, not full multiViewport or game
 acceptance. Use the standalone diagnostics entry above.
+
+## Indirect multi-draw compatibility
+
+When native `multiDrawIndirect` is missing, the MaliBridge-derived fallback
+exposes it and `maxDrawIndirectCount=UINT32_MAX`, filters the emulated feature
+from private device-create copies and splits `vkCmdDrawIndirect` /
+`vkCmdDrawIndexedIndirect` into one native draw per command-buffer entry.
+Offsets advance by the caller's stride; the indirect buffer is never read or
+rewritten on the CPU. Existing upload visibility hooks run before splitting.
+Zero/one draws pass through. Only logical devices requesting the emulated
+feature use the splitter; native-supported devices retain their native calls.
+`HYBRIS_MULTI_DRAW_INDIRECT=0` disables this policy; `force` exercises it for
+diagnosis. It is shared by Bionic and glibc, without app-name matching.
+
+This is a compatibility approximation: splitting resets shader `DrawIndex` to
+zero for each draw. Shaders depending on the original multi-draw index are not
+emulated and can render incorrectly. GPU-counted indirect draw commands are
+not synthesized or advertised. This does not imply Vulkan conformance.
+
+The separate diagnostics Activity/native probe accepts `indirect-native`,
+`indirect-normal`, `indirect-force`, `indirect-off` and
+`indirect-unrequested`. It transfers indirect commands to the GPU, uses indexed
+and non-indexed draws, packed/padded strides and zero/one/three draws, then
+compares exact pixels and untouched command-buffer contents. It checks legacy
+and Features2 device creation, both GIPA/GDPA, and reports the DrawIndex
+limitation through a real shader. When the feature is unavailable/disabled,
+three draws use an explicit application-side single-draw reference. Those
+controls must not be reported as native multiDrawIndirect support. These
+offscreen checks do not replace application or game acceptance.

@@ -46,6 +46,7 @@ struct hybris_layer_device {
     unsigned application_policy;
     int track_commands;
     int multi_viewport;
+    int multi_draw;
     const struct hybris_layer_command_dispatch *recording;
     uint64_t instance_generation;
     /* Set only in command_device's returned copy, never in device state. */
