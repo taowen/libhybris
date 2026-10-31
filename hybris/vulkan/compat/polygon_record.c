@@ -12,17 +12,40 @@
 struct hybris_polygon_link {VkBuffer written;VkCommandBuffer child;uint64_t epoch;struct hybris_polygon_link *next;};
 static struct hybris_polygon_recording *active(VkCommandBuffer c,struct hybris_layer_device *d)
 {if(!hybris_layer_command_device(c,d)||!hybris_shader_polygon_active(d->handle))return NULL;return hybris_layer_polygon_recording(c);}
+static void clear_recording(struct hybris_polygon_recording *s)
+{
+    const VkAllocationCallbacks *allocator = s->custom ? &s->allocator : NULL;
+    if (s->pre_pool) {
+        PFN_vkDestroyCommandPool destroy = (void *)s->resolver(s->device, "vkDestroyCommandPool");
+        destroy(s->device, s->pre_pool, allocator);
+    }
+    while (s->links) {
+        struct hybris_polygon_link *next = s->links->next;
+        hybris_scaled_free(allocator, s->links);
+        s->links = next;
+    }
+    s->pre_pool = VK_NULL_HANDLE;
+    s->pre_command = VK_NULL_HANDLE;
+    s->pre_open = s->has_prepass = 0;
+    s->edges = NULL;
+    s->graphics = VK_NULL_HANDLE;
+    s->index = VK_NULL_HANDLE;
+    s->topology_known = s->restart_known = s->unknown_writes = 0;
+}
+
 void hybris_polygon_record_reset(struct hybris_polygon_recording *s)
 {
-    const VkAllocationCallbacks *a=s->custom?&s->allocator:NULL;
-    if(s->pre_pool)((PFN_vkDestroyCommandPool)s->resolver(s->device,"vkDestroyCommandPool"))(s->device,s->pre_pool,a);
-    while(s->links){struct hybris_polygon_link *n=s->links->next;hybris_scaled_free(a,s->links);s->links=n;}
+    clear_recording(s);
     hybris_polygon_storage_reset(s->storage);
-    s->pre_pool=VK_NULL_HANDLE;s->pre_command=VK_NULL_HANDLE;s->pre_open=s->has_prepass=0;s->edges=NULL;s->graphics=VK_NULL_HANDLE;s->index=VK_NULL_HANDLE;
-    s->topology_known=s->restart_known=s->unknown_writes=0;
 }
+
 void hybris_polygon_record_finish(struct hybris_polygon_recording *s)
-{hybris_polygon_record_reset(s);hybris_polygon_storage_destroy(s->storage);s->storage=NULL;}
+{
+    clear_recording(s);
+    hybris_polygon_storage_destroy(s->storage);
+    s->storage = NULL;
+}
+
 void hybris_polygon_record_index(VkCommandBuffer c,VkBuffer b,VkDeviceSize offset,VkDeviceSize size,VkIndexType type)
 {struct hybris_layer_device d;struct hybris_polygon_recording *s=active(c,&d);if(s){s->index=b;s->index_offset=offset;s->index_size=size;s->index_type=type;}}
 static int written(const struct hybris_polygon_recording *s,VkBuffer b)

@@ -4,10 +4,13 @@
 #include "polygon_pipeline.h"
 #include "bc_context.h"
 struct hybris_polygon_edges {
-    VkDevice device;PFN_vkGetDeviceProcAddr resolver;VkAllocationCallbacks allocator;int custom;
-    VkBuffer buffer;VkDeviceSize offset;
+    VkAllocationCallbacks allocator;
+    int custom;
+    VkBuffer buffer;
+    VkDeviceSize offset;
     struct hybris_polygon_pipeline *pipeline;
-    VkBuffer source;struct hybris_polygon_edges *next;
+    VkBuffer source;
+    struct hybris_polygon_edges *next;
 };
 struct hybris_polygon_storage;
 void hybris_polygon_edges_destroy(void *edges);

@@ -209,7 +209,8 @@ VkResult hybris_polygon_edges_create(struct hybris_bc_device *device,struct hybr
     if(size>device->properties.limits.maxStorageBufferRange)return VK_ERROR_FEATURE_NOT_PRESENT;
     struct hybris_polygon_edges *e=hybris_scaled_alloc(a,sizeof(*e),VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if(!e)return VK_ERROR_OUT_OF_HOST_MEMORY;
-    *e=(struct hybris_polygon_edges){.device=device->handle,.resolver=device->resolver,.custom=a!=NULL};if(a)e->allocator=*a;
+    *e = (struct hybris_polygon_edges){.custom = a != NULL};
+    if (a) e->allocator = *a;
     VkResult r;
     if(!source)r=pattern_for(device,topology,tris,&e->buffer);
     else {
