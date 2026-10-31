@@ -56,6 +56,8 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
     const VkDeviceCreateInfo *info, const VkAllocationCallbacks *allocator, VkDevice *out);
 void VKAPI_CALL hybris_layer_destroy_device(VkDevice device, const VkAllocationCallbacks *allocator);
 PFN_vkVoidFunction VKAPI_CALL hybris_layer_get_device_proc(VkDevice device, const char *name);
+/* Resolve an inner function for any device-owned dispatchable handle. */
+PFN_vkVoidFunction hybris_layer_handle_inner_proc(const void *handle, const char *name);
 PFN_vkVoidFunction hybris_layer_device_inner_proc(VkDevice device, const char *name);
 PFN_vkVoidFunction hybris_layer_device_dispatch(const char *name, int track_commands);
 PFN_vkVoidFunction hybris_layer_physical_proc(const char *name);

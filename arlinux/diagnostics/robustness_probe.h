@@ -108,7 +108,7 @@ std::string run_robust(const std::string &directory,const std::string &mode) {
         if(buffers[1].buffer || buffers[2].buffer || views[0] || views[1] || images[0].imageView || images[1].imageView)
             throw std::runtime_error("Layer modified caller-owned descriptor writes");
         dispatch.dispatch(output);
-        values("Null writes",output,14,{0,5,9},compat_null);
+        values("Null writes",output,14,{0,1,5,9,10},compat_null);
         // The second round uses immutable template data and the same real GPU path.
         struct Data {VkDescriptorBufferInfo b[3];VkBufferView v[2];VkDescriptorImageInfo i[2];} data{};
         memcpy(data.b,buffers,sizeof(buffers));memcpy(data.v,views,sizeof(views));memcpy(data.i,images,sizeof(images));
@@ -181,6 +181,7 @@ std::string run_robust(const std::string &directory,const std::string &mode) {
         values("Image OOB",output,3,{},compat_image);
         if(static_cast<uint32_t *>(output.mapped)[3]!=0x31323334u){log<<"FAIL: valid image pixel corrupted\n";++failed;}
     }
+    if(!checks)return log.str()+"UNSUPPORTED: no robustness2 feature is exposed.\n";
     log<<(failed?"FAIL: ":"PASS: ")<<checks<<" GPU checks, "<<failed<<" failures, "<<limits<<" compatibility limitations. This is not a Vulkan conformance result.\n";
     return log.str();
 }

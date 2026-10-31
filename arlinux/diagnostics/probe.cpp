@@ -446,8 +446,12 @@ int main(int argc,char **argv) {
         result="AT_SECURE: 0\n"+run_probe(argv[1],mode,static_cast<uint32_t>(std::stoul(argv[3])));
         fflush(stderr);
         std::ifstream input(trace_name);
-        std::string line;uint32_t emulated=0;
-        while(std::getline(input,line))if(line.find("HYBRIS_BC_IMAGE ")==0)++emulated;
+        std::string line;uint32_t emulated=0;bool robust_compat=false;
+        while(std::getline(input,line)) {
+            if(line.find("HYBRIS_BC_IMAGE ")==0)++emulated;
+            if(line.find("HYBRIS_ROBUSTNESS2 compatibility=")==0)robust_compat=true;
+        }
+        if(mode=="robust-force" && !robust_compat)result+="FAIL: forced robustness2 compatibility was not observed.\n";
         result+="Emulated image records: "+std::to_string(emulated)+"\n";
         if(mode.rfind("robust",0)!=0 && mode!="native" && mode!="normal" && !emulated)
             result+="FAIL: forced BC path was not observed.\n";

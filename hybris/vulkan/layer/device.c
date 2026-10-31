@@ -189,12 +189,14 @@ void VKAPI_CALL hybris_layer_destroy_device(VkDevice handle, const VkAllocationC
     hybris_scaled_free(retired->custom_allocator ? &retired->allocator : NULL, retired);
 }
 
-PFN_vkVoidFunction hybris_layer_device_inner_proc(VkDevice handle, const char *name)
+PFN_vkVoidFunction hybris_layer_handle_inner_proc(const void *handle, const char *name)
 {
     struct hybris_layer_device device;
-    if (!name || !hybris_layer_lookup_device(handle, &device)) return NULL;
+    if (!name || !lookup(handle, &device)) return NULL;
     return resolve_inner(&device, name);
 }
+PFN_vkVoidFunction hybris_layer_device_inner_proc(VkDevice handle,const char *name)
+{ return hybris_layer_handle_inner_proc(handle,name); }
 PFN_vkVoidFunction hybris_layer_device_dispatch(const char *name, int track_commands)
 {
     PFN_vkVoidFunction compat = hybris_polygon_layouts_proc(name);
@@ -202,6 +204,7 @@ PFN_vkVoidFunction hybris_layer_device_dispatch(const char *name, int track_comm
         if (!compat) compat = hybris_layer_commands_proc(name);
         if (!compat) compat = hybris_memory_visibility_proc(name);
     }
+    if (!compat) compat = hybris_null_dispatch(name);
     if (!compat) compat = hybris_bc_proc(name);
     if (!compat) compat = hybris_shader_cleanup_proc(name);
     if (!compat) compat = hybris_shader_proc(name);

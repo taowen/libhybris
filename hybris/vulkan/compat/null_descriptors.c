@@ -8,7 +8,6 @@
  * Sink reads after writes are not guaranteed zero: this is a compatibility
  * approximation, not Vulkan robustness2 conformance.
  */
-#define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
 #include "null_descriptors.h"
 #include "robustness2.h"
@@ -961,7 +960,8 @@ static void VKAPI_CALL nd_UpdateDescriptorSetWithTemplate(VkDevice device, VkDes
     void *copy=copy_template(n,tmpl,data);
     if(!copy)return;
     count(n, fix_template_data(n, tmpl, copy));
-    n->update_template(device, set, tmpl, copy);free(copy);
+    if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->update_template(device, set, tmpl, copy);
+    free(copy);
 }
 
 /* The set layout of a pushed set. */
@@ -1293,34 +1293,8 @@ static void destroy(null_device *t)
 {
     null_descriptors *n = t->nulldesc;
     if (!n) return;
-    struct null_dispatch *dt = &t->dt;
-    dt->vkUpdateDescriptorSets = n->update;
-    if (dt->vkUpdateDescriptorSetWithTemplate == nd_UpdateDescriptorSetWithTemplate) {
-        dt->vkUpdateDescriptorSetWithTemplate = n->update_template;
-        dt->vkCreateDescriptorUpdateTemplate = n->create_template;
-        dt->vkDestroyDescriptorUpdateTemplate = n->destroy_template;
-    }
-    if (n->bind_vb) dt->vkCmdBindVertexBuffers = n->bind_vb;
-    if (n->bind_vb2) dt->vkCmdBindVertexBuffers2 = n->bind_vb2;
-    if (dt->vkCmdPushDescriptorSet == nd_CmdPushDescriptorSet) dt->vkCmdPushDescriptorSet = n->push;
-    if (dt->vkCmdPushDescriptorSet2 == nd_CmdPushDescriptorSet2) dt->vkCmdPushDescriptorSet2 = n->push2;
-    if (dt->vkCmdPushDescriptorSetWithTemplate == nd_CmdPushDescriptorSetWithTemplate) dt->vkCmdPushDescriptorSetWithTemplate = n->push_template;
-    if (n->precise) {
-        dt->vkCreateShaderModule = n->create_module;
-        dt->vkDestroyShaderModule = n->destroy_module;
-        dt->vkCreatePipelineLayout = n->create_layout;
-        dt->vkDestroyPipelineLayout = n->destroy_layout;
-        dt->vkDestroyDescriptorSetLayout = n->destroy_set_layout;
-        dt->vkCreateGraphicsPipelines = n->create_gfx;
-        dt->vkCreateComputePipelines = n->create_compute;
-        dt->vkAllocateDescriptorSets = n->allocate;
-    }
     const struct null_dispatch *r = &t->real;
     VkDevice d = t->device;
-    if (dt->vkGetDeviceQueue == nd_GetDeviceQueue) dt->vkGetDeviceQueue = n->get_queue;
-    if (dt->vkGetDeviceQueue2 == nd_GetDeviceQueue2) dt->vkGetDeviceQueue2 = n->get_queue2;
-    if (dt->vkQueueSubmit == nd_QueueSubmit) dt->vkQueueSubmit = n->submit;
-    if (dt->vkQueueSubmit2 == nd_QueueSubmit2) dt->vkQueueSubmit2 = n->submit2;
     /* every clear was waited for when it was submitted (or timed out: then the app's own wait
      * for idle before vkDestroyDevice covers it) */
     if(n->pending_fence)r->vkDestroyFence(d,n->pending_fence,NULL);
@@ -1448,5 +1422,197 @@ PFN_vkVoidFunction hybris_null_proc(VkDevice handle,const char *name) {
     if(!strcmp(name,"vkQueueSubmit2") && device->dt.vkQueueSubmit2==nd_QueueSubmit2)return (PFN_vkVoidFunction)nd_QueueSubmit2;
     if(!strcmp(name,"vkUpdateDescriptorSetWithTemplate") && device->dt.vkUpdateDescriptorSetWithTemplate==nd_UpdateDescriptorSetWithTemplate)return (PFN_vkVoidFunction)nd_UpdateDescriptorSetWithTemplate;
     if(!strcmp(name,"vkUpdateDescriptorSets") && device->dt.vkUpdateDescriptorSets==nd_UpdateDescriptorSets)return (PFN_vkVoidFunction)nd_UpdateDescriptorSets;
+    return NULL;
+}
+
+/* Instance and device resolvers share these per-handle routing addresses. */
+static VkResult VKAPI_CALL route_CreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *ci, const VkAllocationCallbacks *a,
+                                                 VkShaderModule *out)
+{
+    return ((PFN_vkCreateShaderModule)hybris_layer_handle_inner_proc(device,"vkCreateShaderModule"))(device,ci,a,out);
+}
+static void VKAPI_CALL route_DestroyShaderModule(VkDevice device, VkShaderModule m, const VkAllocationCallbacks *a)
+{
+    ((PFN_vkDestroyShaderModule)hybris_layer_handle_inner_proc(device,"vkDestroyShaderModule"))(device,m,a);
+}
+static VkResult VKAPI_CALL route_CreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *ci, const VkAllocationCallbacks *a,
+                                                   VkPipelineLayout *out)
+{
+    return ((PFN_vkCreatePipelineLayout)hybris_layer_handle_inner_proc(device,"vkCreatePipelineLayout"))(device,ci,a,out);
+}
+static void VKAPI_CALL route_DestroyPipelineLayout(VkDevice device, VkPipelineLayout pl, const VkAllocationCallbacks *a)
+{
+    ((PFN_vkDestroyPipelineLayout)hybris_layer_handle_inner_proc(device,"vkDestroyPipelineLayout"))(device,pl,a);
+}
+static void VKAPI_CALL route_DestroyDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout dsl, const VkAllocationCallbacks *a)
+{
+    ((PFN_vkDestroyDescriptorSetLayout)hybris_layer_handle_inner_proc(device,"vkDestroyDescriptorSetLayout"))(device,dsl,a);
+}
+static VkResult VKAPI_CALL route_CreateGraphicsPipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
+                                                      const VkGraphicsPipelineCreateInfo *ci, const VkAllocationCallbacks *a, VkPipeline *out)
+{
+    return ((PFN_vkCreateGraphicsPipelines)hybris_layer_handle_inner_proc(device,"vkCreateGraphicsPipelines"))(device,cache,count,ci,a,out);
+}
+static VkResult VKAPI_CALL route_CreateComputePipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
+                                                     const VkComputePipelineCreateInfo *ci, const VkAllocationCallbacks *a, VkPipeline *out)
+{
+    return ((PFN_vkCreateComputePipelines)hybris_layer_handle_inner_proc(device,"vkCreateComputePipelines"))(device,cache,count,ci,a,out);
+}
+static VkResult VKAPI_CALL route_AllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo *ai, VkDescriptorSet *out)
+{
+    return ((PFN_vkAllocateDescriptorSets)hybris_layer_handle_inner_proc(device,"vkAllocateDescriptorSets"))(device,ai,out);
+}
+static VkResult VKAPI_CALL route_FreeDescriptorSets(VkDevice device,VkDescriptorPool pool,uint32_t count,const VkDescriptorSet *sets)
+{
+    return ((PFN_vkFreeDescriptorSets)hybris_layer_handle_inner_proc(device,"vkFreeDescriptorSets"))(device,pool,count,sets);
+}
+static VkResult VKAPI_CALL route_ResetDescriptorPool(VkDevice device,VkDescriptorPool pool,VkDescriptorPoolResetFlags flags)
+{
+    return ((PFN_vkResetDescriptorPool)hybris_layer_handle_inner_proc(device,"vkResetDescriptorPool"))(device,pool,flags);
+}
+static void VKAPI_CALL route_DestroyDescriptorPool(VkDevice device,VkDescriptorPool pool,const VkAllocationCallbacks *allocator)
+{
+    ((PFN_vkDestroyDescriptorPool)hybris_layer_handle_inner_proc(device,"vkDestroyDescriptorPool"))(device,pool,allocator);
+}
+static void VKAPI_CALL route_UpdateDescriptorSets(VkDevice device, uint32_t nw, const VkWriteDescriptorSet *w, uint32_t nc,
+                                               const VkCopyDescriptorSet *cp)
+{
+    ((PFN_vkUpdateDescriptorSets)hybris_layer_handle_inner_proc(device,"vkUpdateDescriptorSets"))(device,nw,w,nc,cp);
+}
+static VkResult VKAPI_CALL route_CreateDescriptorUpdateTemplate(VkDevice device, const VkDescriptorUpdateTemplateCreateInfo *ci,
+                                                             const VkAllocationCallbacks *a, VkDescriptorUpdateTemplate *out)
+{
+    return ((PFN_vkCreateDescriptorUpdateTemplate)hybris_layer_handle_inner_proc(device,"vkCreateDescriptorUpdateTemplate"))(device,ci,a,out);
+}
+static void VKAPI_CALL route_DestroyDescriptorUpdateTemplate(VkDevice device, VkDescriptorUpdateTemplate tmpl, const VkAllocationCallbacks *a)
+{
+    ((PFN_vkDestroyDescriptorUpdateTemplate)hybris_layer_handle_inner_proc(device,"vkDestroyDescriptorUpdateTemplate"))(device,tmpl,a);
+}
+static void VKAPI_CALL route_UpdateDescriptorSetWithTemplate(VkDevice device, VkDescriptorSet set, VkDescriptorUpdateTemplate tmpl,
+                                                          const void *data)
+{
+    ((PFN_vkUpdateDescriptorSetWithTemplate)hybris_layer_handle_inner_proc(device,"vkUpdateDescriptorSetWithTemplate"))(device,set,tmpl,data);
+}
+static void VKAPI_CALL route_CmdPushDescriptorSet(VkCommandBuffer cb, VkPipelineBindPoint bp, VkPipelineLayout layout, uint32_t set,
+                                               uint32_t nw, const VkWriteDescriptorSet *w)
+{
+    ((PFN_vkCmdPushDescriptorSet)hybris_layer_handle_inner_proc(cb,"vkCmdPushDescriptorSet"))(cb,bp,layout,set,nw,w);
+}
+static void VKAPI_CALL route_CmdPushDescriptorSet2(VkCommandBuffer cb, const VkPushDescriptorSetInfo *info)
+{
+    ((PFN_vkCmdPushDescriptorSet2)hybris_layer_handle_inner_proc(cb,"vkCmdPushDescriptorSet2"))(cb,info);
+}
+static void VKAPI_CALL route_CmdPushDescriptorSetWithTemplate(VkCommandBuffer cb, VkDescriptorUpdateTemplate tmpl, VkPipelineLayout layout,
+                                                           uint32_t set, const void *data)
+{
+    ((PFN_vkCmdPushDescriptorSetWithTemplate)hybris_layer_handle_inner_proc(cb,"vkCmdPushDescriptorSetWithTemplate"))(cb,tmpl,layout,set,data);
+}
+static void VKAPI_CALL route_CmdPushDescriptorSetWithTemplate2(VkCommandBuffer cb,const VkPushDescriptorSetWithTemplateInfo *info)
+{
+    ((PFN_vkCmdPushDescriptorSetWithTemplate2)hybris_layer_handle_inner_proc(cb,"vkCmdPushDescriptorSetWithTemplate2"))(cb,info);
+}
+static void VKAPI_CALL route_CmdBindVertexBuffers(VkCommandBuffer cb, uint32_t first, uint32_t count_, const VkBuffer *bufs,
+                                               const VkDeviceSize *offs)
+{
+    ((PFN_vkCmdBindVertexBuffers)hybris_layer_handle_inner_proc(cb,"vkCmdBindVertexBuffers"))(cb,first,count_,bufs,offs);
+}
+static void VKAPI_CALL route_CmdBindVertexBuffers2(VkCommandBuffer cb, uint32_t first, uint32_t count_, const VkBuffer *bufs,
+                                                const VkDeviceSize *offs, const VkDeviceSize *sizes, const VkDeviceSize *strides)
+{
+    ((PFN_vkCmdBindVertexBuffers2)hybris_layer_handle_inner_proc(cb,"vkCmdBindVertexBuffers2"))(cb,first,count_,bufs,offs,sizes,strides);
+}
+static void VKAPI_CALL route_GetDeviceQueue(VkDevice device, uint32_t family, uint32_t index, VkQueue *q)
+{
+    ((PFN_vkGetDeviceQueue)hybris_layer_handle_inner_proc(device,"vkGetDeviceQueue"))(device,family,index,q);
+}
+static void VKAPI_CALL route_GetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2 *info, VkQueue *q)
+{
+    ((PFN_vkGetDeviceQueue2)hybris_layer_handle_inner_proc(device,"vkGetDeviceQueue2"))(device,info,q);
+}
+static VkResult VKAPI_CALL route_QueueSubmit(VkQueue q, uint32_t count_, const VkSubmitInfo *s, VkFence f)
+{
+    return ((PFN_vkQueueSubmit)hybris_layer_handle_inner_proc(q,"vkQueueSubmit"))(q,count_,s,f);
+}
+static VkResult VKAPI_CALL route_QueueSubmit2(VkQueue q, uint32_t count_, const VkSubmitInfo2 *s, VkFence f)
+{
+    return ((PFN_vkQueueSubmit2)hybris_layer_handle_inner_proc(q,"vkQueueSubmit2"))(q,count_,s,f);
+}
+static VkResult VKAPI_CALL route_CreateDescriptorUpdateTemplateKHR(VkDevice device, const VkDescriptorUpdateTemplateCreateInfo *ci,
+                                                             const VkAllocationCallbacks *a, VkDescriptorUpdateTemplate *out)
+{
+    return ((PFN_vkCreateDescriptorUpdateTemplate)hybris_layer_handle_inner_proc(device,"vkCreateDescriptorUpdateTemplateKHR"))(device,ci,a,out);
+}
+static void VKAPI_CALL route_DestroyDescriptorUpdateTemplateKHR(VkDevice device, VkDescriptorUpdateTemplate tmpl, const VkAllocationCallbacks *a)
+{
+    ((PFN_vkDestroyDescriptorUpdateTemplate)hybris_layer_handle_inner_proc(device,"vkDestroyDescriptorUpdateTemplateKHR"))(device,tmpl,a);
+}
+static void VKAPI_CALL route_UpdateDescriptorSetWithTemplateKHR(VkDevice device, VkDescriptorSet set, VkDescriptorUpdateTemplate tmpl,
+                                                          const void *data)
+{
+    ((PFN_vkUpdateDescriptorSetWithTemplate)hybris_layer_handle_inner_proc(device,"vkUpdateDescriptorSetWithTemplateKHR"))(device,set,tmpl,data);
+}
+static void VKAPI_CALL route_CmdPushDescriptorSetKHR(VkCommandBuffer cb, VkPipelineBindPoint bp, VkPipelineLayout layout, uint32_t set,
+                                               uint32_t nw, const VkWriteDescriptorSet *w)
+{
+    ((PFN_vkCmdPushDescriptorSet)hybris_layer_handle_inner_proc(cb,"vkCmdPushDescriptorSetKHR"))(cb,bp,layout,set,nw,w);
+}
+static void VKAPI_CALL route_CmdPushDescriptorSet2KHR(VkCommandBuffer cb, const VkPushDescriptorSetInfo *info)
+{
+    ((PFN_vkCmdPushDescriptorSet2)hybris_layer_handle_inner_proc(cb,"vkCmdPushDescriptorSet2KHR"))(cb,info);
+}
+static void VKAPI_CALL route_CmdPushDescriptorSetWithTemplateKHR(VkCommandBuffer cb, VkDescriptorUpdateTemplate tmpl, VkPipelineLayout layout,
+                                                           uint32_t set, const void *data)
+{
+    ((PFN_vkCmdPushDescriptorSetWithTemplate)hybris_layer_handle_inner_proc(cb,"vkCmdPushDescriptorSetWithTemplateKHR"))(cb,tmpl,layout,set,data);
+}
+static void VKAPI_CALL route_CmdPushDescriptorSetWithTemplate2KHR(VkCommandBuffer cb,const VkPushDescriptorSetWithTemplateInfo *info)
+{
+    ((PFN_vkCmdPushDescriptorSetWithTemplate2)hybris_layer_handle_inner_proc(cb,"vkCmdPushDescriptorSetWithTemplate2KHR"))(cb,info);
+}
+static void VKAPI_CALL route_CmdBindVertexBuffers2EXT(VkCommandBuffer cb, uint32_t first, uint32_t count_, const VkBuffer *bufs,
+                                                const VkDeviceSize *offs, const VkDeviceSize *sizes, const VkDeviceSize *strides)
+{
+    ((PFN_vkCmdBindVertexBuffers2)hybris_layer_handle_inner_proc(cb,"vkCmdBindVertexBuffers2EXT"))(cb,first,count_,bufs,offs,sizes,strides);
+}
+static VkResult VKAPI_CALL route_QueueSubmit2KHR(VkQueue q, uint32_t count_, const VkSubmitInfo2 *s, VkFence f)
+{
+    return ((PFN_vkQueueSubmit2)hybris_layer_handle_inner_proc(q,"vkQueueSubmit2KHR"))(q,count_,s,f);
+}
+PFN_vkVoidFunction hybris_null_dispatch(const char *name)
+{
+    if(!strcmp(name,"vkCreateShaderModule"))return (PFN_vkVoidFunction)route_CreateShaderModule;
+    if(!strcmp(name,"vkDestroyShaderModule"))return (PFN_vkVoidFunction)route_DestroyShaderModule;
+    if(!strcmp(name,"vkCreatePipelineLayout"))return (PFN_vkVoidFunction)route_CreatePipelineLayout;
+    if(!strcmp(name,"vkDestroyPipelineLayout"))return (PFN_vkVoidFunction)route_DestroyPipelineLayout;
+    if(!strcmp(name,"vkDestroyDescriptorSetLayout"))return (PFN_vkVoidFunction)route_DestroyDescriptorSetLayout;
+    if(!strcmp(name,"vkCreateGraphicsPipelines"))return (PFN_vkVoidFunction)route_CreateGraphicsPipelines;
+    if(!strcmp(name,"vkCreateComputePipelines"))return (PFN_vkVoidFunction)route_CreateComputePipelines;
+    if(!strcmp(name,"vkAllocateDescriptorSets"))return (PFN_vkVoidFunction)route_AllocateDescriptorSets;
+    if(!strcmp(name,"vkFreeDescriptorSets"))return (PFN_vkVoidFunction)route_FreeDescriptorSets;
+    if(!strcmp(name,"vkResetDescriptorPool"))return (PFN_vkVoidFunction)route_ResetDescriptorPool;
+    if(!strcmp(name,"vkDestroyDescriptorPool"))return (PFN_vkVoidFunction)route_DestroyDescriptorPool;
+    if(!strcmp(name,"vkUpdateDescriptorSets"))return (PFN_vkVoidFunction)route_UpdateDescriptorSets;
+    if(!strcmp(name,"vkCreateDescriptorUpdateTemplateKHR"))return (PFN_vkVoidFunction)route_CreateDescriptorUpdateTemplateKHR;
+    if(!strcmp(name,"vkCreateDescriptorUpdateTemplate"))return (PFN_vkVoidFunction)route_CreateDescriptorUpdateTemplate;
+    if(!strcmp(name,"vkDestroyDescriptorUpdateTemplateKHR"))return (PFN_vkVoidFunction)route_DestroyDescriptorUpdateTemplateKHR;
+    if(!strcmp(name,"vkDestroyDescriptorUpdateTemplate"))return (PFN_vkVoidFunction)route_DestroyDescriptorUpdateTemplate;
+    if(!strcmp(name,"vkUpdateDescriptorSetWithTemplateKHR"))return (PFN_vkVoidFunction)route_UpdateDescriptorSetWithTemplateKHR;
+    if(!strcmp(name,"vkUpdateDescriptorSetWithTemplate"))return (PFN_vkVoidFunction)route_UpdateDescriptorSetWithTemplate;
+    if(!strcmp(name,"vkCmdPushDescriptorSetKHR"))return (PFN_vkVoidFunction)route_CmdPushDescriptorSetKHR;
+    if(!strcmp(name,"vkCmdPushDescriptorSet"))return (PFN_vkVoidFunction)route_CmdPushDescriptorSet;
+    if(!strcmp(name,"vkCmdPushDescriptorSet2KHR"))return (PFN_vkVoidFunction)route_CmdPushDescriptorSet2KHR;
+    if(!strcmp(name,"vkCmdPushDescriptorSet2"))return (PFN_vkVoidFunction)route_CmdPushDescriptorSet2;
+    if(!strcmp(name,"vkCmdPushDescriptorSetWithTemplateKHR"))return (PFN_vkVoidFunction)route_CmdPushDescriptorSetWithTemplateKHR;
+    if(!strcmp(name,"vkCmdPushDescriptorSetWithTemplate"))return (PFN_vkVoidFunction)route_CmdPushDescriptorSetWithTemplate;
+    if(!strcmp(name,"vkCmdPushDescriptorSetWithTemplate2KHR"))return (PFN_vkVoidFunction)route_CmdPushDescriptorSetWithTemplate2KHR;
+    if(!strcmp(name,"vkCmdPushDescriptorSetWithTemplate2"))return (PFN_vkVoidFunction)route_CmdPushDescriptorSetWithTemplate2;
+    if(!strcmp(name,"vkCmdBindVertexBuffers"))return (PFN_vkVoidFunction)route_CmdBindVertexBuffers;
+    if(!strcmp(name,"vkCmdBindVertexBuffers2EXT"))return (PFN_vkVoidFunction)route_CmdBindVertexBuffers2EXT;
+    if(!strcmp(name,"vkCmdBindVertexBuffers2"))return (PFN_vkVoidFunction)route_CmdBindVertexBuffers2;
+    if(!strcmp(name,"vkGetDeviceQueue"))return (PFN_vkVoidFunction)route_GetDeviceQueue;
+    if(!strcmp(name,"vkGetDeviceQueue2"))return (PFN_vkVoidFunction)route_GetDeviceQueue2;
+    if(!strcmp(name,"vkQueueSubmit"))return (PFN_vkVoidFunction)route_QueueSubmit;
+    if(!strcmp(name,"vkQueueSubmit2KHR"))return (PFN_vkVoidFunction)route_QueueSubmit2KHR;
+    if(!strcmp(name,"vkQueueSubmit2"))return (PFN_vkVoidFunction)route_QueueSubmit2;
     return NULL;
 }
