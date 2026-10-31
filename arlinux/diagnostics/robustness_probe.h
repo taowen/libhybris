@@ -12,7 +12,7 @@ struct RobustDispatch {
         std::vector<VkDescriptorPoolSize> sizes;
         for(uint32_t i=0;i<types.size();++i) {
             bindings.push_back({i,types[i],1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr});
-            sizes.push_back({types[i],1});
+            sizes.push_back({types[i],2});
         }
         VkDescriptorSetLayoutCreateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
         info.bindingCount=bindings.size();info.pBindings=bindings.data();
@@ -27,7 +27,7 @@ struct RobustDispatch {
         compute.stage={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,nullptr,0,VK_SHADER_STAGE_COMPUTE_BIT,module,"main",nullptr};compute.layout=layout;
         VkResult result=c.CreateComputePipelines(c.device,VK_NULL_HANDLE,1,&compute,nullptr,&pipeline);
         c.DestroyShaderModule(c.device,module,nullptr);CHECK(result);
-        VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};pool.maxSets=1;pool.poolSizeCount=sizes.size();pool.pPoolSizes=sizes.data();
+        VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};pool.flags=VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;pool.maxSets=2;pool.poolSizeCount=sizes.size();pool.pPoolSizes=sizes.data();
         CHECK(c.CreateDescriptorPool(c.device,&pool,nullptr,&resources.descriptors));
         VkDescriptorSetAllocateInfo allocate{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         allocate.descriptorPool=resources.descriptors;allocate.descriptorSetCount=1;allocate.pSetLayouts=&set_layout;
@@ -126,6 +126,21 @@ std::string run_robust(const std::string &directory,const std::string &mode) {
         c.FreeCommandBuffers(c.device,c.pool,1,&dispatch.resources.command);dispatch.resources.command=VK_NULL_HANDLE;
         c.DestroyFence(c.device,dispatch.resources.fence,nullptr);dispatch.resources.fence=VK_NULL_HANDLE;
         dispatch.dispatch(output);values("Null template",output,14,{0,5,9},compat_null);
+        VkDescriptorSet old=dispatch.set;
+        VkDescriptorSetAllocateInfo allocate{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        allocate.descriptorPool=dispatch.resources.descriptors;allocate.descriptorSetCount=1;allocate.pSetLayouts=&dispatch.set_layout;
+        CHECK(c.AllocateDescriptorSets(c.device,&allocate,&dispatch.set));
+        std::vector<VkCopyDescriptorSet> copies;
+        for(uint32_t i=0;i<types.size();++i) {
+            VkCopyDescriptorSet copy{VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET};copy.srcSet=old;copy.dstSet=dispatch.set;copy.srcBinding=copy.dstBinding=i;copy.descriptorCount=1;copies.push_back(copy);
+        }
+        c.UpdateDescriptorSets(c.device,0,nullptr,copies.size(),copies.data());
+        CHECK(c.FreeDescriptorSets(c.device,dispatch.resources.descriptors,1,&old));
+        c.FreeCommandBuffers(c.device,c.pool,1,&dispatch.resources.command);dispatch.resources.command=VK_NULL_HANDLE;
+        c.DestroyFence(c.device,dispatch.resources.fence,nullptr);dispatch.resources.fence=VK_NULL_HANDLE;
+        dispatch.dispatch(output);values("Null descriptor copy",output,14,{0,5,9},compat_null);
+        CHECK(c.ResetDescriptorPool(c.device,dispatch.resources.descriptors,0));
+
     }
     if(c.robust.robustBufferAccess2) {
         Buffer storage(c,512,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT),uniform(c,512,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);

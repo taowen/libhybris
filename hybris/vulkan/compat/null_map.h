@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 ASEbrahim and MaliBridge contributors
  *
- * Small hash maps of handles for server_nulldesc.c (a header so tests/ndmap_bench.c times the
- * same code): uint64 keys to uint64 values, chained, growing 4x past two entries a bucket.
+ * Handle maps: uint64 keys to uint64 values, chained, growing 4x past
+ * two entries per bucket.
  */
 #ifndef ND_MAP_H
 #define ND_MAP_H

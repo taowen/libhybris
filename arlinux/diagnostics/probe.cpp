@@ -41,7 +41,7 @@ void check(VkResult result,const char *operation) {
  V(CreateSampler) V(DestroySampler) V(CreateShaderModule) V(DestroyShaderModule) \
  V(CreateDescriptorSetLayout) V(DestroyDescriptorSetLayout) V(CreatePipelineLayout) V(DestroyPipelineLayout) \
  V(CreateComputePipelines) V(DestroyPipeline) V(CreateDescriptorPool) V(DestroyDescriptorPool) \
- V(AllocateDescriptorSets) V(UpdateDescriptorSets) V(CreateCommandPool) V(DestroyCommandPool) \
+ V(AllocateDescriptorSets) V(FreeDescriptorSets) V(ResetDescriptorPool) V(UpdateDescriptorSets) V(CreateCommandPool) V(DestroyCommandPool) \
  V(AllocateCommandBuffers) V(FreeCommandBuffers) V(BeginCommandBuffer) V(EndCommandBuffer) \
  V(CmdPipelineBarrier) V(CmdCopyBufferToImage) V(CmdCopyImageToBuffer) V(CmdBindPipeline) \
  V(CmdBindDescriptorSets) V(CmdPushConstants) V(CmdDispatch) V(CreateFence) V(DestroyFence) \

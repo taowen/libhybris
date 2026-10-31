@@ -19,9 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/auxv.h>
-#define VKB_INFO(...) do { fprintf(stderr,"HYBRIS_NULL: "); fprintf(stderr,__VA_ARGS__); fputc('\n',stderr); } while(0)
-#define VKB_WARN(...) VKB_INFO(__VA_ARGS__)
-#define VKB_ERR(...) VKB_INFO(__VA_ARGS__)
+#define NULL_LOG(...) do { fprintf(stderr,"HYBRIS_NULL: "); fprintf(stderr,__VA_ARGS__); fputc('\n',stderr); } while(0)
 enum { SpvOpTypeInt=21, SpvOpTypeFloat=22, SpvOpTypeArray=28, SpvOpTypeRuntimeArray=29,
        SpvOpTypePointer=32, SpvOpFunction=54, SpvOpVariable=59, SpvOpDecorate=71 };
 #define NULL_DEVICE_PROCS(V) \
@@ -42,6 +40,7 @@ enum { SpvOpTypeInt=21, SpvOpTypeFloat=22, SpvOpTypeArray=28, SpvOpTypeRuntimeAr
     V(CmdPushDescriptorSet) \
     V(CmdPushDescriptorSet2) \
     V(CmdPushDescriptorSetWithTemplate) \
+    V(CmdPushDescriptorSetWithTemplate2) \
     V(CreateBuffer) \
     V(CreateBufferView) \
     V(CreateCommandPool) \
@@ -169,6 +168,7 @@ typedef struct null_descriptors {
     PFN_vkCmdPushDescriptorSet push;
     PFN_vkCmdPushDescriptorSet2 push2;
     PFN_vkCmdPushDescriptorSetWithTemplate push_template;
+    PFN_vkCmdPushDescriptorSetWithTemplate2 push_template2;
     /* precise stand-ins */
     int precise;
     PFN_vkCreateShaderModule create_module;
@@ -357,12 +357,12 @@ static int make_dummies(null_descriptors *n)
         goto fail;
     n->buffers_unzeroed = !z0 || !z1;
     if (n->buffers_unzeroed) __atomic_store_n(&n->pending, 1, __ATOMIC_RELEASE);
-    VKB_INFO("device %u: null descriptors emulated (dummy image views, buffers%s; %s; storage nulls have their own)", t->id,
+    NULL_LOG("device %u: null descriptors emulated (dummy image views, buffers%s; %s; storage nulls have their own)", t->id,
              n->texel ? ", texel buffer views" : "", n->buffers_unzeroed ? "buffers zeroed on the GPU" : "buffers zero-filled");
     return 1;
 fail:
     n->failed = 1;
-    VKB_ERR("device %u: null descriptor dummies could not be made; device creation fails", t->id);
+    NULL_LOG("device %u: null descriptor dummies could not be made; device creation fails", t->id);
     return 0;
 }
 
@@ -375,8 +375,8 @@ static VkImageView standin(null_descriptors *n, uint8_t kind, int storage)
     if (!s->tried) {
         s->tried = 1;
         const char *vt = view_name[(kind - 1) / CLASSES], *cls = class_name[(kind - 1) % CLASSES];
-        if (make_image(n, kind, s)) VKB_INFO("device %u: null descriptor stand-in made: %s, %s%s", n->t->id, vt, cls, storage ? " (storage)" : "");
-        else VKB_WARN("device %u: null descriptor stand-in %s, %s could not be made; the 2D one is used", n->t->id, vt, cls);
+        if (make_image(n, kind, s)) NULL_LOG("device %u: null descriptor stand-in made: %s, %s%s", n->t->id, vt, cls, storage ? " (storage)" : "");
+        else NULL_LOG("device %u: null descriptor stand-in %s, %s could not be made; the 2D one is used", n->t->id, vt, cls);
     }
     if (!s->view) return n->view[storage];
     n->shaped++;
@@ -583,7 +583,6 @@ static VkResult VKAPI_CALL nd_CreatePipelineLayout(VkDevice device, const VkPipe
                                                    VkPipelineLayout *out)
 {
     null_descriptors *n = cur(device);
-    vkb_srv_note_pipeline_layout(ci);
     VkResult r = n->create_layout(device, ci, a, out);
     if (r != VK_SUCCESS) return r;
     nd_layout *l = malloc(sizeof(*l) + ci->setLayoutCount * sizeof(l->set[0]));
@@ -755,7 +754,7 @@ static void count(null_descriptors *n, unsigned k)
 {
     if (!k) return;
     unsigned long before = __atomic_fetch_add(&n->replaced, k, __ATOMIC_RELAXED);
-    if (!before) VKB_INFO("device %u: first null descriptors replaced by dummies", n->t->id);
+    if (!before) NULL_LOG("device %u: first null descriptors replaced by dummies", n->t->id);
 }
 
 /* Replaces the null descriptors in a write list; how many there were. Pushed writes name no set:
@@ -979,7 +978,7 @@ static void count_push(null_descriptors *n, unsigned k)
 {
     static int told;
     if (k && !__atomic_fetch_add(&told, 1, __ATOMIC_RELAXED))
-        VKB_INFO("device %u: null descriptors in push descriptor writes replaced by dummies", n->t->id);
+        NULL_LOG("device %u: null descriptors in push descriptor writes replaced by dummies", n->t->id);
     count(n, k);
 }
 
@@ -990,7 +989,8 @@ static void VKAPI_CALL nd_CmdPushDescriptorSet(VkCommandBuffer cb, VkPipelineBin
     VkWriteDescriptorSet *copy=copy_writes(n,nw,w);
     if(nw && !copy)return;
     count_push(n, fix_writes(n, nw, copy, 1, push_layout(n, layout, set)));
-    n->push(cb, bp, layout, set, nw, copy);free_writes(nw,copy);
+    if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->push(cb, bp, layout, set, nw, copy);
+    free_writes(nw,copy);
 }
 
 static void VKAPI_CALL nd_CmdPushDescriptorSet2(VkCommandBuffer cb, const VkPushDescriptorSetInfo *info)
@@ -1000,7 +1000,8 @@ static void VKAPI_CALL nd_CmdPushDescriptorSet2(VkCommandBuffer cb, const VkPush
     if(info->descriptorWriteCount && !writes)return;
     count_push(n, fix_writes(n, info->descriptorWriteCount, writes, 1, push_layout(n, info->layout, info->set)));
     VkPushDescriptorSetInfo copy=*info;copy.pDescriptorWrites=writes;
-    n->push2(cb, &copy);free_writes(info->descriptorWriteCount,writes);
+    if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->push2(cb, &copy);
+    free_writes(info->descriptorWriteCount,writes);
 }
 
 static void VKAPI_CALL nd_CmdPushDescriptorSetWithTemplate(VkCommandBuffer cb, VkDescriptorUpdateTemplate tmpl, VkPipelineLayout layout,
@@ -1010,7 +1011,19 @@ static void VKAPI_CALL nd_CmdPushDescriptorSetWithTemplate(VkCommandBuffer cb, V
     void *copy=copy_template(n,tmpl,data);
     if(!copy)return;
     count_push(n, fix_template_data(n, tmpl, copy));
-    n->push_template(cb, tmpl, layout, set, copy);free(copy);
+    if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->push_template(cb, tmpl, layout, set, copy);
+    free(copy);
+}
+
+static void VKAPI_CALL nd_CmdPushDescriptorSetWithTemplate2(VkCommandBuffer cb,const VkPushDescriptorSetWithTemplateInfo *info)
+{
+    null_descriptors *n=cur(cb);
+    void *data=copy_template(n,info->descriptorUpdateTemplate,info->pData);
+    if(!data)return;
+    count_push(n,fix_template_data(n,info->descriptorUpdateTemplate,data));
+    VkPushDescriptorSetWithTemplateInfo copy=*info;copy.pData=data;
+    if(!__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))n->push_template2(cb,&copy);
+    free(data);
 }
 
 static void VKAPI_CALL nd_CmdBindVertexBuffers(VkCommandBuffer cb, uint32_t first, uint32_t count_, const VkBuffer *bufs,
@@ -1082,7 +1095,7 @@ static void VKAPI_CALL nd_GetDeviceQueue2(VkDevice device, const VkDeviceQueueIn
  * yet: UNDEFINED -> TRANSFER_DST, zero, -> GENERAL, and a barrier that makes the writes available;
  * then waits for it on a fence, so that a submission on any queue after this one finds them
  * cleared (another thread's submission waits on the lock meanwhile). It goes down the chain like
- * the app's own (n->submit: the hang watchdog sees it as a submission of its own). Under the lock.
+ * the app's own (n->submit). Under the lock.
  * 1 when nothing is left to clear, 0 when q cannot clear (the next submission elsewhere will). */
 static int clear_pending(null_descriptors *n, VkQueue q)
 {
@@ -1152,7 +1165,7 @@ static int clear_pending(null_descriptors *n, VkQueue q)
         res = r->vkWaitForFences(d, 1, &fence, VK_TRUE, 5000000000ull);
         if (res == VK_TIMEOUT) {
             /* still running: the fence and command buffer stay (the pool frees the latter) */
-            VKB_WARN("device %u: the clear of the null descriptor stand-ins did not finish in 5 s; rejecting application submissions", t->id);
+            NULL_LOG("device %u: the clear of the null descriptor stand-ins did not finish in 5 s; rejecting application submissions", t->id);
             n->pending_fence=fence;
             __atomic_store_n(&n->lost,1,__ATOMIC_RELEASE);
             return 0;
@@ -1161,12 +1174,12 @@ static int clear_pending(null_descriptors *n, VkQueue q)
     if (fence) r->vkDestroyFence(d, fence, NULL);
     if (res == VK_SUCCESS) r->vkFreeCommandBuffers(d, n->pool[fam], 1, &cb);
     if (res != VK_SUCCESS) {
-        VKB_WARN("device %u: clearing the null descriptor stand-ins failed (%d)", t->id, res);
+        NULL_LOG("device %u: clearing the null descriptor stand-ins failed (%d)", t->id, res);
         __atomic_store_n(&n->lost,1,__ATOMIC_RELEASE);
         return 0;
     }
     if (!n->clears++ || images)
-        VKB_INFO("device %u: %u null descriptor stand-in image(s) cleared to zero ahead of a submission (family %u)", t->id, images, fam);
+        NULL_LOG("device %u: %u null descriptor stand-in image(s) cleared to zero ahead of a submission (family %u)", t->id, images, fam);
     return 1;
 }
 
@@ -1225,11 +1238,14 @@ static void initialize(null_device *t)
     n->push = dt->vkCmdPushDescriptorSet;
     n->push2 = dt->vkCmdPushDescriptorSet2;
     n->push_template = dt->vkCmdPushDescriptorSetWithTemplate;
+    n->push_template2 = dt->vkCmdPushDescriptorSetWithTemplate2;
     if (n->push) dt->vkCmdPushDescriptorSet = nd_CmdPushDescriptorSet;
     if (n->push2) dt->vkCmdPushDescriptorSet2 = nd_CmdPushDescriptorSet2;
     /* Template data is read through the templates this layer saw created. */
     if (n->push_template && dt->vkCreateDescriptorUpdateTemplate == nd_CreateDescriptorUpdateTemplate)
         dt->vkCmdPushDescriptorSetWithTemplate = nd_CmdPushDescriptorSetWithTemplate;
+    if(n->push_template2 && dt->vkCreateDescriptorUpdateTemplate==nd_CreateDescriptorUpdateTemplate)
+        dt->vkCmdPushDescriptorSetWithTemplate2=nd_CmdPushDescriptorSetWithTemplate2;
     /* Precise stand-ins: what pipelines declare, and which layout each set has. */
     const char *two_d = null_env("HYBRIS_NULLDESC_2D");
     n->create_module = dt->vkCreateShaderModule;
@@ -1255,7 +1271,7 @@ static void initialize(null_device *t)
         dt->vkResetDescriptorPool = nd_ResetDescriptorPool;
         dt->vkFreeDescriptorSets = nd_FreeDescriptorSets;
     } else {
-        VKB_INFO("device %u: null images all get the 2D stand-in%s", t->id, two_d ? " (HYBRIS_NULLDESC_2D)" : "");
+        NULL_LOG("device %u: null images all get the 2D stand-in%s", t->id, two_d ? " (HYBRIS_NULLDESC_2D)" : "");
     }
     /* the clear of the stand-ins rides on the app's submissions */
     t->real.vkGetPhysicalDeviceQueueFamilyProperties(t->physical, &n->nfam, NULL);
@@ -1318,9 +1334,9 @@ static void destroy(null_device *t)
     if (n->sink_mem) r->vkFreeMemory(d, n->sink_mem, NULL);
     for (int st = 0; st < 2; st++)
         for (int i = 0; i < KINDS; i++) free_image(t, &n->shape[st][i]);
-    if (n->clears) VKB_INFO("device %u: null descriptor stand-ins cleared to zero in %lu submission(s)", t->id, n->clears);
+    if (n->clears) NULL_LOG("device %u: null descriptor stand-ins cleared to zero in %lu submission(s)", t->id, n->clears);
     if (n->replaced)
-        VKB_INFO("device %u: %lu null descriptors replaced, %lu images by stand-ins of their binding's shape; %lu bindings where pipelines "
+        NULL_LOG("device %u: %lu null descriptors replaced, %lu images by stand-ins of their binding's shape; %lu bindings where pipelines "
                  "disagree on the shape", t->id, n->replaced, n->shaped, n->mixed);
     map_free(&n->modules, 1);
     map_free(&n->layouts, 1);
@@ -1380,6 +1396,7 @@ VkResult hybris_null_attach(const struct hybris_layer_device *owner,
     if(!device->dt.vkQueueSubmit2)device->dt.vkQueueSubmit2=(PFN_vkQueueSubmit2)base(owner,"vkQueueSubmit2KHR");
     device->real.vkGetPhysicalDeviceQueueFamilyProperties=(PFN_vkGetPhysicalDeviceQueueFamilyProperties)instance.resolver(instance.instance,"vkGetPhysicalDeviceQueueFamilyProperties");
     device->real.vkGetPhysicalDeviceMemoryProperties=(PFN_vkGetPhysicalDeviceMemoryProperties)instance.resolver(instance.instance,"vkGetPhysicalDeviceMemoryProperties");
+    if(!device->dt.vkCmdPushDescriptorSetWithTemplate2)device->dt.vkCmdPushDescriptorSetWithTemplate2=(PFN_vkCmdPushDescriptorSetWithTemplate2)base(owner,"vkCmdPushDescriptorSetWithTemplate2KHR");
     initialize(device);
     if(!device->nulldesc){free(device);return VK_ERROR_OUT_OF_HOST_MEMORY;}
     if(!need_dummies(device->nulldesc)){destroy(device);free(device);return VK_ERROR_OUT_OF_DEVICE_MEMORY;}
@@ -1399,6 +1416,7 @@ PFN_vkVoidFunction hybris_null_proc(VkDevice handle,const char *name) {
     if(!strcmp(name,"vkCmdPushDescriptorSetKHR"))name="vkCmdPushDescriptorSet";
     if(!strcmp(name,"vkCmdPushDescriptorSet2KHR"))name="vkCmdPushDescriptorSet2";
     if(!strcmp(name,"vkCmdPushDescriptorSetWithTemplateKHR"))name="vkCmdPushDescriptorSetWithTemplate";
+    if(!strcmp(name,"vkCmdPushDescriptorSetWithTemplate2KHR"))name="vkCmdPushDescriptorSetWithTemplate2";
     if(!strcmp(name,"vkCreateDescriptorUpdateTemplateKHR"))name="vkCreateDescriptorUpdateTemplate";
     if(!strcmp(name,"vkDestroyDescriptorUpdateTemplateKHR"))name="vkDestroyDescriptorUpdateTemplate";
     if(!strcmp(name,"vkUpdateDescriptorSetWithTemplateKHR"))name="vkUpdateDescriptorSetWithTemplate";
@@ -1413,6 +1431,7 @@ PFN_vkVoidFunction hybris_null_proc(VkDevice handle,const char *name) {
     if(!strcmp(name,"vkCmdBindVertexBuffers2") && device->dt.vkCmdBindVertexBuffers2==nd_CmdBindVertexBuffers2)return (PFN_vkVoidFunction)nd_CmdBindVertexBuffers2;
     if(!strcmp(name,"vkCmdPushDescriptorSet") && device->dt.vkCmdPushDescriptorSet==nd_CmdPushDescriptorSet)return (PFN_vkVoidFunction)nd_CmdPushDescriptorSet;
     if(!strcmp(name,"vkCmdPushDescriptorSet2") && device->dt.vkCmdPushDescriptorSet2==nd_CmdPushDescriptorSet2)return (PFN_vkVoidFunction)nd_CmdPushDescriptorSet2;
+    if(!strcmp(name,"vkCmdPushDescriptorSetWithTemplate2") && device->dt.vkCmdPushDescriptorSetWithTemplate2==nd_CmdPushDescriptorSetWithTemplate2)return (PFN_vkVoidFunction)nd_CmdPushDescriptorSetWithTemplate2;
     if(!strcmp(name,"vkCmdPushDescriptorSetWithTemplate") && device->dt.vkCmdPushDescriptorSetWithTemplate==nd_CmdPushDescriptorSetWithTemplate)return (PFN_vkVoidFunction)nd_CmdPushDescriptorSetWithTemplate;
     if(!strcmp(name,"vkCreateComputePipelines") && device->dt.vkCreateComputePipelines==nd_CreateComputePipelines)return (PFN_vkVoidFunction)nd_CreateComputePipelines;
     if(!strcmp(name,"vkCreateDescriptorUpdateTemplate") && device->dt.vkCreateDescriptorUpdateTemplate==nd_CreateDescriptorUpdateTemplate)return (PFN_vkVoidFunction)nd_CreateDescriptorUpdateTemplate;
