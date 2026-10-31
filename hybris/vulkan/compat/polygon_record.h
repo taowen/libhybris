@@ -4,7 +4,7 @@
 #include "polygon_buffers.h"
 struct hybris_polygon_link;
 struct hybris_polygon_recording {
-    VkCommandBuffer command;VkDevice device;PFN_vkGetDeviceProcAddr resolver;uint32_t family;
+    VkDevice device;PFN_vkGetDeviceProcAddr resolver;uint32_t family;
     VkAllocationCallbacks allocator;int custom;uint64_t epoch;
     VkCommandBufferUsageFlags usage;VkPipeline graphics;VkBuffer index;VkDeviceSize index_offset,index_size;
     VkIndexType index_type;VkPrimitiveTopology topology;VkBool32 restart;

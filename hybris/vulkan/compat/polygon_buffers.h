@@ -7,7 +7,7 @@ struct hybris_polygon_edges {
     VkDevice device;PFN_vkGetDeviceProcAddr resolver;VkAllocationCallbacks allocator;int custom;
     VkBuffer buffer;VkDeviceMemory memory;VkDescriptorPool descriptors;
     struct hybris_polygon_pipeline *pipeline;
-    VkCommandBuffer pre;VkBuffer source;struct hybris_polygon_edges *next;
+    VkBuffer source;struct hybris_polygon_edges *next;
 };
 void hybris_polygon_edges_destroy(void *edges);
 VkResult hybris_polygon_edges_create(struct hybris_bc_device *device,struct hybris_polygon_pipeline *pipeline,

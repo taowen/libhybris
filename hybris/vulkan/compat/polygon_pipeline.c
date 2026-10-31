@@ -40,15 +40,11 @@ void hybris_polygon_pipeline_destroy(struct hybris_polygon_pipeline *p)
     if(p->variant)destroy(p->device,p->variant,a);if(p->filled)destroy(p->device,p->filled,a);
     hybris_scaled_free(a,p);
 }
-static void retire_pipeline(struct hybris_polygon_pipeline *p)
-{
-    hybris_polygon_pipeline_destroy(p);
-}
-VkResult hybris_polygon_pipeline_publish(struct hybris_polygon_pipeline *p)
+void hybris_polygon_pipeline_publish(struct hybris_polygon_pipeline *p)
 {
     pthread_mutex_lock(&pipeline_guard);
     p->references=1;p->next=pipelines;pipelines=p;
-    pthread_mutex_unlock(&pipeline_guard);return VK_SUCCESS;
+    pthread_mutex_unlock(&pipeline_guard);
 }
 struct hybris_polygon_pipeline *hybris_polygon_pipeline_acquire(VkDevice device,VkPipeline handle)
 {
@@ -68,7 +64,7 @@ void hybris_polygon_pipeline_release(void *object)
     pthread_mutex_lock(&pipeline_guard);
     unsigned retire=!--p->references;
     pthread_mutex_unlock(&pipeline_guard);
-    if(retire) retire_pipeline(p);
+    if(retire) hybris_polygon_pipeline_destroy(p);
 }
 int hybris_polygon_pipeline_remove(VkDevice device,VkPipeline handle)
 {

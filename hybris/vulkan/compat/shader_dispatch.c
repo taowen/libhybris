@@ -749,9 +749,8 @@ static VkResult attach_polygon(struct shader_device *device,
         original->pRasterizationState->polygonMode,allocator,&p);
     if(result==VK_SUCCESS) {
         p->filled=*handle;
-        result=hybris_polygon_pipeline_publish(p);
-        if(result==VK_SUCCESS)return VK_SUCCESS;
-        p->filled=VK_NULL_HANDLE;
+        hybris_polygon_pipeline_publish(p);
+        return VK_SUCCESS;
     }
     if(p)hybris_polygon_pipeline_destroy(p);
     if(result==VK_ERROR_FEATURE_NOT_PRESENT){hybris_polygon_note("unsupported pipeline drawn solid");return VK_SUCCESS;}

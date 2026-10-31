@@ -9,7 +9,6 @@
 #include "../compat/shader_dispatch.h"
 #include "../compat/memory_visibility.h"
 #include "../compat/bc_context.h"
-#include "../compat/polygon_buffers.h"
 #include "../compat/polygon_record.h"
 #include <pthread.h>
 #include <string.h>
@@ -238,7 +237,7 @@ static VkResult VKAPI_CALL allocate_commands(VkDevice handle, const VkCommandBuf
         struct command_state *state = list;
         list = state->next;
         state->handle = out[i];
-        state->polygon=(struct hybris_polygon_recording){.command=out[i],.device=handle,.resolver=device.resolver,
+        state->polygon=(struct hybris_polygon_recording){.device=handle,.resolver=device.resolver,
             .family=pool.family,.custom=pool.custom_allocator,.allocator=pool.allocator};
         size_t bucket = command_bucket(state->handle);
         state->lookup_next = command_index[bucket];

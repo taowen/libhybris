@@ -218,12 +218,17 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     VkSurfaceCapabilitiesKHR capabilities;
     VkResult checked = hybris_icd_wsi_capabilities(context.physical, info->surface, &capabilities);
     if (checked != VK_SUCCESS) return checked;
-    if (capabilities.currentExtent.width != UINT32_MAX &&
-        (info->imageExtent.width != capabilities.currentExtent.width ||
-         info->imageExtent.height != capabilities.currentExtent.height))
-        return VK_ERROR_OUT_OF_DATE_KHR;
-    if (info->imageExtent.width > capabilities.maxImageExtent.width ||
-        info->imageExtent.height > capabilities.maxImageExtent.height ||
+    /* The window can resize after the application's capability query. Like
+     * Mesa's X11 WSI, allocate the requested images rather than rejecting that
+     * valid snapshot against a second live geometry query. Acquisition/present
+     * report SUBOPTIMAL while the window and image sizes differ; actual surface
+     * loss and pool errors retain their ordinary failure paths. */
+    VkImageFormatProperties properties;
+    checked = hybris_icd_wsi_image_properties(context.physical, info->imageFormat,
+        info->imageUsage, &properties);
+    if (checked != VK_SUCCESS) return checked;
+    if (info->imageExtent.width > properties.maxExtent.width ||
+        info->imageExtent.height > properties.maxExtent.height ||
         (info->imageUsage & ~capabilities.supportedUsageFlags) ||
         !(info->compositeAlpha & capabilities.supportedCompositeAlpha))
         return VK_ERROR_INITIALIZATION_FAILED;

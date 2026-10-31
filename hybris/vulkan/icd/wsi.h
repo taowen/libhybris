@@ -31,6 +31,9 @@ int hybris_icd_lookup_physical(VkPhysicalDevice physical,
     struct hybris_icd_physical *out);
 VkResult hybris_icd_wsi_capabilities(VkPhysicalDevice physical,
     VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR *capabilities);
+/* Importable-image limits are independent of the X11 window's changing size. */
+VkResult hybris_icd_wsi_image_properties(VkPhysicalDevice physical, VkFormat format,
+    VkImageUsageFlags usage, VkImageFormatProperties *properties);
 int hybris_icd_physical_has_native_buffer(VkPhysicalDevice physical);
 int hybris_icd_wsi_graphics_family(VkPhysicalDevice physical, uint32_t index);
 int hybris_icd_wsi_surface_headless(VkSurfaceKHR surface);

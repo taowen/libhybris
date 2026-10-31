@@ -36,7 +36,7 @@ void hybris_polygon_record_execute(VkCommandBuffer c,uint32_t count,const VkComm
     struct hybris_layer_device d;struct hybris_polygon_recording *s=active(c,&d);if(!s)return;
     for(uint32_t i=0;i<count;++i) {
         struct hybris_polygon_recording *child=hybris_layer_polygon_recording(children[i]);if(!child)continue;
-        for(const struct hybris_polygon_edges *e=child->edges;e;e=e->next)if(e->pre&&written(s,e->source)) {
+        for(const struct hybris_polygon_edges *e=child->edges;e;e=e->next)if(e->source&&written(s,e->source)) {
             hybris_polygon_note("unsupported: primary writes secondary prepass input; command rejected");hybris_layer_command_error(c,VK_ERROR_FEATURE_NOT_PRESENT);
         }
         struct hybris_polygon_link *l=hybris_scaled_alloc(s->custom?&s->allocator:NULL,sizeof(*l),VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
@@ -126,7 +126,7 @@ static int draw_polygon(VkCommandBuffer c,const struct hybris_layer_device *d,Vk
         VkResult r=hybris_polygon_edges_create(bc,p,count,shape,indexed?&source:NULL,byte_offset,index_size,restart,pre,a,&edges);
         if(r!=VK_SUCCESS){if(r!=VK_ERROR_FEATURE_NOT_PRESENT)hybris_layer_command_error(c,r);goto unsupported;}
         r=hybris_layer_command_retain(c,edges,hybris_polygon_edges_destroy);if(r){hybris_polygon_edges_destroy(edges);hybris_layer_command_error(c,r);return 0;}
-        if(pre)s->has_prepass=1;edges->pre=pre;edges->source=indexed?s->index:VK_NULL_HANDLE;edges->next=s->edges;s->edges=edges;
+        if(pre)s->has_prepass=1;edges->source=indexed?s->index:VK_NULL_HANDLE;edges->next=s->edges;s->edges=edges;
         ((PFN_vkCmdBindPipeline)d->resolver(d->handle,"vkCmdBindPipeline"))(c,VK_PIPELINE_BIND_POINT_GRAPHICS,p->variant);
         if(p->dynamic_topology)set_topology(c,VK_PRIMITIVE_TOPOLOGY_LINE_LIST);if(p->dynamic_restart)set_restart(c,VK_FALSE);
         ((PFN_vkCmdBindIndexBuffer)d->resolver(d->handle,"vkCmdBindIndexBuffer"))(c,edges->buffer,0,VK_INDEX_TYPE_UINT32);

@@ -76,6 +76,14 @@ Ordinary optimal-image support is insufficient: the inspected X300 driver
 supports ordinary BGRA8 images but rejects BGRA8 AHBs. Surface enumeration
 therefore offers RGBA8 on that driver before any window buffer is allocated.
 Swapchain errors identify the gralloc-usage or native-image-import stage.
+X11 capability queries report the current window dimensions for all three
+extent fields. Swapchain creation retains the application's requested image
+extent and checks it against the importable image's hardware limits. It does
+not reject a resize that races the earlier capability query. Acquisition and
+presentation report SUBOPTIMAL for a live size mismatch so the application can
+rebuild its images. Surface loss, retired chains, failed allocations and pool
+errors still fail; no error is converted into an image or fence signal.
+
 Image
 count 2–8, one layer, identity transform, inherited native alpha and FIFO are
 adapter constraints. Single-device group queries and AcquireNextImage2 are
