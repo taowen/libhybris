@@ -75,26 +75,3 @@ separate expanded instancing limitation above remains unresolved.
 The standalone OpenCode diagnostic launcher needed a bash exec step after
 dbus-run-session; direct execution failed to open ICU data before GPU
 initialization. The startup-path discrepancy still needs separate investigation.
-
-## Multi-viewport compatibility
-
-The MaliBridge-derived fallback advertises `multiViewport` and at least 16
-viewports when the native driver lacks the feature. It filters that feature
-out of device creation and keeps only viewport/scissor index zero in static
-pipelines, dynamic setters and core/EXT with-count setters. Updates starting
-at a nonzero index are discarded, with bounded diagnostic warnings.
-Native-supporting devices pass through unless `HYBRIS_MULTI_VIEWPORT=force`
-is explicitly selected. `HYBRIS_MULTI_VIEWPORT=0` disables the approximation.
-
-This is not a conformant multiViewport implementation: additional viewports,
-scissors and shader `ViewportIndex` are not emulated. Applications that actually
-render to multiple viewports may render incorrectly. This policy has no
-application-name matching and is shared by glibc and Bionic builds.
-
-The diagnostics APK has a separate Multi-viewport Activity and native probe.
-`viewport-native`, `viewport-normal`, `viewport-force` and `viewport-off`
-compare offscreen graphics readback and caller-state preservation using legacy
-and Features2 device creation, GDPA/GIPA, static/dynamic state and available
-core/EXT with-count commands. The probe renders only viewport zero; a passing
-result proves that bounded compatibility path, not full multiViewport or game
-acceptance. The existing build guide owns the diagnostics build entry.

@@ -54,6 +54,7 @@ process cancellation, identity verification and report display are shared.
 | BC textures | `.BcProbeActivity` | `libhybris_bc_probe.so` | `files/bc/` |
 | Robustness2 | `.RobustnessProbeActivity` | `libhybris_robustness_probe.so` | `files/robustness/` |
 | Specialization constants | `.SpecConstantsProbeActivity` | `libhybris_spec_constants_probe.so` | `files/spec_constants/` |
+| Multi-viewport | `.MultiViewportProbeActivity` | `libhybris_multiviewport_probe.so` | `files/multiviewport/` |
 
 For device automation, start the relevant Activity directly with a `mode` extra.
 BC accepts `native`, `normal`, `decode`, `auto`, `fast`, `default` or `high`, and
@@ -135,3 +136,26 @@ operations and ordinary constant controls; reuse one module across specializatio
 and verify caller code remains unchanged. Inline compute is checked when native
 maintenance5 is available. A repair trace confirms that force mode executed the
 pass. These are targeted GPU checks, not application/game acceptance.
+
+## Multi-viewport compatibility
+
+The MaliBridge-derived fallback advertises `multiViewport` and at least 16
+viewports when the native driver lacks the feature. It filters that feature
+out of device creation and keeps only viewport/scissor index zero in static
+pipelines, dynamic setters and core/EXT with-count setters. Updates starting
+at a nonzero index are discarded, with bounded diagnostic warnings.
+Native-supporting devices pass through unless `HYBRIS_MULTI_VIEWPORT=force`
+is explicitly selected. `HYBRIS_MULTI_VIEWPORT=0` disables the approximation.
+
+This is not a conformant multiViewport implementation: additional viewports,
+scissors and shader `ViewportIndex` are not emulated. Applications that actually
+render to multiple viewports may render incorrectly. This policy has no
+application-name matching and is shared by glibc and Bionic builds.
+
+The diagnostics APK has a separate Multi-viewport Activity and native probe.
+`viewport-native`, `viewport-normal`, `viewport-force` and `viewport-off`
+compare offscreen graphics readback and caller-state preservation using legacy
+and Features2 device creation, GDPA/GIPA, static/dynamic state and available
+core/EXT with-count commands. The probe renders only viewport zero; a passing
+result proves that bounded compatibility path, not full multiViewport or game
+acceptance. Use the standalone diagnostics entry above.
