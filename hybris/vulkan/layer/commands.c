@@ -95,17 +95,20 @@ static void reset_resources(VkCommandBuffer command)
     VkAllocationCallbacks allocator;
     int custom = 0;
     pthread_mutex_lock(&guard);
-    for (struct command_state *state = commands; state; state = state->next)
-        if (state->handle == command) {
-            state->upload_epoch = next_upload_epoch == UINT64_MAX ? 0 : ++next_upload_epoch;
-            list = state->resources; state->resources = NULL;
-            state->touched=0;
-            custom = state->custom_allocator; if (custom) allocator = state->allocator;
-            break;
-        }
+    struct command_state *state = find_command_locked(command);
+    if (state) {
+        state->upload_epoch = next_upload_epoch == UINT64_MAX ? 0 : ++next_upload_epoch;
+        list = state->resources; state->resources = NULL;
+        state->touched=0;
+        custom = state->custom_allocator; if (custom) allocator = state->allocator;
+    }
     pthread_mutex_unlock(&guard);
     destroy_resources(list, custom ? &allocator : NULL);
-    struct command_state *state=find_command(command);if(state){hybris_polygon_record_reset(&state->polygon);state->polygon.epoch=state->upload_epoch;state->dynamic_rendering=(struct hybris_dynamic_recording){0};}
+    if(state) {
+        hybris_polygon_record_reset(&state->polygon);
+        state->polygon.epoch=state->upload_epoch;
+        state->dynamic_rendering=(struct hybris_dynamic_recording){0};
+    }
 }
 static void free_commands(struct command_state *list)
 {
@@ -155,12 +158,11 @@ int hybris_layer_command_allocator(VkCommandBuffer command, VkAllocationCallback
 {
     int custom = 0;
     pthread_mutex_lock(&guard);
-    for (const struct command_state *state = commands; state; state = state->next)
-        if (state->handle == command) {
-            custom = state->custom_allocator;
-            if (custom) *allocator = state->allocator;
-            break;
-        }
+    const struct command_state *state = find_command_locked(command);
+    if (state) {
+        custom = state->custom_allocator;
+        if (custom) *allocator = state->allocator;
+    }
     pthread_mutex_unlock(&guard);
     return custom;
 }
@@ -168,19 +170,16 @@ VkCommandPool hybris_layer_command_pool(VkCommandBuffer command)
 {
     VkCommandPool pool = VK_NULL_HANDLE;
     pthread_mutex_lock(&guard);
-    for (const struct command_state *state = commands; state; state = state->next)
-        if (state->handle == command) { pool = state->pool; break; }
+    const struct command_state *state = find_command_locked(command);
+    if (state) pool = state->pool;
     pthread_mutex_unlock(&guard);
     return pool;
 }
 void hybris_layer_command_error(VkCommandBuffer command, VkResult error)
 {
     pthread_mutex_lock(&guard);
-    for (struct command_state *state = commands; state; state = state->next)
-        if (state->handle == command) {
-            if (error == VK_SUCCESS || state->error == VK_SUCCESS) state->error = error;
-            break;
-        }
+    struct command_state *state = find_command_locked(command);
+    if (state && (error == VK_SUCCESS || state->error == VK_SUCCESS)) state->error = error;
     pthread_mutex_unlock(&guard);
 }
 VkResult hybris_layer_command_retain(VkCommandBuffer command, void *resource,
@@ -194,11 +193,11 @@ VkResult hybris_layer_command_retain(VkCommandBuffer command, void *resource,
     *owned = (struct retained_resource){.resource = resource, .destroy = destroy};
     VkResult result = VK_ERROR_INITIALIZATION_FAILED;
     pthread_mutex_lock(&guard);
-    for (struct command_state *state = commands; state; state = state->next)
-        if (state->handle == command) {
-            owned->next = state->resources; state->resources = owned;
-            result = VK_SUCCESS; break;
-        }
+    struct command_state *state = find_command_locked(command);
+    if (state) {
+        owned->next = state->resources; state->resources = owned;
+        result = VK_SUCCESS;
+    }
     pthread_mutex_unlock(&guard);
     if (result != VK_SUCCESS) hybris_scaled_free(a, owned);
     return result;
@@ -365,8 +364,8 @@ static VkResult VKAPI_CALL end_command(VkCommandBuffer command)
     VkResult result = function(command);
     if (result != VK_SUCCESS) return result;
     pthread_mutex_lock(&guard);
-    for (const struct command_state *state = commands; state; state = state->next)
-        if (state->handle == command) { result = state->error; break; }
+    const struct command_state *state = find_command_locked(command);
+    if (state) result = state->error;
     pthread_mutex_unlock(&guard);
     return result;
 }

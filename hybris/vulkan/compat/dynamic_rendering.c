@@ -499,6 +499,8 @@ static VkResult VKAPI_CALL d_CreateGraphicsPipelines(VkDevice device,VkPipelineC
     dr_state *s=st(device);
     PFN_vkCreateGraphicsPipelines next=s?s->create_gp:(PFN_vkCreateGraphicsPipelines)hybris_layer_device_inner_proc(device,"vkCreateGraphicsPipelines");
     if(!s || !count)return next(device,cache,count,infos,allocator,out);
+    int needed=0;for(uint32_t i=0;i<count;++i)needed|=infos[i].renderPass==VK_NULL_HANDLE;
+    if(!needed)return next(device,cache,count,infos,allocator,out);
     for(uint32_t i=0;i<count;++i)out[i]=VK_NULL_HANDLE;
     VkGraphicsPipelineCreateInfo *copies=calloc(count,sizeof(*copies));
     if(!copies)return VK_ERROR_OUT_OF_HOST_MEMORY;

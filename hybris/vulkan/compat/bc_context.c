@@ -101,11 +101,47 @@ struct hybris_bc_command *hybris_bc_command_find(VkCommandBuffer handle, struct 
     pthread_mutex_unlock(&guard);
     return command;
 }
+static size_t image_bucket(VkImage image)
+{
+    uint64_t key = (uint64_t)(uintptr_t)image;
+    key ^= key >> 33;
+    key *= UINT64_C(0xff51afd7ed558ccd);
+    key ^= key >> 33;
+    return key & (HYBRIS_BC_IMAGE_BUCKETS - 1);
+}
+void hybris_bc_resource_publish(struct hybris_bc_device *device, struct hybris_bc_resource *resource)
+{
+    pthread_mutex_lock(&device->guard);
+    size_t bucket = image_bucket(resource->handle);
+    resource->lookup_next = device->image_index[bucket];
+    device->image_index[bucket] = resource;
+    resource->previous = NULL;
+    resource->next = device->images;
+    if (resource->next) resource->next->previous = resource;
+    device->images = resource;
+    pthread_mutex_unlock(&device->guard);
+}
+struct hybris_bc_resource *hybris_bc_resource_remove(struct hybris_bc_device *device, VkImage handle)
+{
+    pthread_mutex_lock(&device->guard);
+    struct hybris_bc_resource **slot = &device->image_index[image_bucket(handle)];
+    while (*slot && (*slot)->handle != handle) slot = &(*slot)->lookup_next;
+    struct hybris_bc_resource *resource = *slot;
+    if (resource) {
+        *slot = resource->lookup_next;
+        if (resource->previous) resource->previous->next = resource->next;
+        else device->images = resource->next;
+        if (resource->next) resource->next->previous = resource->previous;
+        resource->next = resource->previous = resource->lookup_next = NULL;
+    }
+    pthread_mutex_unlock(&device->guard);
+    return resource;
+}
 struct hybris_bc_resource *hybris_bc_resource_find(struct hybris_bc_device *device, VkImage handle)
 {
     pthread_mutex_lock(&device->guard);
-    struct hybris_bc_resource *image = device->images;
-    while (image && image->handle != handle) image = image->next;
+    struct hybris_bc_resource *image = device->image_index[image_bucket(handle)];
+    while (image && image->handle != handle) image = image->lookup_next;
     pthread_mutex_unlock(&device->guard);
     return image;
 }

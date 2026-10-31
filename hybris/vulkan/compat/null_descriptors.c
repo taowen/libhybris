@@ -796,6 +796,24 @@ static unsigned fix_writes(null_descriptors *n, uint32_t nw, const VkWriteDescri
     return k;
 }
 
+static int has_null_writes(uint32_t count, const VkWriteDescriptorSet *writes)
+{
+    for (uint32_t i = 0; i < count; ++i) {
+        const VkWriteDescriptorSet *write = &writes[i];
+        if (image_type(write->descriptorType) && write->pImageInfo) {
+            for (uint32_t j = 0; j < write->descriptorCount; ++j)
+                if (!write->pImageInfo[j].imageView) return 1;
+        } else if (buffer_type(write->descriptorType) && write->pBufferInfo) {
+            for (uint32_t j = 0; j < write->descriptorCount; ++j)
+                if (!write->pBufferInfo[j].buffer) return 1;
+        } else if (texel_type(write->descriptorType) && write->pTexelBufferView) {
+            for (uint32_t j = 0; j < write->descriptorCount; ++j)
+                if (!write->pTexelBufferView[j]) return 1;
+        }
+    }
+    return 0;
+}
+
 static void free_writes(uint32_t count_,VkWriteDescriptorSet *writes)
 {
     if(!writes)return;
@@ -834,6 +852,8 @@ static void VKAPI_CALL nd_UpdateDescriptorSets(VkDevice device, uint32_t nw, con
                                                const VkCopyDescriptorSet *cp)
 {
     null_descriptors *n = cur(device);
+    if(__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))return;
+    if(!has_null_writes(nw,w)) { n->update(device,nw,w,nc,cp);return; }
     VkWriteDescriptorSet *copy=copy_writes(n,nw,w);
     if(nw && !copy)return;
     count(n, fix_writes(n, nw, copy, 0, VK_NULL_HANDLE));
@@ -986,6 +1006,8 @@ static void VKAPI_CALL nd_CmdPushDescriptorSet(VkCommandBuffer cb, VkPipelineBin
                                                uint32_t nw, const VkWriteDescriptorSet *w)
 {
     null_descriptors *n = cur(cb);
+    if(__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))return;
+    if(!has_null_writes(nw,w)) { n->push(cb,bp,layout,set,nw,w);return; }
     VkWriteDescriptorSet *copy=copy_writes(n,nw,w);
     if(nw && !copy)return;
     count_push(n, fix_writes(n, nw, copy, 1, push_layout(n, layout, set)));
@@ -996,6 +1018,8 @@ static void VKAPI_CALL nd_CmdPushDescriptorSet(VkCommandBuffer cb, VkPipelineBin
 static void VKAPI_CALL nd_CmdPushDescriptorSet2(VkCommandBuffer cb, const VkPushDescriptorSetInfo *info)
 {
     null_descriptors *n = cur(cb);
+    if(__atomic_load_n(&n->lost,__ATOMIC_ACQUIRE))return;
+    if(!has_null_writes(info->descriptorWriteCount,info->pDescriptorWrites)) { n->push2(cb,info);return; }
     VkWriteDescriptorSet *writes=copy_writes(n,info->descriptorWriteCount,info->pDescriptorWrites);
     if(info->descriptorWriteCount && !writes)return;
     count_push(n, fix_writes(n, info->descriptorWriteCount, writes, 1, push_layout(n, info->layout, info->set)));

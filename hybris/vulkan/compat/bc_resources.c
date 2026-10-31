@@ -50,22 +50,14 @@ static VkResult VKAPI_CALL create_image(VkDevice handle, const VkImageCreateInfo
     resource->samples = info->samples;
     resource->custom_allocator = allocator != NULL;
     if (allocator) resource->allocator = *allocator;
-    pthread_mutex_lock(&device->guard);
-    resource->next = device->images;
-    device->images = resource;
-    pthread_mutex_unlock(&device->guard);
+    hybris_bc_resource_publish(device,resource);
     return VK_SUCCESS;
 }
 static void VKAPI_CALL destroy_image(VkDevice handle, VkImage image, const VkAllocationCallbacks *allocator)
 {
     struct hybris_bc_device *device = hybris_bc_device_find(handle);
     if (!device) return;
-    pthread_mutex_lock(&device->guard);
-    struct hybris_bc_resource **link = &device->images;
-    while (*link && (*link)->handle != image) link = &(*link)->next;
-    struct hybris_bc_resource *resource = *link;
-    if (resource) *link = resource->next;
-    pthread_mutex_unlock(&device->guard);
+    struct hybris_bc_resource *resource=hybris_bc_resource_remove(device,image);
     if (resource && resource->emulated.image) hybris_bc_image_destroy(&resource->emulated, allocator);
     else { PROC(DestroyImage); DestroyImage(handle, image, allocator); }
     hybris_bc_free(device, resource);

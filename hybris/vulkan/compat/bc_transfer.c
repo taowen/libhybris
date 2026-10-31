@@ -265,10 +265,24 @@ VkResult hybris_bc_copy_buffer_image(struct hybris_bc_transfer *t,
                 ((uint32_t)region->imageOffset.y / 4) * row +
                 ((uint32_t)region->imageOffset.x / 4) * (VkDeviceSize)image->block_bytes;
             VkDeviceSize buffer_offset = region->bufferOffset + layer * buffer_row * buffer_height;
-            for (VkDeviceSize y = 0; y < rows; ++y) {
-                VkBufferCopy copy = {.srcOffset = to_image ? buffer_offset + y * buffer_row : image_offset + y * row,
-                    .dstOffset = to_image ? image_offset + y * row : buffer_offset + y * buffer_row, .size = width};
-                CmdCopyBuffer(command, to_image ? buffer : image->blocks, to_image ? image->blocks : buffer, 1, &copy);
+            VkBuffer source = to_image ? buffer : image->blocks;
+            VkBuffer destination = to_image ? image->blocks : buffer;
+            if (row == width && buffer_row == width) {
+                VkBufferCopy copy = {.srcOffset = to_image ? buffer_offset : image_offset,
+                    .dstOffset = to_image ? image_offset : buffer_offset, .size = width * rows};
+                CmdCopyBuffer(command, source, destination, 1, &copy);
+            } else {
+                VkBufferCopy copies[64];
+                const uint32_t capacity = sizeof(copies) / sizeof(copies[0]);
+                for (VkDeviceSize y = 0; y < rows;) {
+                    uint32_t n = (uint32_t)(rows - y > capacity ? capacity : rows - y);
+                    for (uint32_t j = 0; j < n; ++j) copies[j] = (VkBufferCopy){
+                        .srcOffset = to_image ? buffer_offset + (y + j) * buffer_row : image_offset + (y + j) * row,
+                        .dstOffset = to_image ? image_offset + (y + j) * row : buffer_offset + (y + j) * buffer_row,
+                        .size = width};
+                    CmdCopyBuffer(command, source, destination, n, copies);
+                    y += n;
+                }
             }
         }
         if (to_image) {

@@ -89,6 +89,9 @@ static VkResult VKAPI_CALL graphics(VkDevice handle,VkPipelineCache cache,uint32
     if(!hybris_layer_lookup_device(handle,&device))return VK_ERROR_INITIALIZATION_FAILED;
     PFN_vkCreateGraphicsPipelines next=(void*)hybris_layer_legacy_proc(handle,"vkCreateGraphicsPipelines");
     if(!device.maintenance5 || !count)return next(handle,cache,count,infos,allocator,out);
+    int needed=0;
+    for(uint32_t i=0;i<count;++i)needed|=find(infos[i].pNext,VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO)!=NULL;
+    if(!needed)return next(handle,cache,count,infos,allocator,out);
     for(uint32_t i=0;i<count;++i)out[i]=VK_NULL_HANDLE;
     VkGraphicsPipelineCreateInfo *copy=calloc(count,sizeof(*copy));
     if(!copy)return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -104,6 +107,9 @@ static VkResult VKAPI_CALL compute(VkDevice handle,VkPipelineCache cache,uint32_
     if(!hybris_layer_lookup_device(handle,&device))return VK_ERROR_INITIALIZATION_FAILED;
     PFN_vkCreateComputePipelines next=(void*)hybris_layer_legacy_proc(handle,"vkCreateComputePipelines");
     if(!device.maintenance5 || !count)return next(handle,cache,count,infos,allocator,out);
+    int needed=0;
+    for(uint32_t i=0;i<count;++i)needed|=find(infos[i].pNext,VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO)!=NULL;
+    if(!needed)return next(handle,cache,count,infos,allocator,out);
     for(uint32_t i=0;i<count;++i)out[i]=VK_NULL_HANDLE;
     VkComputePipelineCreateInfo *copy=calloc(count,sizeof(*copy));
     if(!copy)return VK_ERROR_OUT_OF_HOST_MEMORY;
