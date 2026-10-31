@@ -119,6 +119,13 @@ std::string run(const std::string &directory,const std::string &mode) {
                 pass&=got[group*4+channel]==(mask[group][channel]?pixel_bits[channel]:0);
             pass&=memcmp(code,before.data(),bytes)==0;
             log<<(pass?"PASS ":"FAIL ")<<(form?"repaired":"reference")<<" specialization="<<variant<<" exact sampled pixels; caller code unchanged\n";
+            if(!pass) {
+                log<<"  got:";
+                for(unsigned i=0;i<12;++i)log<<" "<<std::hex<<got[i];
+                log<<"\n  want:";
+                for(unsigned group=0;group<3;++group)for(unsigned channel=0;channel<4;++channel)log<<" "<<std::hex<<(mask[group][channel]?pixel_bits[channel]:0);
+                log<<std::dec<<"\n";
+            }
             ++checks;if(!pass)++failed;
         }
         // Only the active compatibility layer consumes historical inline modules.
