@@ -66,6 +66,7 @@ PFN_vkVoidFunction VKAPI_CALL hybris_layer_get_device_proc(VkDevice device, cons
 PFN_vkVoidFunction hybris_layer_handle_inner_proc(const void *handle, const char *name);
 PFN_vkVoidFunction hybris_layer_device_inner_proc(VkDevice device, const char *name);
 PFN_vkVoidFunction hybris_layer_device_dispatch(const char *name, int track_commands);
+int hybris_layer_vertex_buffers2_proc(const char *name);
 PFN_vkVoidFunction hybris_layer_physical_proc(const char *name);
 
 int hybris_layer_command_device(VkCommandBuffer command, struct hybris_layer_device *device);

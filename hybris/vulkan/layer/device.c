@@ -84,7 +84,7 @@ static PFN_vkVoidFunction resolve_legacy(const struct hybris_layer_device *devic
     return dynamic?dynamic:hook?hook:next;
 }
 
-static int vertex_buffers2_proc(const char *name)
+int hybris_layer_vertex_buffers2_proc(const char *name)
 {
     return !strcmp(name, "vkCmdBindVertexBuffers2") ||
            !strcmp(name, "vkCmdBindVertexBuffers2EXT");
@@ -92,7 +92,7 @@ static int vertex_buffers2_proc(const char *name)
 static PFN_vkVoidFunction resolve_inner(const struct hybris_layer_device *device,const char *name)
 {
     PFN_vkVoidFunction hook=hybris_maintenance5_proc(device,name);
-    if (hook && !vertex_buffers2_proc(name)) return hook;
+    if (hook && !hybris_layer_vertex_buffers2_proc(name)) return hook;
     PFN_vkVoidFunction next=resolve_legacy(device,name);
     return next ? (hook ? hook : next) : NULL;
 }
@@ -247,7 +247,7 @@ PFN_vkVoidFunction VKAPI_CALL hybris_layer_get_device_proc(VkDevice handle, cons
     if (!name || !hybris_layer_lookup_device(handle, &device) ||
         !hybris_shader_device_proc_allowed(handle, name)) return NULL;
     PFN_vkVoidFunction next = device.resolver(handle, name);
-    int static_vertices = vertex_buffers2_proc(name) && device.track_commands &&
+    int static_vertices = hybris_layer_vertex_buffers2_proc(name) && device.track_commands &&
                           device.recording->CmdBindVertexBuffers;
     if (!next && !static_vertices && !hybris_dynamic_proc(&device,name) &&
         !(device.maintenance5 && hybris_maintenance5_added_proc(name))) return NULL;
