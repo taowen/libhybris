@@ -455,7 +455,14 @@ static void bind_vertices2(VkCommandBuffer c,uint32_t first,uint32_t count,const
     const VkDeviceSize *offsets,const VkDeviceSize *sizes,const VkDeviceSize *strides,int extension)
 {
     struct hybris_layer_device device;if(!hybris_layer_command_device(c,&device)) return;
-    (extension ? device.recording->CmdBindVertexBuffers2EXT : device.recording->CmdBindVertexBuffers2)(c,first,count,buffers,offsets,sizes,strides);
+    PFN_vkCmdBindVertexBuffers2 next = extension ? device.recording->CmdBindVertexBuffers2EXT :
+                                                  device.recording->CmdBindVertexBuffers2;
+    if (!next) next = extension ? device.recording->CmdBindVertexBuffers2 :
+                                 device.recording->CmdBindVertexBuffers2EXT;
+    if (next) next(c,first,count,buffers,offsets,sizes,strides);
+    else if (!sizes && !strides && device.recording->CmdBindVertexBuffers)
+        device.recording->CmdBindVertexBuffers(c,first,count,buffers,offsets);
+    else hybris_layer_command_error(c,VK_ERROR_FEATURE_NOT_PRESENT);
 }
 static void VKAPI_CALL vertices_core(VkCommandBuffer c,uint32_t f,uint32_t n,const VkBuffer *b,
     const VkDeviceSize *o,const VkDeviceSize *s,const VkDeviceSize *t)

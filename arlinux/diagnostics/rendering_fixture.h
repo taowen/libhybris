@@ -3,16 +3,17 @@
 #include "vulkan_context.h"
 #include "viewport_vert.inc"
 #include "viewport_frag.inc"
+#include "vertex_buffer_vert.inc"
 #include <array>
 using namespace diagnostics;
 namespace rendering_diagnostics {
 constexpr uint32_t W=32,H=16;
 struct Graphics {
-    Context &c;ImageResources image;bool rendering;bool maintenance;VkCommandBuffer secondary=VK_NULL_HANDLE;unsigned runs=0;
+    Context &c;ImageResources image;bool rendering;bool maintenance;bool vertex_buffers2;VkCommandBuffer secondary=VK_NULL_HANDLE;unsigned runs=0;
     VkRenderPass pass=VK_NULL_HANDLE;VkFramebuffer frame=VK_NULL_HANDLE;
     VkPipelineLayout layout=VK_NULL_HANDLE;VkPipeline pipeline=VK_NULL_HANDLE;
     VkShaderModule vertex=VK_NULL_HANDLE,fragment=VK_NULL_HANDLE;
-    Graphics(Context &context,bool use_rendering,bool use_maintenance=false):c(context),image(c),rendering(use_rendering),maintenance(use_maintenance) {
+    Graphics(Context &context,bool use_rendering,bool use_maintenance=false,bool bind_vertices2=false):c(context),image(c),rendering(use_rendering),maintenance(use_maintenance),vertex_buffers2(bind_vertices2) {
         VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};ci.imageType=VK_IMAGE_TYPE_2D;
         ci.format=VK_FORMAT_R8G8B8A8_UNORM;ci.extent={W,H,1};ci.mipLevels=ci.arrayLayers=1;
         ci.samples=VK_SAMPLE_COUNT_1_BIT;ci.tiling=VK_IMAGE_TILING_OPTIMAL;
@@ -37,7 +38,9 @@ struct Graphics {
         VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};fi.renderPass=pass;fi.attachmentCount=1;fi.pAttachments=&image.view;fi.width=W;fi.height=H;fi.layers=1;
         CHECK(c.CreateFramebuffer(c.device,&fi,nullptr,&frame));
         VkPipelineLayoutCreateInfo li{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};CHECK(c.CreatePipelineLayout(c.device,&li,nullptr,&layout));
-        VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};sm.codeSize=sizeof(viewport_vert_spv);sm.pCode=viewport_vert_spv;CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&vertex));
+        VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};sm.codeSize=sizeof(viewport_vert_spv);sm.pCode=viewport_vert_spv;
+        if(vertex_buffers2){sm.codeSize=sizeof(vertex_buffer_vert_spv);sm.pCode=vertex_buffer_vert_spv;}
+        CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&vertex));
         sm.codeSize=sizeof(viewport_frag_spv);sm.pCode=viewport_frag_spv;CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&fragment));
     }
     ~Graphics(){if(!c.idle)return;if(secondary)c.FreeCommandBuffers(c.device,c.pool,1,&secondary);if(pipeline)c.DestroyPipeline(c.device,pipeline,nullptr);if(vertex)c.DestroyShaderModule(c.device,vertex,nullptr);if(fragment)c.DestroyShaderModule(c.device,fragment,nullptr);if(layout)c.DestroyPipelineLayout(c.device,layout,nullptr);if(frame)c.DestroyFramebuffer(c.device,frame,nullptr);if(pass)c.DestroyRenderPass(c.device,pass,nullptr);}
@@ -51,6 +54,9 @@ struct Graphics {
         for(auto &s:stages){s.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;s.pName="main";}
         stages[0].stage=VK_SHADER_STAGE_VERTEX_BIT;stages[0].module=vertex;stages[1].stage=VK_SHADER_STAGE_FRAGMENT_BIT;stages[1].module=fragment;
         VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        VkVertexInputBindingDescription binding{0,2*sizeof(float),VK_VERTEX_INPUT_RATE_VERTEX};
+        VkVertexInputAttributeDescription attribute{0,0,VK_FORMAT_R32G32_SFLOAT,0};
+        if(vertex_buffers2){input.vertexBindingDescriptionCount=input.vertexAttributeDescriptionCount=1;input.pVertexBindingDescriptions=&binding;input.pVertexAttributeDescriptions=&attribute;}
         VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};assembly.topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};raster.polygonMode=VK_POLYGON_MODE_FILL;raster.lineWidth=1;
         VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};samples.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT;
@@ -121,6 +127,13 @@ struct Graphics {
         if(dynamic) {
             ((PFN_vkCmdSetViewport)proc("vkCmdSetViewport"))(draw,0,1,&viewport);
             ((PFN_vkCmdSetScissor)proc("vkCmdSetScissor"))(draw,0,1,&scissor);
+        }
+        Buffer positions(c,6*sizeof(float),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        if(vertex_buffers2) {
+            const float data[]={-1,-1,3,-1,-1,3};memcpy(positions.mapped,data,sizeof(data));positions.visibility(true);
+            VkDeviceSize offset=0;
+            const char *name=resolver?"vkCmdBindVertexBuffers2EXT":"vkCmdBindVertexBuffers2";
+            ((PFN_vkCmdBindVertexBuffers2)proc(name))(draw,0,1,&positions.handle,&offset,nullptr,nullptr);
         }
         Buffer indices(c,3*sizeof(uint16_t),VK_BUFFER_USAGE_INDEX_BUFFER_BIT,maintenance);
         if(maintenance) {

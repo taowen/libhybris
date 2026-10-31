@@ -92,6 +92,17 @@ the previous diagnostic APK; its private reports are then removed. Retain useful
 evidence outside the app first. Keep device records outside Git. Real application
 and game regression remains required after these targeted experiments.
 
+## Static vertex-buffer binding
+
+Both `vkCmdBindVertexBuffers2` names retain native dispatch when available. If
+neither core nor EXT entry exists, calls with null sizes and strides use Vulkan
+1.0 `vkCmdBindVertexBuffers` through the existing recording/resource hooks.
+Explicit sizes or dynamic strides fail recording with `VK_ERROR_FEATURE_NOT_PRESENT`;
+they are never silently discarded. This bounded compatibility entry does not
+advertise extended dynamic state or raise the reported Vulkan API version.
+The dynamic-rendering probe checks real vertex fetch through both names and
+resolvers, secondary recording, and rejection of unsupported parameters.
+
 ## Compatibility scratch ownership
 
 BC transfers use MaliBridge's bounded 1–16 MiB chunks, a 16 MiB command-buffer
