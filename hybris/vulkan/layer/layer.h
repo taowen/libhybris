@@ -15,6 +15,7 @@ struct hybris_layer_physical {
 /* Resolved once per device, before publication. Internal targets retain the
  * BC/shader/resource hooks; the command journal remains the outer wrapper. */
 #define HYBRIS_LAYER_RECORDING_PROCS(X) \
+    X(CmdBindPipeline, CmdBindPipeline) \
     X(CmdDraw, CmdDraw) \
     X(CmdDrawIndexed, CmdDrawIndexed) \
     X(CmdBindVertexBuffers, CmdBindVertexBuffers) \
@@ -28,11 +29,7 @@ struct hybris_layer_physical {
     X(CmdSetViewportWithCount, CmdSetViewportWithCount) \
     X(CmdSetViewportWithCountEXT, CmdSetViewportWithCountEXT) \
     X(CmdSetScissorWithCount, CmdSetScissorWithCount) \
-    X(CmdSetScissorWithCountEXT, CmdSetScissorWithCountEXT) \
-    X(CmdBeginQuery, CmdBeginQuery) \
-    X(CmdEndQuery, CmdEndQuery) \
-    X(CmdBeginQueryIndexedEXT, CmdBeginQueryIndexedEXT) \
-    X(CmdEndQueryIndexedEXT, CmdEndQueryIndexedEXT)
+    X(CmdSetScissorWithCountEXT, CmdSetScissorWithCountEXT)
 struct hybris_layer_command_dispatch {
 #define HYBRIS_RECORDING_FIELD(n, type) PFN_vk##type n;
     HYBRIS_LAYER_RECORDING_PROCS(HYBRIS_RECORDING_FIELD)
@@ -80,5 +77,7 @@ void hybris_layer_command_error(VkCommandBuffer command, VkResult error);
 VkResult hybris_layer_command_retain(VkCommandBuffer command, void *resource,
     void (*destroy)(void *resource));
 void hybris_layer_commands_release_device(VkDevice device);
+struct hybris_polygon_recording;
+struct hybris_polygon_recording *hybris_layer_polygon_recording(VkCommandBuffer command);
 PFN_vkVoidFunction hybris_layer_commands_proc(const char *name);
 #endif

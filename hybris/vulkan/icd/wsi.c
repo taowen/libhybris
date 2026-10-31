@@ -480,6 +480,15 @@ static VkResult image_limits(const struct hybris_icd_physical *context,
     return VK_SUCCESS;
 }
 
+VkResult hybris_icd_wsi_image_properties(VkPhysicalDevice physical, VkFormat format,
+    VkImageUsageFlags usage, VkImageFormatProperties *properties)
+{
+    struct hybris_icd_physical context;
+    if (!properties || !hybris_icd_lookup_physical(physical, &context))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    return image_limits(&context, physical, format, usage, properties);
+}
+
 static uint32_t surface_formats(const struct hybris_icd_physical *context,
     VkPhysicalDevice physical, VkSurfaceFormatKHR *formats)
 {
@@ -531,8 +540,10 @@ VkResult hybris_icd_wsi_capabilities(VkPhysicalDevice physical,
     struct surface_state *state = find_surface(surface);
     if (!state || state->window->ops->extent(state->window, &width, &height)) return VK_ERROR_SURFACE_LOST_KHR;
     capabilities->currentExtent = width && height ? (VkExtent2D){width, height} : (VkExtent2D){UINT32_MAX, UINT32_MAX};
-    capabilities->minImageExtent = (VkExtent2D){1, 1};
-    capabilities->maxImageExtent = maximum;
+    /* X11 fixes all three extents to this query's window-size snapshot.
+     * Wayland/headless report zero and let the application choose its size. */
+    capabilities->minImageExtent = width && height ? capabilities->currentExtent : (VkExtent2D){1, 1};
+    capabilities->maxImageExtent = width && height ? capabilities->currentExtent : maximum;
     capabilities->maxImageArrayLayers = 1;
     capabilities->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     capabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;

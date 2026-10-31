@@ -47,3 +47,9 @@ integration follow server/server_emu_compat.c and server/server_emu_shader.c
 at the same 95a1e600 commit. Copyright (C) 2026 ASEbrahim and MaliBridge
 contributors, GPL-3.0-or-later. Integration and diagnostics are modified here.
 Source-one blending is approximated by source zero, not fully emulated.
+
+The polygon-mode pipeline/index-stream implementation and GPU lines kernel
+follow server/server_emu_polygon.c, server/shaders/polygon/lines.comp and its
+generated server/polygon_spv.h at the same 95a1e600 commit. Copyright (C) 2026
+ASEbrahim and MaliBridge contributors, GPL-3.0-or-later. The layer's command
+journal, allocation, submission and hazard integration are modified here.

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "readback.h"
+#include "polygon_record.h"
 #include "memory_visibility.h"
 #include "application_policy.h"
 #include "scaled_vertex.h"
@@ -195,8 +196,7 @@ static VkResult VKAPI_CALL queue_submit(VkQueue queue, uint32_t count,
         if (result == VK_SUCCESS) result = publish(s);
         if (result != VK_SUCCESS) { destroy(s); return result; }
     }
-    VkResult result = ((PFN_vkQueueSubmit)hybris_layer_device_inner_proc(device.handle, "vkQueueSubmit"))(
-        queue, count, info, fence);
+    VkResult result=hybris_polygon_submit(queue,count,info,fence,(PFN_vkQueueSubmit)hybris_layer_device_inner_proc(device.handle,"vkQueueSubmit"));
     submitted(s, result);
     return result;
 }
@@ -217,7 +217,7 @@ static VkResult queue_submit2(VkQueue queue, uint32_t count, const VkSubmitInfo2
         if (result == VK_SUCCESS) result = publish(s);
         if (result != VK_SUCCESS) { destroy(s); return result; }
     }
-    VkResult result = ((PFN_vkQueueSubmit2)hybris_layer_device_inner_proc(device.handle, name))(queue, count, info, fence);
+    VkResult result=hybris_polygon_submit2(queue,count,info,fence,(PFN_vkQueueSubmit2)hybris_layer_device_inner_proc(device.handle,name));
     submitted(s, result);
     return result;
 }

@@ -16,6 +16,7 @@ public final class MainActivity extends Activity {
         TextView description = new TextView(this);
         description.setText("Runs directly on this phone's GPU. No Linux, Wine or root required. Each probe has its own native executable, controls, report and trace.\n\nMaliBridge by ASEbrahim · https://github.com/ASEbrahim/MaliBridge\nThis is an independent libhybris integration. GPL-3.0-or-later and component notices are included in the APK assets.");
         android.text.util.Linkify.addLinks(description, android.text.util.Linkify.WEB_URLS); content.addView(description);
+        addProbe(content, "Polygon line and point modes", PolygonProbeActivity.class);
         addProbe(content, "Dual-source blend compatibility", DualSourceProbeActivity.class);
         addProbe(content, "Indirect multi-draw compatibility", MultiDrawProbeActivity.class);
         addProbe(content, "Multi-viewport compatibility", MultiViewportProbeActivity.class);

@@ -12,6 +12,7 @@ Native format support takes precedence; forced emulation remains opt-in.
 | HYBRIS_BC_TRANSCODE | Native ETC2/EAC/ASTC for eligible sampled BC images | 0 |
 | HYBRIS_BC_TRANSCODE_QUALITY | auto; fast for mip levels of at least 1024x1024 texels | auto |
 | HYBRIS_VULKAN_COMPAT_UNUSED_BUILTINS | 1 | 0 |
+| HYBRIS_POLYGON_MODE | Missing-feature LINE/POINT index-stream variants; force is diagnostic-only | 0 |
 | HYBRIS_DUAL_SOURCE_BLEND | Missing-feature approximation: source-one blend factors use source zero; force is diagnostic-only | 0 |
 | HYBRIS_MULTI_DRAW_INDIRECT | Split indirect draws when native multiDrawIndirect is missing; force is diagnostic-only | 0 |
 | HYBRIS_MULTI_VIEWPORT | First-viewport approximation only when native multiViewport is missing; force is diagnostic-only | 0 |

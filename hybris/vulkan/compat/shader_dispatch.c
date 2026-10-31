@@ -79,6 +79,7 @@ int hybris_shader_device_proc_allowed(VkDevice handle, const char *name)
 {
     struct shader_device *device = find_device(handle);
     if(device && device->dual_src && !strcmp(name,"vkCmdSetColorBlendEquationEXT"))return 0;
+    if(device && device->polygon && !strcmp(name,"vkCmdSetPolygonModeEXT"))return 0;
     if (hybris_shader_command_allowed(name)) return 1;
     return !device || (!device->mask && !device->vertex_stores && !device->polygon && !device->dual_src);
 }
@@ -89,13 +90,7 @@ int hybris_shader_polygon_active(VkDevice handle)
 }
 int hybris_shader_polygon_emulated(VkPhysicalDevice physical)
 {
-    struct hybris_layer_physical owner;
-    if(!hybris_shader_enabled() || !hybris_layer_lookup_physical(physical,&owner)) return 0;
-    PFN_vkGetPhysicalDeviceFeatures query=(void*)owner.resolver(owner.instance,"vkGetPhysicalDeviceFeatures");
-    VkPhysicalDeviceFeatures native={0};
-    if(!query) return 0;
-    query(physical,&native);
-    return !native.fillModeNonSolid && native.drawIndirectFirstInstance;
+    return hybris_polygon_emulated(physical);
 }
 VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
     PFN_vkGetDeviceProcAddr resolver, PFN_vkGetPhysicalDeviceFormatProperties query,
@@ -360,6 +355,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
     struct pipeline_copy *copy, const VkAllocationCallbacks *allocator, const char **reason)
 {
     *reason = "unsupported pipeline state for experimental scaled conversion";
+    int polygon_point=device->polygon && info->pRasterizationState && info->pRasterizationState->polygonMode==VK_POLYGON_MODE_POINT;
     if(device->multi_viewport && info->pViewportState) {
         copy->viewport_state=*info->pViewportState;
         copy->viewport_state.viewportCount=hybris_multiviewport_count(0,0,copy->viewport_state.viewportCount);
@@ -378,7 +374,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
     /* These paths can ignore pVertexInputState entirely. Check them before
      * dereferencing it; dynamic input would also require command-time shader
      * variants, which this experimental pipeline-only fallback cannot supply. */
-    int point = device->point_size && hybris_point_size_pipeline(info);
+    int point = !polygon_point && device->point_size && hybris_point_size_pipeline(info);
     int inout = device->inout && hybris_inout_pipeline(info);
     int clip = device->clip && hybris_clip_pipeline(info);
     uint32_t clip_location = 0, clip_count = 0;
@@ -748,43 +744,17 @@ static VkResult attach_polygon(struct shader_device *device,
 {
     if (!device->polygon || !original->pRasterizationState ||
         original->pRasterizationState->polygonMode == VK_POLYGON_MODE_FILL) return VK_SUCCESS;
-    struct shader *vertex = NULL;
-    pthread_mutex_lock(&guard);
-    for (uint32_t i = 0; i < original->stageCount; ++i)
-        if (original->pStages[i].stage == VK_SHADER_STAGE_VERTEX_BIT) {
-            vertex = device->shaders;
-            while (vertex && vertex->handle != original->pStages[i].module) vertex = vertex->next;
-            break;
-        }
-    pthread_mutex_unlock(&guard);
-    /* Unsupported declarations/shaders use the original whole filled draw. */
-    if (!vertex || vertex->extensions) return VK_SUCCESS;
-    const struct hybris_polygon_layout *layout = hybris_polygon_layout_acquire(device->handle, original->layout);
-    if (!layout) return VK_SUCCESS;
-    struct hybris_bc_device *bc = hybris_bc_device_find(device->handle);
-    struct hybris_bc_layout *identity = NULL;
-    VkResult result = bc ? hybris_bc_layout_acquire(&bc->layouts, original->layout, &identity) : VK_ERROR_FEATURE_NOT_PRESENT;
-    struct hybris_polygon_pipeline *p = NULL;
-    if (result == VK_SUCCESS) {
-        VkGraphicsPipelineCreateInfo graphics = *changed;
-        VkPipelineRasterizationStateCreateInfo raster = *changed->pRasterizationState;
-        raster.polygonMode = original->pRasterizationState->polygonMode;
-        graphics.pRasterizationState = &raster;
-        result = hybris_polygon_pipeline_create(device->handle, device->resolver, &graphics,
-            &layout->info, layout->sets, vertex->code, vertex->size, allocator, &p);
+    struct hybris_polygon_pipeline *p=NULL;
+    VkResult result=hybris_polygon_pipeline_create(device->handle,device->resolver,changed,
+        original->pRasterizationState->polygonMode,allocator,&p);
+    if(result==VK_SUCCESS) {
+        p->filled=*handle;
+        hybris_polygon_pipeline_publish(p);
+        return VK_SUCCESS;
     }
-    if (result == VK_SUCCESS) {
-        /* The batch-created native filled handle is the application's handle.
-         * Preserve batch creation/cache semantics and own its lifetime. */
-        device->destroy_pipeline(device->handle, p->filled, allocator);
-        p->filled = *handle;
-        result = hybris_polygon_pipeline_publish(p, layout, &bc->layouts, identity);
-        if (result == VK_SUCCESS) return VK_SUCCESS;
-    }
-    if (p) { hybris_polygon_pipeline_destroy(p); *handle = VK_NULL_HANDLE; }
-    if (identity) hybris_bc_layout_release(&bc->layouts, identity);
-    hybris_polygon_layout_release(layout);
-    return result == VK_ERROR_FEATURE_NOT_PRESENT ? VK_SUCCESS : result;
+    if(p)hybris_polygon_pipeline_destroy(p);
+    if(result==VK_ERROR_FEATURE_NOT_PRESENT){hybris_polygon_note("unsupported pipeline drawn solid");return VK_SUCCESS;}
+    return result;
 }
 static void VKAPI_CALL destroy_pipeline(VkDevice handle,VkPipeline pipeline,
     const VkAllocationCallbacks *allocator)

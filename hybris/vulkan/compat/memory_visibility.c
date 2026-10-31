@@ -4,6 +4,7 @@
 #include "readback.h"
 #include "application_policy.h"
 #include "scaled_vertex.h"
+#include "shader_dispatch.h"
 #include "../layer/layer.h"
 #include <pthread.h>
 #include <string.h>
@@ -268,10 +269,14 @@ static VkResult VKAPI_CALL create_buffer(VkDevice handle, const VkBufferCreateIn
 {
     struct hybris_layer_device device;
     if (!hybris_layer_lookup_device(handle, &device)) return VK_ERROR_INITIALIZATION_FAILED;
+    VkBufferCreateInfo translated=*info;
+    if((info->usage&VK_BUFFER_USAGE_INDEX_BUFFER_BIT) && !(info->flags&(VK_BUFFER_CREATE_SPARSE_BINDING_BIT|VK_BUFFER_CREATE_PROTECTED_BIT)) && hybris_shader_polygon_active(handle) && info->size<=UINT64_MAX-3) {
+        translated.usage|=VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;translated.size=(info->size+3)&~UINT64_C(3);
+    }
     struct buffer *b = hybris_scaled_alloc(allocator, sizeof(*b), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!b) return VK_ERROR_OUT_OF_HOST_MEMORY;
     *b = (struct buffer){.device = handle, .device_generation = device.generation,
-        .size = info->size, .usage = info->usage, .custom_allocator = allocator != NULL};
+        .size = translated.size, .usage = translated.usage, .custom_allocator = allocator != NULL};
     if (allocator) b->allocator = *allocator;
     pthread_mutex_lock(&guard);
     if (next_generation == UINT64_MAX) {
@@ -282,7 +287,7 @@ static VkResult VKAPI_CALL create_buffer(VkDevice handle, const VkBufferCreateIn
     b->generation = ++next_generation;
     pthread_mutex_unlock(&guard);
     VkResult result = ((PFN_vkCreateBuffer)hybris_layer_device_inner_proc(handle,
-        "vkCreateBuffer"))(handle, info, allocator, out);
+        "vkCreateBuffer"))(handle, &translated, allocator, out);
     if (result != VK_SUCCESS) { hybris_scaled_free(allocator, b); return result; }
     b->handle = *out;
     pthread_mutex_lock(&guard);
