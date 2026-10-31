@@ -17,7 +17,7 @@ void hybris_polygon_record_reset(struct hybris_polygon_recording *s)
     const VkAllocationCallbacks *a=s->custom?&s->allocator:NULL;
     if(s->pre_pool)((PFN_vkDestroyCommandPool)s->resolver(s->device,"vkDestroyCommandPool"))(s->device,s->pre_pool,a);
     while(s->links){struct hybris_polygon_link *n=s->links->next;hybris_scaled_free(a,s->links);s->links=n;}
-    s->pre_pool=VK_NULL_HANDLE;s->edges=NULL;s->graphics=VK_NULL_HANDLE;s->index=VK_NULL_HANDLE;
+    s->pre_pool=VK_NULL_HANDLE;s->pre_command=VK_NULL_HANDLE;s->pre_open=s->has_prepass=0;s->edges=NULL;s->graphics=VK_NULL_HANDLE;s->index=VK_NULL_HANDLE;
     s->topology_known=s->restart_known=s->unknown_writes=0;
 }
 void hybris_polygon_record_index(VkCommandBuffer c,VkBuffer b,VkDeviceSize offset,VkDeviceSize size,VkIndexType type)
@@ -50,23 +50,41 @@ void hybris_polygon_record_execute(VkCommandBuffer c,uint32_t count,const VkComm
 uint32_t hybris_polygon_record_prepasses(VkCommandBuffer c,VkCommandBuffer *out,uint32_t capacity)
 {
     const struct hybris_polygon_recording *s=hybris_layer_polygon_recording(c);uint64_t count=0;if(!s)return 0;
-    for(const struct hybris_polygon_edges *e=s->edges;e;e=e->next)if(e->pre){if(out&&count<capacity)out[count]=e->pre;++count;}
+    if(s->has_prepass){if(s->pre_open)return UINT32_MAX;if(out&&count<capacity)out[count]=s->pre_command;++count;}
     for(const struct hybris_polygon_link *l=s->links;l;l=l->next)if(l->child) {
         const struct hybris_polygon_recording *child=hybris_layer_polygon_recording(l->child);
         if(!child||child->epoch!=l->epoch)return UINT32_MAX;
-        for(const struct hybris_polygon_edges *e=child->edges;e;e=e->next)if(e->pre){if(out&&count<capacity)out[count]=e->pre;++count;}
+        if(child->has_prepass){if(child->pre_open)return UINT32_MAX;if(out&&count<capacity)out[count]=child->pre_command;++count;}
     }
     return count>=UINT32_MAX?UINT32_MAX:(uint32_t)count;
 }
 static VkResult prepass(struct hybris_polygon_recording *s,VkCommandBuffer *out)
 {
+    if(s->pre_command){*out=s->pre_command;return s->pre_open?VK_SUCCESS:VK_ERROR_FEATURE_NOT_PRESENT;}
     const VkAllocationCallbacks *a=s->custom?&s->allocator:NULL;
-    if(!s->pre_pool){VkCommandPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,.queueFamilyIndex=s->family};
+    if(!s->pre_pool){
+        struct hybris_layer_device device;struct hybris_layer_physical physical;
+        if(!hybris_layer_lookup_device(s->device,&device)||!hybris_layer_lookup_physical(device.physical,&physical))return VK_ERROR_INITIALIZATION_FAILED;
+        PFN_vkGetPhysicalDeviceQueueFamilyProperties query=(void*)physical.resolver(physical.instance,"vkGetPhysicalDeviceQueueFamilyProperties");
+        uint32_t count=0;query(device.physical,&count,NULL);
+        if(s->family>=count)return VK_ERROR_FEATURE_NOT_PRESENT;
+        VkQueueFamilyProperties *families=hybris_scaled_alloc(a,(size_t)count*sizeof(*families),VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+        if(!families)return VK_ERROR_OUT_OF_HOST_MEMORY;
+        query(device.physical,&count,families);int compute=s->family<count && (families[s->family].queueFlags&VK_QUEUE_COMPUTE_BIT);
+        hybris_scaled_free(a,families);if(!compute)return VK_ERROR_FEATURE_NOT_PRESENT;
+        VkCommandPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,.queueFamilyIndex=s->family};
         VkResult r=((PFN_vkCreateCommandPool)s->resolver(s->device,"vkCreateCommandPool"))(s->device,&pool,a,&s->pre_pool);if(r)return r;}
     VkCommandBufferAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,.commandPool=s->pre_pool,.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,.commandBufferCount=1};
     VkResult r=((PFN_vkAllocateCommandBuffers)s->resolver(s->device,"vkAllocateCommandBuffers"))(s->device,&alloc,out);if(r)return r;
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    return ((PFN_vkBeginCommandBuffer)s->resolver(s->device,"vkBeginCommandBuffer"))(*out,&begin);
+    r=((PFN_vkBeginCommandBuffer)s->resolver(s->device,"vkBeginCommandBuffer"))(*out,&begin);
+    if(r==VK_SUCCESS){s->pre_command=*out;s->pre_open=1;}return r;
+}
+VkResult hybris_polygon_record_end(VkCommandBuffer c)
+{
+    struct hybris_polygon_recording *s=hybris_layer_polygon_recording(c);
+    if(!s || !s->pre_open)return VK_SUCCESS;
+    VkResult result=((PFN_vkEndCommandBuffer)s->resolver(s->device,"vkEndCommandBuffer"))(s->pre_command);s->pre_open=0;return result;
 }
 static PFN_vkVoidFunction promoted(const struct hybris_layer_device *d,const char *core,const char *extension)
 {PFN_vkVoidFunction p=d->resolver(d->handle,core);return p?p:d->resolver(d->handle,extension);}
@@ -102,14 +120,13 @@ static int draw_polygon(VkCommandBuffer c,const struct hybris_layer_device *d,Vk
             uint64_t base=first_byte/alignment*alignment,range=(first_byte-base+(uint64_t)count*index_size+3)&~UINT64_C(3);
             if(range>bc->properties.limits.maxStorageBufferRange||first_byte-base>UINT32_MAX)goto unsupported;
             if(hybris_memory_visibility_storage_buffer(d,s->index,base,range,&source)!=VK_SUCCESS)goto unsupported;
-            byte_offset=(uint32_t)(first_byte-base);VkResult result=prepass(s,&pre);if(result){hybris_polygon_pipeline_release(p);hybris_layer_command_error(c,result);return 0;}
+            byte_offset=(uint32_t)(first_byte-base);VkResult result=prepass(s,&pre);if(result){if(result!=VK_ERROR_FEATURE_NOT_PRESENT)hybris_layer_command_error(c,result);goto unsupported;}
         }
         struct hybris_polygon_edges *edges=NULL;
         VkResult r=hybris_polygon_edges_create(bc,p,count,shape,indexed?&source:NULL,byte_offset,index_size,restart,pre,a,&edges);
         if(r!=VK_SUCCESS){if(r!=VK_ERROR_FEATURE_NOT_PRESENT)hybris_layer_command_error(c,r);goto unsupported;}
-        if(pre){r=((PFN_vkEndCommandBuffer)d->resolver(d->handle,"vkEndCommandBuffer"))(pre);if(r){hybris_polygon_edges_destroy(edges);hybris_layer_command_error(c,r);return 0;}}
         r=hybris_layer_command_retain(c,edges,hybris_polygon_edges_destroy);if(r){hybris_polygon_edges_destroy(edges);hybris_layer_command_error(c,r);return 0;}
-        edges->pre=pre;edges->source=indexed?s->index:VK_NULL_HANDLE;edges->next=s->edges;s->edges=edges;
+        if(pre)s->has_prepass=1;edges->pre=pre;edges->source=indexed?s->index:VK_NULL_HANDLE;edges->next=s->edges;s->edges=edges;
         ((PFN_vkCmdBindPipeline)d->resolver(d->handle,"vkCmdBindPipeline"))(c,VK_PIPELINE_BIND_POINT_GRAPHICS,p->variant);
         if(p->dynamic_topology)set_topology(c,VK_PRIMITIVE_TOPOLOGY_LINE_LIST);if(p->dynamic_restart)set_restart(c,VK_FALSE);
         ((PFN_vkCmdBindIndexBuffer)d->resolver(d->handle,"vkCmdBindIndexBuffer"))(c,edges->buffer,0,VK_INDEX_TYPE_UINT32);

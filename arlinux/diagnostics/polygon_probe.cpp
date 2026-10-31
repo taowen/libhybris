@@ -60,7 +60,7 @@ struct Graphics {
         VkPipeline pipeline;CHECK(create(c.device,VK_NULL_HANDLE,1,&pi,nullptr,&pipeline));
         if(memcmp(&raster,&before_raster,sizeof(raster))||memcmp(&assembly,&before_assembly,sizeof(assembly)))throw std::runtime_error("Caller pipeline state changed");return pipeline;
     }
-    std::vector<uint8_t> render(bool reference,VkPolygonMode wanted,VkPrimitiveTopology topology,unsigned index_size,bool secondary,int upload,int resolver,bool restored=false,bool restart=false,bool rejected=false) {
+    std::vector<uint8_t> render(bool reference,VkPolygonMode wanted,VkPrimitiveTopology topology,unsigned index_size,bool secondary,int upload,int resolver,bool restored=false,bool restart=false,bool rejected=false,bool synchronized=false) {
         // The same geometry/vertex IDs are fed to both the emulated and explicit native reference paths.
         const std::array<float,2> positions[]={{{-0.71875f,-0.71875f}},{{0.71875f,-0.71875f}},{{-0.71875f,0.71875f}},{{0.71875f,0.71875f}}};
         std::vector<uint32_t> ordinals=topology==VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST?std::vector<uint32_t>{0,1,2,2,1,3}:topology==VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP?std::vector<uint32_t>{0,1,2,3}:std::vector<uint32_t>{0,1,3,2};
@@ -102,7 +102,18 @@ struct Graphics {
         VkMemoryBarrier host{VK_STRUCTURE_TYPE_MEMORY_BARRIER};host.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;host.dstAccessMask=VK_ACCESS_HOST_READ_BIT;c.CmdPipelineBarrier(image.command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,1,&host,0,nullptr,0,nullptr);
         VkResult end=c.EndCommandBuffer(image.command);
         if(rejected){if(end!=VK_ERROR_FEATURE_NOT_PRESENT)throw std::runtime_error("Primary/secondary index-write hazard was not rejected");}
-        else {CHECK(end);VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};CHECK(c.CreateFence(c.device,&fence,nullptr,&image.fence));VkCommandBuffer commands[]={init,image.command};VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};submit.commandBufferCount=init?2:1;submit.pCommandBuffers=init?commands:commands+1;CHECK(c.QueueSubmit(c.queue,1,&submit,image.fence));c.idle=false;CHECK(c.WaitForFences(c.device,1,&image.fence,VK_TRUE,UINT64_C(10000000000)));c.idle=true;output.visibility(false);}
+        else {CHECK(end);VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};CHECK(c.CreateFence(c.device,&fence,nullptr,&image.fence));VkCommandBuffer commands[]={init,image.command};VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};submit.commandBufferCount=init?2:1;submit.pCommandBuffers=init?commands:commands+1;VkSemaphore semaphore=VK_NULL_HANDLE;
+            if(synchronized){
+                auto create_semaphore=(PFN_vkCreateSemaphore)c.gdpa(c.device,"vkCreateSemaphore");VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};CHECK(create_semaphore(c.device,&si,nullptr,&semaphore));
+                VkPipelineStageFlags wait=VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;uint32_t mask=1,device_index=0;
+                VkDeviceGroupSubmitInfo group{VK_STRUCTURE_TYPE_DEVICE_GROUP_SUBMIT_INFO};group.commandBufferCount=1;group.pCommandBufferDeviceMasks=&mask;group.waitSemaphoreCount=1;group.pWaitSemaphoreDeviceIndices=&device_index;
+                VkProtectedSubmitInfo prefix{VK_STRUCTURE_TYPE_PROTECTED_SUBMIT_INFO};prefix.pNext=&group;
+                VkSubmitInfo submits[2]{};submits[0].sType=submits[1].sType=VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                submits[0].commandBufferCount=1;submits[0].pCommandBuffers=&init;submits[0].signalSemaphoreCount=1;submits[0].pSignalSemaphores=&semaphore;
+                submits[1].pNext=&prefix;submits[1].commandBufferCount=1;submits[1].pCommandBuffers=&image.command;submits[1].waitSemaphoreCount=1;submits[1].pWaitSemaphores=&semaphore;submits[1].pWaitDstStageMask=&wait;
+                CHECK(c.QueueSubmit(c.queue,2,submits,image.fence));
+                if(group.commandBufferCount!=1 || group.pCommandBufferDeviceMasks!=&mask || mask!=1 || prefix.pNext!=&group || wait!=VK_PIPELINE_STAGE_VERTEX_INPUT_BIT || submits[1].pCommandBuffers!=&image.command)throw std::runtime_error("Caller submit state changed");
+            }else CHECK(c.QueueSubmit(c.queue,1,&submit,image.fence));c.idle=false;CHECK(c.WaitForFences(c.device,1,&image.fence,VK_TRUE,UINT64_C(10000000000)));c.idle=true;if(semaphore)((PFN_vkDestroySemaphore)c.gdpa(c.device,"vkDestroySemaphore"))(c.device,semaphore,nullptr);output.visibility(false);}
         std::vector<uint8_t> pixels((uint8_t*)output.mapped,(uint8_t*)output.mapped+W*H*4);
         auto reset_pool=(PFN_vkResetCommandPool)c.gdpa(c.device,"vkResetCommandPool");CHECK(reset_pool(c.device,c.pool,0));
         c.FreeCommandBuffers(c.device,c.pool,1,&image.command);image.command=VK_NULL_HANDLE;if(sub)c.FreeCommandBuffers(c.device,c.pool,1,&sub);if(init)c.FreeCommandBuffers(c.device,c.pool,1,&init);
@@ -125,6 +136,9 @@ std::string run(const std::string &directory,const std::string &mode,bool featur
         auto reference=graphics.render(true,VK_POLYGON_MODE_LINE,VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,4,false,2,0);
         auto actual=graphics.render(false,VK_POLYGON_MODE_LINE,VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,4,false,2,0);
         check(actual==reference,"GPU upload earlier in the same submission precedes index prepass");
+        reference=graphics.render(true,VK_POLYGON_MODE_LINE,VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,4,false,2,0,false,false,false,true);
+        actual=graphics.render(false,VK_POLYGON_MODE_LINE,VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,4,false,2,0,false,false,false,true);
+        check(actual==reference,"semaphore wait, device-group prefix and caller submit state preserved");
         reference=graphics.render(true,VK_POLYGON_MODE_LINE,VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,4,false,0,0,true);actual=graphics.render(false,VK_POLYGON_MODE_LINE,VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,4,false,0,0,true);
         check(actual==reference,"original index binding restored for following filled draw");
         reference=graphics.render(true,VK_POLYGON_MODE_LINE,VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,2,false,0,0,false,true);actual=graphics.render(false,VK_POLYGON_MODE_LINE,VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,2,false,0,0,false,true);

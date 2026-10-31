@@ -359,6 +359,8 @@ static VkResult VKAPI_CALL end_command(VkCommandBuffer command)
     struct hybris_layer_device device;
     if (!hybris_layer_command_device(command, &device)) return VK_ERROR_INITIALIZATION_FAILED;
     PFN_vkEndCommandBuffer function = (PFN_vkEndCommandBuffer)inner(&device, "vkEndCommandBuffer");
+    VkResult pre=hybris_polygon_record_end(command);
+    if(pre!=VK_SUCCESS)hybris_layer_command_error(command,pre);
     VkResult result = function(command);
     if (result != VK_SUCCESS) return result;
     pthread_mutex_lock(&guard);

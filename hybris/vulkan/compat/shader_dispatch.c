@@ -79,6 +79,7 @@ int hybris_shader_device_proc_allowed(VkDevice handle, const char *name)
 {
     struct shader_device *device = find_device(handle);
     if(device && device->dual_src && !strcmp(name,"vkCmdSetColorBlendEquationEXT"))return 0;
+    if(device && device->polygon && !strcmp(name,"vkCmdSetPolygonModeEXT"))return 0;
     if (hybris_shader_command_allowed(name)) return 1;
     return !device || (!device->mask && !device->vertex_stores && !device->polygon && !device->dual_src);
 }

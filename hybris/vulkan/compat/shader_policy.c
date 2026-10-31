@@ -47,7 +47,8 @@ VkResult hybris_shader_prepare_device(VkPhysicalDevice physical, const VkDeviceC
         VkBool32 enabled = VK_FALSE;
         switch (node->sType) {
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT:
-            enabled=hybris_dual_source_active(physical) && ((const VkPhysicalDeviceExtendedDynamicState3FeaturesEXT*)node)->extendedDynamicState3ColorBlendEquation;
+            enabled=(hybris_dual_source_active(physical) && ((const VkPhysicalDeviceExtendedDynamicState3FeaturesEXT*)node)->extendedDynamicState3ColorBlendEquation) ||
+                (hybris_shader_polygon_emulated(physical) && ((const VkPhysicalDeviceExtendedDynamicState3FeaturesEXT*)node)->extendedDynamicState3PolygonMode);
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
             enabled = ((const VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *)node)->vertexInputDynamicState;
@@ -96,6 +97,7 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
         switch (node->sType) {
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT:
             if(hybris_dual_source_active(physical))((VkPhysicalDeviceExtendedDynamicState3FeaturesEXT*)node)->extendedDynamicState3ColorBlendEquation=VK_FALSE;
+            if(hybris_shader_polygon_emulated(physical))((VkPhysicalDeviceExtendedDynamicState3FeaturesEXT*)node)->extendedDynamicState3PolygonMode=VK_FALSE;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
             ((VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *)node)->vertexInputDynamicState = VK_FALSE;

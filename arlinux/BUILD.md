@@ -255,7 +255,7 @@ culling, polygon depth bias, geometry/tessellation/mesh shaders, indirect draws
 and dynamic polygon mode are not emulated. Shared strip/fan vertices can be
 processed once rather than once per triangle in POINT mode. Unsupported draws
 use the full filled draw and log a bounded warning. Indexed LINE also uses
-filled fallback for simultaneous-use recordings, index writes/dispatches
+filled fallback for queues without compute, simultaneous-use recordings, index writes/dispatches
 earlier in that recording, fan/list restart and negative vertex offsets with
 strip restart. If a primary writes a secondary's index-prepass input before
 executing it, EndCommandBuffer fails explicitly instead of submitting stale
@@ -266,7 +266,8 @@ The independent probe accepts `polygon-native`, `polygon-normal`,
 `polygon-force` and `polygon-off`. It compares exact native-reference pixels
 for triangle lists/strips/fans, LINE/POINT, indexed/non-indexed, 16/32-bit indices,
 secondary command buffers, descriptor/push-constant state and GDPA/GIPA. It also
-checks same-submission uploads, index-binding restoration, strip restart and
+checks same-submission uploads, semaphore/device-group submission, index-binding
+restoration, strip restart and
 explicit primary/secondary write-hazard rejection. Native/disabled modes use
 legal explicit line/point references on GPUs missing fillModeNonSolid. These
 checks do not establish native polygon-mode conformance or game acceptance.

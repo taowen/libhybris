@@ -27,8 +27,11 @@ int hybris_polygon_emulated(VkPhysicalDevice physical)
 }
 void hybris_polygon_note(const char *reason)
 {
-    static _Atomic unsigned reports;
-    if(atomic_fetch_add(&reports,1)<32)fprintf(stderr,"HYBRIS_POLYGON %s\n",reason);
+    static pthread_mutex_t guard=PTHREAD_MUTEX_INITIALIZER;
+    static const char *reported[32];static unsigned count;
+    pthread_mutex_lock(&guard);for(unsigned i=0;i<count;++i)if(!strcmp(reported[i],reason)){pthread_mutex_unlock(&guard);return;}
+    if(count==32){pthread_mutex_unlock(&guard);return;}reported[count++]=reason;pthread_mutex_unlock(&guard);
+    fprintf(stderr,"HYBRIS_POLYGON %s\n",reason);
 }
 void hybris_polygon_pipeline_destroy(struct hybris_polygon_pipeline *p)
 {
