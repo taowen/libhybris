@@ -1,0 +1,66 @@
+; SPDX-License-Identifier: Apache-2.0
+; Sampled pixel masked by specialization-dependent and ordinary composites.
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+OpDecorate %enabled SpecId 0
+OpDecorate %secondary SpecId 1
+OpDecorate %texture DescriptorSet 0
+OpDecorate %texture Binding 0
+OpDecorate %Output Block
+OpMemberDecorate %Output 0 Offset 0
+OpMemberDecorate %Output 1 Offset 16
+OpMemberDecorate %Output 2 Offset 32
+OpDecorate %output DescriptorSet 0
+OpDecorate %output Binding 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%bool = OpTypeBool
+%uint = OpTypeInt 32 0
+%float = OpTypeFloat 32
+%v2f = OpTypeVector %float 2
+%v4f = OpTypeVector %float 4
+%v4u = OpTypeVector %uint 4
+%v4b = OpTypeVector %bool 4
+%u0 = OpConstant %uint 0
+%u1 = OpConstant %uint 1
+%u2 = OpConstant %uint 2
+%zero = OpConstant %float 0
+%half = OpConstant %float 0.5
+%uv = OpConstantComposite %v2f %half %half
+%zero4 = OpConstantComposite %v4f %zero %zero %zero %zero
+%true = OpConstantTrue %bool
+%false = OpConstantFalse %bool
+%enabled = OpSpecConstantFalse %bool
+%secondary = OpSpecConstantTrue %bool
+%inverse = OpSpecConstantOp %bool LogicalNot %enabled
+%mask0 = OpSpecConstantComposite %v4b %enabled %secondary %enabled %true
+%mask1 = OpSpecConstantComposite %v4b %enabled %inverse %secondary %false
+%ordinary = OpConstantComposite %v4b %true %false %true %false
+%image = OpTypeImage %float 2D 0 0 0 1 Unknown
+%sampled = OpTypeSampledImage %image
+%imageptr = OpTypePointer UniformConstant %sampled
+%texture = OpVariable %imageptr UniformConstant
+%Output = OpTypeStruct %v4u %v4u %v4u
+%outptr = OpTypePointer StorageBuffer %Output
+%wordptr = OpTypePointer StorageBuffer %v4u
+%output = OpVariable %outptr StorageBuffer
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%tex = OpLoad %sampled %texture
+%pixel = OpImageSampleExplicitLod %v4f %tex %uv Lod %zero
+%masked0 = OpSelect %v4f %mask0 %pixel %zero4
+%masked1 = OpSelect %v4f %mask1 %pixel %zero4
+%masked2 = OpSelect %v4f %ordinary %pixel %zero4
+%bits0 = OpBitcast %v4u %masked0
+%bits1 = OpBitcast %v4u %masked1
+%bits2 = OpBitcast %v4u %masked2
+%dst0 = OpAccessChain %wordptr %output %u0
+%dst1 = OpAccessChain %wordptr %output %u1
+%dst2 = OpAccessChain %wordptr %output %u2
+OpStore %dst0 %bits0
+OpStore %dst1 %bits1
+OpStore %dst2 %bits2
+OpReturn
+OpFunctionEnd

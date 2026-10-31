@@ -12,6 +12,7 @@ Native format support takes precedence; forced emulation remains opt-in.
 | HYBRIS_BC_TRANSCODE | Native ETC2/EAC/ASTC for eligible sampled BC images | 0 |
 | HYBRIS_BC_TRANSCODE_QUALITY | auto; fast for mip levels of at least 1024x1024 texels | auto |
 | HYBRIS_VULKAN_COMPAT_UNUSED_BUILTINS | 1 | 0 |
+| HYBRIS_MALI_SPEC_CONSTANTS | Specialization-composite normalization on Arm GPUs; force is diagnostic-only | 0 |
 | HYBRIS_VULKAN_COMPAT_POINT_SIZE | 1 | 0 |
 | HYBRIS_VULKAN_COMPAT_INOUT | 1 | 0 |
 | HYBRIS_VULKAN_COMPAT_VERTEX_STORES | 1, restricted to the inspected driver | 0 |

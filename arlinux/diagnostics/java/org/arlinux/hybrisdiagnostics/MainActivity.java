@@ -18,6 +18,7 @@ public final class MainActivity extends Activity {
         android.text.util.Linkify.addLinks(description, android.text.util.Linkify.WEB_URLS); content.addView(description);
         addProbe(content, "BC textures", BcProbeActivity.class);
         addProbe(content, "Robustness2", RobustnessProbeActivity.class);
+        addProbe(content, "Mali specialization constants", SpecConstantsProbeActivity.class);
     }
     private void addProbe(LinearLayout content, String label, Class<? extends Activity> activity) {
         Button button = new Button(this); button.setText(label);

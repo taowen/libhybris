@@ -25,3 +25,8 @@ The robustness2 policy and null descriptor implementation in ../robustness2.c,
 95a1e600a51299294e06bb09db2db8cc509fe6a3 (server/server_emu.c,
 server/server_instance.c, server/server_nulldesc.c and server/nd_map.h), under
 GPL-3.0-or-later. They are compatibility approximations, not conformance claims.
+
+The specialization-composite normalization in ../spirv_mali.c is adapted from
+MaliBridge server/server_spvfix.c at the same 95a1e600 commit and the proposed
+port in taowen/libhybris PR #2. Copyright (C) 2026 ASEbrahim and MaliBridge
+contributors, GPL-3.0-or-later. Integration and diagnostics are modified here.

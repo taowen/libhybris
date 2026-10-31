@@ -36,11 +36,28 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
             words = struct.unpack('<'+'I'*(spv.stat().st_size//4), spv.read_bytes())
             (work/(name+'.inc')).write_text('static const uint32_t '+name+'_spv[] = {'+
                 ','.join(hex(word) for word in words)+'};\n')
+        spec = work/'spec_constants.spv'
+        subprocess.run([str(shader_tools/'spirv-as'), '--target-env', 'vulkan1.1',
+                        str(recipe/'spec_constants.spvasm'), '-o', str(spec)], check=True)
+        subprocess.run([str(shader_tools/'spirv-val'), '--target-env', 'vulkan1.1', str(spec)], check=True)
+        reference = list(struct.unpack('<'+'I'*(spec.stat().st_size//4), spec.read_bytes()))
+        application = list(reference)
+        at = 5
+        while at < len(application):
+            length, opcode = application[at] >> 16, application[at] & 0xffff
+            # Historical application form, consumed only by the enabled repair
+            # route. Native/disabled routes use the validator-checked reference.
+            if opcode == 51:
+                application[at] = (length << 16) | 44
+            at += length
+        (work/'spec_constants.inc').write_text(''.join(
+            'static const uint32_t '+name+'[] = {'+','.join(hex(word) for word in words)+'};\n'
+            for name, words in (('spec_reference', reference), ('spec_application', application))))
         strip = ndk/'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
         sha = lambda file: hashlib.sha256(file.read_bytes()).hexdigest()
         probes = {}
         executables = []
-        for name in ('bc', 'robustness'):
+        for name in ('bc', 'robustness', 'spec_constants'):
             executable = work/('libhybris_'+name+'_probe.so')
             subprocess.run([str(compiler)+'++', *flags, '-std=gnu++17', '-I'+str(work),
                             '-pie', '-static-libstdc++', str(recipe/(name+'_probe.cpp')), '-ldl', '-llog',

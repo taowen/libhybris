@@ -10,5 +10,6 @@
         </activity>
         <activity android:name=".BcProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".RobustnessProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
+        <activity android:name=".SpecConstantsProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
     </application>
 </manifest>

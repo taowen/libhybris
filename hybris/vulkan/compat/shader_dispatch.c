@@ -5,6 +5,7 @@
 #include "scaled_vertex.h"
 #include "scaled_formats.h"
 #include "spirv_entry.h"
+#include "spirv_mali.h"
 #include "shader_cleanup.h"
 #include "spirv_builtins.h"
 #include "point_size.h"
@@ -36,6 +37,7 @@ struct shader_device {
     PFN_vkCreateShaderModule create_shader;
     PFN_vkDestroyShaderModule destroy_shader;
     PFN_vkCreateGraphicsPipelines create_pipelines;
+    PFN_vkCreateComputePipelines create_compute;
     PFN_vkDestroyPipeline destroy_pipeline;
     PFN_vkGetDeviceProcAddr resolver;
     unsigned mask;
@@ -45,6 +47,8 @@ struct shader_device {
     int cull;
     int vertex_stores;
     int polygon;
+    int mali_spec;
+    _Atomic unsigned spec_changes;
     VkAllocationCallbacks allocator;
     int custom;
     struct shader *shaders;
@@ -56,7 +60,7 @@ static _Atomic unsigned point_reports;
 int hybris_shader_enabled(void)
 {
     return hybris_scaled_enabled() || hybris_point_size_enabled() ||
-        hybris_inout_enabled() || hybris_clip_enabled();
+        hybris_inout_enabled() || hybris_clip_enabled() || hybris_mali_spec_enabled();
 }
 static struct shader_device *find_device(VkDevice handle)
 {
@@ -102,6 +106,8 @@ VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
         (PFN_vkCreateShaderModule)resolver(handle, "vkCreateShaderModule");
     device->destroy_shader = (PFN_vkDestroyShaderModule)resolver(handle, "vkDestroyShaderModule");
     device->create_pipelines = (PFN_vkCreateGraphicsPipelines)resolver(handle, "vkCreateGraphicsPipelines");
+    device->mali_spec=hybris_mali_spec_active(physical);
+    device->create_compute=(PFN_vkCreateComputePipelines)resolver(handle,"vkCreateComputePipelines");
     device->destroy_pipeline = (PFN_vkDestroyPipeline)resolver(handle, "vkDestroyPipeline");
     device->resolver = resolver;
     VkBool32 polygon_requested=requested->pEnabledFeatures ? requested->pEnabledFeatures->fillModeNonSolid : VK_FALSE;
@@ -136,6 +142,7 @@ void hybris_shader_device_destroy(VkDevice handle)
     if (device) *link = device->next;
     pthread_mutex_unlock(&guard);
     if (!device) return;
+    if(device->spec_changes)fprintf(stderr,"HYBRIS_MALI_SPEC_CONSTANTS total=%u\n",atomic_load(&device->spec_changes));
     while (device->shaders) {
         struct shader *shader = device->shaders;
         device->shaders = shader->next;
@@ -149,7 +156,7 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
     struct shader_device *device = find_device(handle);
     if (!device) return VK_ERROR_INITIALIZATION_FAILED;
     if (!device->mask && !device->point_size && !device->inout &&
-        !device->clip && !device->cull && !device->vertex_stores && !device->polygon)
+        !device->clip && !device->cull && !device->vertex_stores && !device->polygon && !device->mali_spec)
         return device->create_shader(handle, info, allocator, module);
     struct shader *shader = hybris_scaled_alloc(allocator, sizeof(*shader), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!shader) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -163,6 +170,14 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
     memcpy(shader->code, info->pCode, info->codeSize);
     VkShaderModuleCreateInfo created = *info;
     VkResult result = VK_SUCCESS;
+    if(device->mali_spec) {
+        unsigned changed=0;
+        result=hybris_spirv_mali_spec_constants(shader->code,shader->size,allocator,&changed);
+        if(result!=VK_SUCCESS){free_shader(shader);return result;}
+        created.pCode=shader->code;
+        if(changed && !atomic_fetch_add(&device->spec_changes,changed))
+            fprintf(stderr,"HYBRIS_MALI_SPEC_CONSTANTS first=%u\n",changed);
+    }
     uint32_t *cleaned = NULL;
     size_t cleaned_size = 0;
     unsigned removed = 0;
@@ -829,11 +844,46 @@ done:
     hybris_scaled_free(allocator, changed);
     return result;
 }
+static VkResult VKAPI_CALL create_compute_pipelines(VkDevice handle,VkPipelineCache cache,uint32_t count,
+    const VkComputePipelineCreateInfo *infos,const VkAllocationCallbacks *allocator,VkPipeline *pipelines)
+{
+    struct shader_device *device=find_device(handle);
+    if(!device)return VK_ERROR_INITIALIZATION_FAILED;
+    int needs_copy=0;
+    if(device->mali_spec)for(uint32_t i=0;i<count;++i)
+        for(const VkBaseInStructure *node=infos[i].stage.module?NULL:infos[i].stage.pNext;node;node=node->pNext)
+            needs_copy|=node->sType==VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    if(!needs_copy)return device->create_compute(handle,cache,count,infos,allocator,pipelines);
+    if(count>SIZE_MAX/sizeof(*infos) || count>SIZE_MAX/sizeof(VkShaderModule))return VK_ERROR_OUT_OF_HOST_MEMORY;
+    VkComputePipelineCreateInfo *copy=hybris_scaled_alloc(allocator,(size_t)count*sizeof(*copy),VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+    VkShaderModule *owned=hybris_scaled_alloc(allocator,(size_t)count*sizeof(*owned),VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+    VkResult result=VK_ERROR_OUT_OF_HOST_MEMORY;
+    if(owned)memset(owned,0,(size_t)count*sizeof(*owned));
+    for(uint32_t i=0;i<count;++i)pipelines[i]=VK_NULL_HANDLE;
+    if(!copy || !owned)goto done;
+    memcpy(copy,infos,(size_t)count*sizeof(*copy));
+    for(uint32_t i=0;i<count;++i) {
+        if(copy[i].stage.module || !copy[i].stage.pNext)continue;
+        const VkBaseInStructure *node=copy[i].stage.pNext;
+        /* Keep the same supported inline-chain contract as graphics. */
+        if(node->sType!=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO){result=VK_ERROR_FEATURE_NOT_PRESENT;goto done;}
+        VkShaderModuleCreateInfo module=*(const VkShaderModuleCreateInfo*)node;module.pNext=NULL;
+        result=create_shader(handle,&module,allocator,&owned[i]);
+        if(result!=VK_SUCCESS)goto done;
+        copy[i].stage.module=owned[i];copy[i].stage.pNext=node->pNext;
+    }
+    result=device->create_compute(handle,cache,count,copy,allocator,pipelines);
+done:
+    if(owned)for(uint32_t i=0;i<count;++i)if(owned[i])destroy_shader(handle,owned[i],allocator);
+    hybris_scaled_free(allocator,owned);hybris_scaled_free(allocator,copy);
+    return result;
+}
 PFN_vkVoidFunction hybris_shader_proc(const char *name)
 {
     if (!hybris_shader_enabled()) return NULL;
     if (!strcmp(name, "vkCreateShaderModule")) return (PFN_vkVoidFunction)create_shader;
     if (!strcmp(name, "vkDestroyShaderModule")) return (PFN_vkVoidFunction)destroy_shader;
+    if (!strcmp(name, "vkCreateComputePipelines")) return (PFN_vkVoidFunction)create_compute_pipelines;
     if (!strcmp(name, "vkCreateGraphicsPipelines")) return (PFN_vkVoidFunction)create_pipelines;
     if (!strcmp(name, "vkDestroyPipeline")) return (PFN_vkVoidFunction)destroy_pipeline;
     return NULL;
