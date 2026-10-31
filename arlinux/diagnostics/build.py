@@ -28,7 +28,7 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
         assets = work/'assets'
         assets.mkdir()
         shader_tools = ndk/'shader-tools/linux-x86_64'
-        for name in ('sample.comp', 'robust_null.comp', 'robust_buffer.comp', 'robust_image.comp', 'viewport.vert', 'viewport.frag', 'multidraw.vert', 'multidraw.frag', 'multidraw_drawid.vert', 'dual_single.frag', 'dual_pair.frag', 'dual_extra.frag', 'dual_full.frag', 'dual_array.frag', 'polygon.vert', 'polygon.frag', 'inout.vert', 'inout.frag', 'distance_clip.vert', 'distance_cull.vert', 'distance_both.vert', 'distance.frag', 'distance_read.frag'):
+        for name in ('sample.comp', 'robust_null.comp', 'robust_buffer.comp', 'robust_image.comp', 'viewport.vert', 'viewport.frag', 'multidraw.vert', 'multidraw.frag', 'multidraw_drawid.vert', 'dual_single.frag', 'dual_pair.frag', 'dual_extra.frag', 'dual_full.frag', 'dual_array.frag', 'polygon.vert', 'polygon.frag', 'inout.vert', 'inout.frag', 'distance_clip.vert', 'distance_cull.vert', 'distance_both.vert', 'distance.frag', 'distance_read.frag', 'distance_gs.vert', 'distance_point.geom'):
             filename = name
             name = name.replace('.', '_') if not name.endswith('.comp') else name[:-5]
             spv = work/(name+'.spv')
@@ -38,6 +38,13 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
             words = struct.unpack('<'+'I'*(spv.stat().st_size//4), spv.read_bytes())
             (work/(name+'.inc')).write_text('static const uint32_t '+name+'_spv[] = {'+
                 ','.join(hex(word) for word in words)+'};\n')
+        geometry = work/'distance_gs.spv'
+        subprocess.run([str(shader_tools/'spirv-as'), '--target-env', 'vulkan1.1',
+                        str(recipe/'distance_gs.spvasm'), '-o', str(geometry)], check=True)
+        subprocess.run([str(shader_tools/'spirv-val'), '--target-env', 'vulkan1.1', str(geometry)], check=True)
+        geometry_words = struct.unpack('<'+'I'*(geometry.stat().st_size//4), geometry.read_bytes())
+        (work/'distance_gs.inc').write_text('static const uint32_t distance_gs_spv[] = {'+
+            ','.join(hex(word) for word in geometry_words)+'};\n')
         spec = work/'spec_constants.spv'
         subprocess.run([str(shader_tools/'spirv-as'), '--target-env', 'vulkan1.1',
                         str(recipe/'spec_constants.spvasm'), '-o', str(spec)], check=True)

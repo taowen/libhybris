@@ -5,6 +5,10 @@
 #include "distance_both_vert.inc"
 #include "distance_frag.inc"
 #include "distance_read_frag.inc"
+#include "distance_gs_vert.inc"
+#include "distance_gs.inc"
+#include "distance_point_geom.inc"
+#include "viewport_frag.inc"
 using namespace diagnostics;
 namespace {
 constexpr uint32_t W=32,H=16;
@@ -12,7 +16,7 @@ struct Graphics {
     Context &c;ImageResources image;
     VkRenderPass pass=VK_NULL_HANDLE;VkFramebuffer frame=VK_NULL_HANDLE;
     VkPipelineLayout layout=VK_NULL_HANDLE;VkPipeline pipeline=VK_NULL_HANDLE;
-    VkShaderModule vertex=VK_NULL_HANDLE,fragment=VK_NULL_HANDLE;
+    VkShaderModule vertex=VK_NULL_HANDLE,fragment=VK_NULL_HANDLE,geometry=VK_NULL_HANDLE;
     Graphics(Context &context,unsigned variant):c(context),image(c) {
         VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};ci.imageType=VK_IMAGE_TYPE_2D;
         ci.format=VK_FORMAT_R8G8B8A8_UNORM;ci.extent={W,H,1};ci.mipLevels=ci.arrayLayers=1;
@@ -38,21 +42,23 @@ struct Graphics {
         VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};fi.renderPass=pass;fi.attachmentCount=1;fi.pAttachments=&image.view;fi.width=W;fi.height=H;fi.layers=1;
         CHECK(c.CreateFramebuffer(c.device,&fi,nullptr,&frame));
         VkPipelineLayoutCreateInfo li{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};CHECK(c.CreatePipelineLayout(c.device,&li,nullptr,&layout));
-        VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};const uint32_t *vertices[]={distance_clip_vert_spv,distance_cull_vert_spv,distance_both_vert_spv,distance_clip_vert_spv};
-        const size_t sizes[]={sizeof(distance_clip_vert_spv),sizeof(distance_cull_vert_spv),sizeof(distance_both_vert_spv),sizeof(distance_clip_vert_spv)};
+        VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};const uint32_t *vertices[]={distance_clip_vert_spv,distance_cull_vert_spv,distance_both_vert_spv,distance_clip_vert_spv,distance_gs_vert_spv,distance_both_vert_spv};
+        const size_t sizes[]={sizeof(distance_clip_vert_spv),sizeof(distance_cull_vert_spv),sizeof(distance_both_vert_spv),sizeof(distance_clip_vert_spv),sizeof(distance_gs_vert_spv),sizeof(distance_both_vert_spv)};
         sm.codeSize=sizes[variant];sm.pCode=vertices[variant];CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&vertex));
-        sm.codeSize=variant==3?sizeof(distance_read_frag_spv):sizeof(distance_frag_spv);sm.pCode=variant==3?distance_read_frag_spv:distance_frag_spv;CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&fragment));
+        sm.codeSize=variant==4?sizeof(viewport_frag_spv):variant==3?sizeof(distance_read_frag_spv):sizeof(distance_frag_spv);sm.pCode=variant==4?viewport_frag_spv:variant==3?distance_read_frag_spv:distance_frag_spv;CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&fragment));
+        if(variant>=4){sm.codeSize=variant==4?sizeof(distance_gs_spv):sizeof(distance_point_geom_spv);
+            sm.pCode=variant==4?distance_gs_spv:distance_point_geom_spv;CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&geometry));}
     }
-    ~Graphics(){if(!c.idle)return;if(pipeline)c.DestroyPipeline(c.device,pipeline,nullptr);if(vertex)c.DestroyShaderModule(c.device,vertex,nullptr);if(fragment)c.DestroyShaderModule(c.device,fragment,nullptr);if(layout)c.DestroyPipelineLayout(c.device,layout,nullptr);if(frame)c.DestroyFramebuffer(c.device,frame,nullptr);if(pass)c.DestroyRenderPass(c.device,pass,nullptr);}
+    ~Graphics(){if(!c.idle)return;if(pipeline)c.DestroyPipeline(c.device,pipeline,nullptr);if(geometry)c.DestroyShaderModule(c.device,geometry,nullptr);if(vertex)c.DestroyShaderModule(c.device,vertex,nullptr);if(fragment)c.DestroyShaderModule(c.device,fragment,nullptr);if(layout)c.DestroyPipelineLayout(c.device,layout,nullptr);if(frame)c.DestroyFramebuffer(c.device,frame,nullptr);if(pass)c.DestroyRenderPass(c.device,pass,nullptr);}
     bool render(Buffer &output,bool dynamic,unsigned variant) {
         if(pipeline){c.DestroyPipeline(c.device,pipeline,nullptr);pipeline=VK_NULL_HANDLE;}
         VkViewport view{0,0,float(W),float(H),0,1};
         VkRect2D scissor{{0,0},{W,H}};
         VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
         vp.viewportCount=vp.scissorCount=1;vp.pViewports=&view;vp.pScissors=&scissor;
-        VkPipelineShaderStageCreateInfo stages[2]{};
+        VkPipelineShaderStageCreateInfo stages[3]{};
         for(auto &s:stages){s.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;s.pName="main";}
-        stages[0].stage=VK_SHADER_STAGE_VERTEX_BIT;stages[0].module=vertex;stages[1].stage=VK_SHADER_STAGE_FRAGMENT_BIT;stages[1].module=fragment;
+        stages[0].stage=VK_SHADER_STAGE_VERTEX_BIT;stages[0].module=vertex;stages[1].stage=VK_SHADER_STAGE_FRAGMENT_BIT;stages[1].module=fragment;stages[2].stage=VK_SHADER_STAGE_GEOMETRY_BIT;stages[2].module=geometry;
         VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};assembly.topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};raster.polygonMode=VK_POLYGON_MODE_FILL;raster.lineWidth=1;
@@ -64,11 +70,11 @@ struct Graphics {
         rendering.colorAttachmentCount=1;rendering.pColorAttachmentFormats=&format;
         VkGraphicsPipelineCreateInfo pi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
         pi.pNext=dynamic?&rendering:nullptr;
-        pi.stageCount=2;pi.pStages=stages;pi.pVertexInputState=&input;pi.pInputAssemblyState=&assembly;
+        pi.stageCount=geometry?3:2;pi.pStages=stages;pi.pVertexInputState=&input;pi.pInputAssemblyState=&assembly;
         pi.pViewportState=&vp;pi.pRasterizationState=&raster;pi.pMultisampleState=&samples;
         pi.pColorBlendState=&blend;pi.layout=layout;pi.renderPass=dynamic?VK_NULL_HANDLE:pass;
         const auto before=pi;const auto rendering_before=rendering;
-        const auto stages_before=std::array<VkPipelineShaderStageCreateInfo,2>{stages[0],stages[1]};
+        const auto stages_before=std::array<VkPipelineShaderStageCreateInfo,3>{stages[0],stages[1],stages[2]};
         CHECK(c.CreateGraphicsPipelines(c.device,VK_NULL_HANDLE,1,&pi,nullptr,&pipeline));
         if(memcmp(&before,&pi,sizeof(pi)) || memcmp(&rendering_before,&rendering,sizeof(rendering)) || memcmp(stages_before.data(),stages,sizeof(stages)))throw std::runtime_error("Application pipeline state mutated");
         if(image.command){c.FreeCommandBuffers(c.device,c.pool,1,&image.command);image.command=VK_NULL_HANDLE;}
@@ -130,7 +136,7 @@ std::string run(const std::string &directory,const std::string &mode) {
     VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     if(available){query.pNext=&dynamic;c.instance_proc<PFN_vkGetPhysicalDeviceFeatures2>("vkGetPhysicalDeviceFeatures2")(c.physical,&query);}
     const char *extension=VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME;
-    VkPhysicalDeviceFeatures enabled{};enabled.shaderClipDistance=enabled.shaderCullDistance=VK_TRUE;
+    VkPhysicalDeviceFeatures enabled{};enabled.shaderClipDistance=enabled.shaderCullDistance=VK_TRUE;enabled.geometryShader=c.features.geometryShader;enabled.shaderTessellationAndGeometryPointSize=c.features.shaderTessellationAndGeometryPointSize;
     c.create_device(enabled,dynamic.dynamicRendering?(VkBaseOutStructure*)&dynamic:nullptr,!core&&dynamic.dynamicRendering?1:0,&extension);
     log<<"Native components: VS output="<<c.properties.limits.maxVertexOutputComponents
        <<" FS input="<<c.properties.limits.maxFragmentInputComponents
@@ -138,13 +144,14 @@ std::string run(const std::string &directory,const std::string &mode) {
        <<" GS output="<<c.properties.limits.maxGeometryOutputComponents<<"\n";
     if(!c.original.shaderCullDistance)log<<"LIMITATION: MaliBridge demotes CullDistance without culling; expected full coverage\n";
     Buffer output(c,W*H*4,VK_BUFFER_USAGE_TRANSFER_DST_BIT);unsigned cases=0,failed=0;
-    for(unsigned variant=0;variant<4;++variant) {
+    for(unsigned variant=0;variant<6;++variant) {
+        if(variant>=4 && !enabled.geometryShader){log<<"SKIP: native geometry stage unavailable\n";continue;}
         Graphics graphics(c,variant);
         for(unsigned d=0;d<2;++d) {
             if(d&&!dynamic.dynamicRendering)continue;
             bool pass=graphics.render(output,d,variant);++cases;if(!pass)++failed;
             log<<(pass?"PASS ":"FAIL ")<<"distance="<<variant<<" dynamic="<<d
-               <<"; occupied Locations 0..7, exact RGBA readback, caller state unchanged\n";
+               <<"; exact RGBA readback, caller state unchanged\n";
         }
     }
     if(!dynamic.dynamicRendering)log<<"SKIP: native dynamic rendering unavailable\n";

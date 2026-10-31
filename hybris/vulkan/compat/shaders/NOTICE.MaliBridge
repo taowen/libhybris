@@ -61,3 +61,6 @@ Copyright (C) 2026 ASEbrahim and MaliBridge contributors.
 ../distance_lowering.c adapts server/server_emu_shader.c pipeline ordering;
 allocator, lifetime, entry selection, diagnostics and error integration are
 modified here. This replaces the previous handwritten distance/geometry adapter.
+
+arlinux/diagnostics/distance_gs.spvasm is the unchanged upstream test corpus
+pervertex_gs_whole.spvasm from the same commit, GPL-3.0-or-later.
