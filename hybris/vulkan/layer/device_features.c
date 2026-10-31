@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/multiviewport.h"
 #include "device_features.h"
 #include "../compat/vertex_stores.h"
 #include "../compat/clip_distance.h"
@@ -85,6 +86,7 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
             hybris_scaled_free(allocator,out->extensions);out->extensions=names;out->info.ppEnabledExtensionNames=names;
         }
     }
+    int multi_viewport=hybris_multiviewport_active(physical);
     int clip = hybris_clip_active(physical);
     int stores = hybris_vertex_stores_active(physical);
     int bc = hybris_bc_complete(physical);
@@ -94,9 +96,10 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     int hdr = hybris_bc_astc_hdr(physical);
     int cull = hybris_cull_active(physical);
     int polygon=hybris_shader_polygon_emulated(physical);
-    if (!clip && !stores && !bc && !cull && !polygon && !transcode && !hdr && !(robust_node && robust.emulated)) return VK_SUCCESS;
+    if (!multi_viewport && !clip && !stores && !bc && !cull && !polygon && !transcode && !hdr && !(robust_node && robust.emulated)) return VK_SUCCESS;
     if (info->pEnabledFeatures) {
         out->features = *info->pEnabledFeatures;
+        if(multi_viewport)out->features.multiViewport=VK_FALSE;
         if(force_buffer)out->features.robustBufferAccess=VK_TRUE;
         if (transcode) hybris_bc_enable_transcode_features(physical, &out->features);
         if (clip) out->features.shaderClipDistance = VK_FALSE;
@@ -186,6 +189,7 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
         *slot = copy;
         slot = &copy->pNext;
         if (node == features2) {
+            if(multi_viewport)((VkPhysicalDeviceFeatures2*)copy)->features.multiViewport=VK_FALSE;
             if(force_buffer)((VkPhysicalDeviceFeatures2*)copy)->features.robustBufferAccess=VK_TRUE;
             if (transcode) hybris_bc_enable_transcode_features(physical, &((VkPhysicalDeviceFeatures2 *)copy)->features);
             if (clip) ((VkPhysicalDeviceFeatures2 *)copy)->features.shaderClipDistance = VK_FALSE;

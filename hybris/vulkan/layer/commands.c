@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/multiviewport.h"
 #include "layer.h"
 #include "../compat/application_policy.h"
 #include "../compat/scaled_vertex.h"
@@ -514,10 +515,37 @@ static void VKAPI_CALL index_khr(VkCommandBuffer c,VkBuffer b,VkDeviceSize o,VkD
 static void VKAPI_CALL viewport(VkCommandBuffer c,uint32_t first,uint32_t count,const VkViewport *viewports)
 {
     struct hybris_layer_device device;if(!hybris_layer_command_device(c,&device)) return;
+    if(device.multi_viewport) { count=hybris_multiviewport_count(2,first,count);if(first)return; }
     device.recording->CmdSetViewport(c,first,count,viewports);
     struct command_state *state=find_command(c);
     if(state && !first && count) {state->viewport=viewports[0];state->viewport_valid=1;state->touched=1;}
 }
+static void VKAPI_CALL scissor(VkCommandBuffer c,uint32_t first,uint32_t count,const VkRect2D *rects)
+{
+    struct hybris_layer_device device;if(!hybris_layer_command_device(c,&device))return;
+    if(device.multi_viewport) {count=hybris_multiviewport_count(3,first,count);if(first)return;}
+    device.recording->CmdSetScissor(c,first,count,rects);
+}
+static void viewport_count(VkCommandBuffer c,uint32_t count,const VkViewport *views,int ext)
+{
+    struct hybris_layer_device device;if(!hybris_layer_command_device(c,&device))return;
+    if(device.multi_viewport)count=hybris_multiviewport_count(4,0,count);
+    PFN_vkCmdSetViewportWithCount function=ext?device.recording->CmdSetViewportWithCountEXT:device.recording->CmdSetViewportWithCount;
+    function(c,count,views);
+    struct command_state *state=find_command(c);
+    if(state && count){state->viewport=views[0];state->viewport_valid=1;state->touched=1;}
+}
+static void scissor_count(VkCommandBuffer c,uint32_t count,const VkRect2D *rects,int ext)
+{
+    struct hybris_layer_device device;if(!hybris_layer_command_device(c,&device))return;
+    if(device.multi_viewport)count=hybris_multiviewport_count(5,0,count);
+    PFN_vkCmdSetScissorWithCount function=ext?device.recording->CmdSetScissorWithCountEXT:device.recording->CmdSetScissorWithCount;
+    function(c,count,rects);
+}
+static void VKAPI_CALL viewport_count_core(VkCommandBuffer c,uint32_t n,const VkViewport *v){viewport_count(c,n,v,0);}
+static void VKAPI_CALL viewport_count_ext(VkCommandBuffer c,uint32_t n,const VkViewport *v){viewport_count(c,n,v,1);}
+static void VKAPI_CALL scissor_count_core(VkCommandBuffer c,uint32_t n,const VkRect2D *v){scissor_count(c,n,v,0);}
+static void VKAPI_CALL scissor_count_ext(VkCommandBuffer c,uint32_t n,const VkRect2D *v){scissor_count(c,n,v,1);}
 static void query_state(VkCommandBuffer c,int begin)
 {
     struct command_state *state=find_command(c);if(!state) return;
@@ -694,6 +722,11 @@ PFN_vkVoidFunction hybris_layer_commands_proc(const char *name)
         {"vkCmdBindIndexBuffer2", (PFN_vkVoidFunction)index_core},
         {"vkCmdBindIndexBuffer2KHR", (PFN_vkVoidFunction)index_khr},
         {"vkCmdSetViewport", (PFN_vkVoidFunction)viewport},
+        {"vkCmdSetScissor", (PFN_vkVoidFunction)scissor},
+        {"vkCmdSetViewportWithCount", (PFN_vkVoidFunction)viewport_count_core},
+        {"vkCmdSetViewportWithCountEXT", (PFN_vkVoidFunction)viewport_count_ext},
+        {"vkCmdSetScissorWithCount", (PFN_vkVoidFunction)scissor_count_core},
+        {"vkCmdSetScissorWithCountEXT", (PFN_vkVoidFunction)scissor_count_ext},
         {"vkCmdBeginQuery", (PFN_vkVoidFunction)begin_query},
         {"vkCmdEndQuery", (PFN_vkVoidFunction)end_query},
         {"vkCmdBeginQueryIndexedEXT", (PFN_vkVoidFunction)begin_query_indexed},

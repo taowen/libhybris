@@ -159,7 +159,7 @@ static PFN_vkVoidFunction VKAPI_CALL get_instance_proc(VkInstance instance, cons
     /* GIPA is instance-scoped, so a device's policy cannot select the address.
      * Every command wrapper checks the actual device again before changing it. */
     PFN_vkVoidFunction intercepted = hybris_layer_physical_proc(name);
-    if (!intercepted) intercepted = hybris_layer_device_dispatch(name, state.policy != 0);
+    if (!intercepted) intercepted = hybris_layer_device_dispatch(name, 1);
     return intercepted ? intercepted : next;
 }
 static PFN_vkVoidFunction VKAPI_CALL get_physical_proc(VkInstance instance, const char *name)
