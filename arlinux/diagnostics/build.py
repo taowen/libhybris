@@ -27,14 +27,15 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
         work = Path(temporary)
         assets = work/'assets'
         assets.mkdir()
-        spv = work/'sample.spv'
         shader_tools = ndk/'shader-tools/linux-x86_64'
-        subprocess.run([str(shader_tools/'glslc'), '--target-env=vulkan1.1', '-O',
-                        str(recipe/'sample.comp'), '-o', str(spv)], check=True)
-        subprocess.run([str(shader_tools/'spirv-val'), '--target-env', 'vulkan1.1', str(spv)], check=True)
-        words = struct.unpack('<'+'I'*(spv.stat().st_size//4), spv.read_bytes())
-        (work/'sample.inc').write_text('static const uint32_t sample_spv[] = {'+
-            ','.join(hex(word) for word in words)+'};\n')
+        for name in ('sample', 'robust_null', 'robust_buffer', 'robust_image'):
+            spv = work/(name+'.spv')
+            subprocess.run([str(shader_tools/'glslc'), '--target-env=vulkan1.1', '-O',
+                            str(recipe/(name+'.comp')), '-o', str(spv)], check=True)
+            subprocess.run([str(shader_tools/'spirv-val'), '--target-env', 'vulkan1.1', str(spv)], check=True)
+            words = struct.unpack('<'+'I'*(spv.stat().st_size//4), spv.read_bytes())
+            (work/(name+'.inc')).write_text('static const uint32_t '+name+'_spv[] = {'+
+                ','.join(hex(word) for word in words)+'};\n')
         probe = work/'libhybris_diagnostics_exec.so'
         subprocess.run([str(compiler)+'++', *flags, '-std=gnu++17', '-I'+str(work),
                         '-pie', '-static-libstdc++', str(recipe/'probe.cpp'), '-ldl', '-llog',

@@ -6,6 +6,7 @@
 #include "../compat/shader_policy.h"
 #include "../compat/bc_policy.h"
 #include "../compat/clip_distance.h"
+#include "../compat/robustness2.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -66,7 +67,9 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     unsigned bc_mask = layer ? 0 : hybris_bc_physical_mask(physical);
     unsigned shader_mask = layer ? 0 : hybris_shader_physical_mask(physical);
     int vertex_stores = !layer && hybris_vertex_stores_active(physical);
-    if (layer || (!bc_mask && !shader_mask && !vertex_stores))
+    struct hybris_robustness2_policy robust={0};
+    if(!layer && hybris_robustness2_policy(physical,&robust)!=VK_SUCCESS)return VK_ERROR_INITIALIZATION_FAILED;
+    if (layer || (!bc_mask && !shader_mask && !vertex_stores && !robust.emulated))
         return enumerate(physical, layer, count, properties);
     uint32_t available = 0;
     VkResult result = enumerate(physical, NULL, &available, NULL);
@@ -77,9 +80,22 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     if (result != VK_SUCCESS && result != VK_INCOMPLETE) { free(all); return result; }
     uint32_t kept = 0, written = 0, capacity = properties ? *count : 0;
     for (uint32_t i = 0; i < available; ++i) {
+        if((robust.emulated & HYBRIS_ROBUST_NULL) &&
+            (!strcmp(all[i].extensionName,"VK_EXT_descriptor_buffer") ||
+             !strcmp(all[i].extensionName,"VK_EXT_shader_object") ||
+             !strcmp(all[i].extensionName,"VK_KHR_acceleration_structure") ||
+             !strcmp(all[i].extensionName,"VK_KHR_ray_tracing_pipeline") ||
+             !strcmp(all[i].extensionName,"VK_KHR_ray_query")))continue;
         if ((bc_mask && !hybris_bc_extension_allowed(all[i].extensionName)) ||
             ((shader_mask || vertex_stores) && !hybris_shader_extension_allowed(all[i].extensionName))) continue;
         if (properties && written < capacity) properties[written++] = all[i];
+        ++kept;
+    }
+    if(robust.emulated && !robust.native_extensions) {
+        if(properties && written<capacity) {
+            properties[written]=(VkExtensionProperties){.extensionName=VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,.specVersion=1};
+            ++written;
+        }
         ++kept;
     }
     free(all);
@@ -89,7 +105,8 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
 
 PFN_vkVoidFunction hybris_layer_physical_proc(const char *name)
 {
-    PFN_vkVoidFunction function = hybris_clip_policy_proc(name);
+    PFN_vkVoidFunction function = hybris_robustness2_physical_proc(name);
+    if(!function)function = hybris_clip_policy_proc(name);
     if (!function) function = hybris_shader_policy_proc(name);
     if (!function) function = hybris_bc_policy_proc(name);
     if (function) return function;

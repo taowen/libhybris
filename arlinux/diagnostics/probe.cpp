@@ -21,6 +21,10 @@
 #include <android/log.h>
 #include "sample.inc"
 #include "fixtures.h"
+#include "robust_null.inc"
+#include "robust_buffer.inc"
+#include "robust_image.inc"
+#include <functional>
 
 namespace {
 constexpr uint32_t sample_size=32;
@@ -41,7 +45,8 @@ void check(VkResult result,const char *operation) {
  V(AllocateCommandBuffers) V(FreeCommandBuffers) V(BeginCommandBuffer) V(EndCommandBuffer) \
  V(CmdPipelineBarrier) V(CmdCopyBufferToImage) V(CmdCopyImageToBuffer) V(CmdBindPipeline) \
  V(CmdBindDescriptorSets) V(CmdPushConstants) V(CmdDispatch) V(CreateFence) V(DestroyFence) \
- V(QueueSubmit) V(WaitForFences)
+ V(QueueSubmit) V(WaitForFences) V(CmdClearColorImage) \
+ V(CreateDescriptorUpdateTemplate) V(DestroyDescriptorUpdateTemplate) V(UpdateDescriptorSetWithTemplate)
 
 struct Context {
     VkInstance instance=VK_NULL_HANDLE;
@@ -60,6 +65,11 @@ struct Context {
     PFN_vkGetDeviceProcAddr native_gdpa=nullptr,gdpa=nullptr;
     PFN_vkDestroyInstance destroy_instance=nullptr;
     bool layered=false, idle=true, native_bc=false, hdr_target=false;
+    VkPhysicalDeviceRobustness2FeaturesEXT robust{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
+    VkPhysicalDeviceRobustness2FeaturesEXT native_robust{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
+    VkPhysicalDeviceRobustness2PropertiesEXT robust_limits{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_PROPERTIES_EXT};
+    bool native_ext=false, native_khr=false, route_available=false;
+    std::string requested_extension;
 #define DECLARE(name) PFN_vk##name name=nullptr;
     DEVICE_PROCS(DECLARE)
 #undef DECLARE
@@ -69,7 +79,7 @@ struct Context {
         if(!result) throw std::runtime_error(std::string("Missing ")+name);
         return result;
     }
-    void initialize(const std::string &directory,bool compat) {
+    void initialize(const std::string &directory,bool compat,const char *robust_extension=nullptr) {
         layered=compat;
         void *system=dlopen("libvulkan.so",RTLD_NOW|RTLD_LOCAL);
         if(!system) throw std::runtime_error(dlerror());
@@ -90,6 +100,12 @@ struct Context {
         VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
         app.pApplicationName="libhybris-diagnostics";
         app.apiVersion=VK_API_VERSION_1_1;
+        if(robust_extension) {
+            auto version=reinterpret_cast<PFN_vkEnumerateInstanceVersion>(native_gipa(nullptr,"vkEnumerateInstanceVersion"));
+            uint32_t supported=VK_API_VERSION_1_1;
+            if(version)CHECK(version(&supported));
+            app.apiVersion=std::min(supported,VK_API_VERSION_1_3);
+        }
         VkLayerInstanceLink next{};
         next.pfnNextGetInstanceProcAddr=native_gipa;
         next.pfnNextGetPhysicalDeviceProcAddr=reinterpret_cast<PFN_GetPhysicalDeviceProcAddr>(native_gipa);
@@ -126,6 +142,36 @@ struct Context {
         query_queues(physical,&count,queues.data());
         while(family<count && !(queues[family].queueFlags&VK_QUEUE_COMPUTE_BIT)) ++family;
         if(family==count) throw std::runtime_error("No compute queue");
+        if(robust_extension) {
+            auto enumerate_extensions=reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(native_gipa(instance,"vkEnumerateDeviceExtensionProperties"));
+            uint32_t extension_count=0;
+            CHECK(enumerate_extensions(physical,nullptr,&extension_count,nullptr));
+            std::vector<VkExtensionProperties> extension_properties(extension_count);
+            CHECK(enumerate_extensions(physical,nullptr,&extension_count,extension_properties.data()));
+            for(const auto &extension:extension_properties) {
+                native_ext|=!strcmp(extension.extensionName,VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
+                native_khr|=!strcmp(extension.extensionName,VK_KHR_ROBUSTNESS_2_EXTENSION_NAME);
+            }
+            requested_extension=!strcmp(robust_extension,"native") ?
+                (native_khr?VK_KHR_ROBUSTNESS_2_EXTENSION_NAME:VK_EXT_ROBUSTNESS_2_EXTENSION_NAME):robust_extension;
+            auto exposed=instance_proc<PFN_vkEnumerateDeviceExtensionProperties>("vkEnumerateDeviceExtensionProperties");
+            CHECK(exposed(physical,nullptr,&extension_count,nullptr));
+            extension_properties.resize(extension_count);
+            CHECK(exposed(physical,nullptr,&extension_count,extension_properties.data()));
+            for(const auto &extension:extension_properties)
+                route_available|=requested_extension==extension.extensionName;
+            if(native_ext || native_khr) {
+                VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,&native_robust};
+                reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(native_gipa(instance,"vkGetPhysicalDeviceFeatures2"))(physical,&query);
+            }
+            if(route_available) {
+                VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,&robust};
+                instance_proc<PFN_vkGetPhysicalDeviceFeatures2>("vkGetPhysicalDeviceFeatures2")(physical,&query);
+                VkPhysicalDeviceProperties2 limits{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,&robust_limits};
+                instance_proc<PFN_vkGetPhysicalDeviceProperties2>("vkGetPhysicalDeviceProperties2")(physical,&limits);
+            }
+            if(!route_available)return;
+        }
         native_gdpa=reinterpret_cast<PFN_vkGetDeviceProcAddr>(native_gipa(instance,"vkGetDeviceProcAddr"));
         gdpa=compat?layer.pfnGetDeviceProcAddr:native_gdpa;
         VkLayerDeviceLink device_next{};
@@ -142,8 +188,16 @@ struct Context {
         queue_create.pQueuePriorities=&priority;
         VkPhysicalDeviceFeatures enabled{};
         enabled.textureCompressionBC=features.textureCompressionBC;
+        if(robust_extension) enabled.robustBufferAccess=robust.robustBufferAccess2;
         VkDeviceCreateInfo device_create{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         device_create.pNext=compat?&device_link:nullptr;
+        const char *extension_name=requested_extension.c_str();
+        if(robust_extension) {
+            robust.pNext=const_cast<void *>(device_create.pNext);
+            device_create.pNext=&robust;
+            device_create.enabledExtensionCount=1;
+            device_create.ppEnabledExtensionNames=&extension_name;
+        }
         device_create.pEnabledFeatures=&enabled;
         device_create.queueCreateInfoCount=1;
         device_create.pQueueCreateInfos=&queue_create;
@@ -153,6 +207,10 @@ struct Context {
         DEVICE_PROCS(LOAD)
 #undef LOAD
         GetDeviceQueue(device,family,0,&queue);
+        VkCommandPoolCreateInfo commands{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+        commands.queueFamilyIndex=family;
+        CHECK(CreateCommandPool(device,&commands,nullptr,&pool));
+        if(robust_extension)return;
         VkDescriptorSetLayoutBinding bindings[2]{};
         bindings[0]={0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr};
         bindings[1]={1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr};
@@ -173,9 +231,6 @@ struct Context {
         result=CreateComputePipelines(device,VK_NULL_HANDLE,1,&pipeline_create,nullptr,&pipeline);
         DestroyShaderModule(device,shader,nullptr);
         CHECK(result);
-        VkCommandPoolCreateInfo commands{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-        commands.queueFamilyIndex=family;
-        CHECK(CreateCommandPool(device,&commands,nullptr,&pool));
     }
     uint32_t memory_type(uint32_t bits,VkMemoryPropertyFlags required) {
         for(uint32_t i=0;i<memory.memoryTypeCount;++i)
@@ -327,7 +382,10 @@ float reference(const Fixture &fixture,uint32_t pixel,uint32_t channel) {
     return fixture.reference[(pixel%16)*4+channel];
 }
 
+#include "robustness_probe.h"
+
 std::string run_probe(const std::string &directory,const std::string &mode,uint32_t size) {
+    if(mode.rfind("robust",0)==0)return run_robust(directory,mode);
     const bool compat=mode!="native";
     setenv("HYBRIS_BC_TEXTURES",mode=="normal"?"missing":"force",1);
     setenv("HYBRIS_BC_TRANSCODE",mode=="decode"?"0":"1",1);
@@ -378,7 +436,7 @@ std::string run_probe(const std::string &directory,const std::string &mode,uint3
 int main(int argc,char **argv) {
     if(argc!=5) {fprintf(stderr,"Expected LIBRARY_DIRECTORY MODE SIZE RESULT_DIRECTORY\n");return 2;}
     const std::string mode=argv[2];
-    const std::array<std::string,7> modes={"native","normal","decode","auto","fast","default","high"};
+    const std::array<std::string,11> modes={"native","normal","decode","auto","fast","default","high","robust-native","robust","robust-force","robust-off"};
     if(std::find(modes.begin(),modes.end(),mode)==modes.end() ||
        (std::string(argv[3])!="64" && std::string(argv[3])!="1024"))return 2;
     const std::string files=argv[4],trace_name=files+"/trace.txt";
@@ -391,7 +449,7 @@ int main(int argc,char **argv) {
         std::string line;uint32_t emulated=0;
         while(std::getline(input,line))if(line.find("HYBRIS_BC_IMAGE ")==0)++emulated;
         result+="Emulated image records: "+std::to_string(emulated)+"\n";
-        if(mode!="native" && mode!="normal" && !emulated)
+        if(mode.rfind("robust",0)!=0 && mode!="native" && mode!="normal" && !emulated)
             result+="FAIL: forced BC path was not observed.\n";
         std::ofstream image(files+"/preview.argb",std::ios::binary);
         image.write(reinterpret_cast<const char *>(preview.data()),preview.size()*sizeof(preview[0]));

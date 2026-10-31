@@ -14,6 +14,7 @@
 #include "../compat/memory_visibility.h"
 #include "../compat/polygon_layouts.h"
 #include "../compat/polygon_pipeline.h"
+#include "../compat/null_descriptors.h"
 #include <vulkan/vk_layer.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -59,7 +60,7 @@ int hybris_layer_device_allocator(VkDevice handle, VkAllocationCallbacks *out)
     return custom;
 }
 
-static PFN_vkVoidFunction resolve_inner(const struct hybris_layer_device *device, const char *name)
+static PFN_vkVoidFunction resolve_base(const struct hybris_layer_device *device, const char *name)
 {
     if (!hybris_shader_device_proc_allowed(device->handle, name)) return NULL;
     PFN_vkVoidFunction next = device->resolver(device->handle, name);
@@ -69,6 +70,13 @@ static PFN_vkVoidFunction resolve_inner(const struct hybris_layer_device *device
     if (!compat) compat = hybris_shader_proc(name);
     if (!compat) compat = hybris_vertex_stores_proc(name);
     return compat ? compat : next;
+}
+static PFN_vkVoidFunction resolve_inner(const struct hybris_layer_device *device,const char *name)
+{
+    PFN_vkVoidFunction next=resolve_base(device,name);
+    if(!next)return NULL;
+    PFN_vkVoidFunction hook=hybris_null_proc(device->handle,name);
+    return hook?hook:next;
 }
 
 VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
@@ -117,7 +125,10 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
         instance.resolver(instance.instance, "vkGetPhysicalDeviceFormatProperties");
     result = hybris_shader_device_create(*out, physical, resolver, query, allocator, info);
     if (result == VK_SUCCESS) result = hybris_bc_attach_device(*out, physical, resolver, allocator);
+    if(result==VK_SUCCESS)result=hybris_null_attach(&state->device,resolve_base,info);
     if (result != VK_SUCCESS) {
+        hybris_null_release(*out);
+        hybris_bc_device_remove(*out);
         hybris_shader_device_destroy(*out);
         ((PFN_vkDestroyDevice)resolver(*out, "vkDestroyDevice"))(*out, allocator);
         *out = VK_NULL_HANDLE;
@@ -160,6 +171,7 @@ void VKAPI_CALL hybris_layer_destroy_device(VkDevice handle, const VkAllocationC
     /* Cleanup uses the live registry; remove the entry only after its children.
      * Device destruction is externally synchronized by Vulkan. */
     hybris_memory_visibility_release_device(handle);
+    hybris_null_release(handle);
     hybris_layer_commands_release_device(handle);
     hybris_polygon_pipelines_release_device(handle);
     hybris_polygon_layouts_release_device(handle);

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "shader_policy.h"
+#include "robustness2.h"
 #include "vertex_stores.h"
 #include "scaled_formats.h"
 #include "bc_policy.h"
@@ -75,6 +76,7 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     PFN_vkGetPhysicalDeviceFeatures2 query = (PFN_vkGetPhysicalDeviceFeatures2)hybris_bc_policy_proc(name);
     if (!query) query = (PFN_vkGetPhysicalDeviceFeatures2)context.resolver(context.instance, name);
     query(physical, out);
+    hybris_robustness2_features(physical,out);
     int polygon=hybris_shader_polygon_emulated(physical);
     if(polygon) out->features.fillModeNonSolid=VK_TRUE;
     if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical) && !polygon) return;

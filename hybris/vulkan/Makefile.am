@@ -12,6 +12,7 @@ lib_LTLIBRARIES = \
 # Its manifest is colocated with the DSO; opt in using VK_LAYER_PATH.
 libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/device.c layer/physical.c layer/commands.c layer/layer.h \
     layer/device_features.c layer/device_features.h layer/device_create_sizes.inc \
+    compat/robustness2.c compat/robustness2.h compat/null_descriptors.c compat/null_descriptors.h compat/null_map.h \
     compat/bc_decode.c compat/bc_decode.h compat/shaders/bc_decode.inc \
     compat/bc_image.c compat/bc_image.h compat/bc_command_state.c compat/bc_command_state.h compat/bc_transfer.c compat/bc_transfer.h \
     compat/bc_context.c compat/bc_context.h compat/bc_commands.c compat/bc_resources.c compat/bc_record.c compat/bc_barriers.c compat/bc_image_copy.c compat/bc_policy.c compat/bc_policy.h \

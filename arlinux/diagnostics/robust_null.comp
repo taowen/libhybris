@@ -1,0 +1,32 @@
+#version 450
+// SPDX-License-Identifier: Apache-2.0
+layout(local_size_x=1) in;
+layout(binding=0,std430) buffer Output { uint v[]; } output_data;
+layout(binding=1,std140) uniform NullUniform { uvec4 value; } null_uniform;
+layout(binding=2,std430) buffer NullStorage { uint value[]; } null_storage;
+layout(binding=3) uniform usamplerBuffer null_uniform_texel;
+layout(binding=4,r32ui) uniform uimageBuffer null_storage_texel;
+layout(binding=5) uniform sampler2D null_sampled;
+layout(binding=6,r32ui) uniform uimage2D null_image;
+void main() {
+    output_data.v[0]=null_uniform.value.x;
+    output_data.v[1]=null_storage.value[0];
+    null_storage.value[0]=0x12345678u;
+    memoryBarrierBuffer();
+    output_data.v[2]=null_storage.value[0];
+    output_data.v[3]=atomicAdd(null_storage.value[0],1u);
+    output_data.v[4]=null_storage.value[0];
+    output_data.v[5]=texelFetch(null_uniform_texel,0).x;
+    output_data.v[6]=imageLoad(null_storage_texel,0).x;
+    imageStore(null_storage_texel,0,uvec4(0x12345678u));
+    memoryBarrierImage();
+    output_data.v[7]=imageLoad(null_storage_texel,0).x;
+    output_data.v[8]=imageAtomicAdd(null_storage_texel,0,1u);
+    output_data.v[9]=floatBitsToUint(textureLod(null_sampled,vec2(0.5),0).x);
+    output_data.v[10]=imageLoad(null_image,ivec2(0)).x;
+    imageStore(null_image,ivec2(0),uvec4(0x12345678u));
+    memoryBarrierImage();
+    output_data.v[11]=imageLoad(null_image,ivec2(0)).x;
+    output_data.v[12]=imageAtomicAdd(null_image,ivec2(0),1u);
+    output_data.v[13]=imageLoad(null_image,ivec2(0)).x;
+}
