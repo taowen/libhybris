@@ -24,62 +24,66 @@
 #define VKB_ERR(...) VKB_INFO(__VA_ARGS__)
 enum { SpvOpTypeInt=21, SpvOpTypeFloat=22, SpvOpTypeArray=28, SpvOpTypeRuntimeArray=29,
        SpvOpTypePointer=32, SpvOpFunction=54, SpvOpVariable=59, SpvOpDecorate=71 };
+#define NULL_DEVICE_PROCS(V) \
+    V(DestroyDescriptorPool) \
+    V(ResetDescriptorPool) \
+    V(FreeDescriptorSets) \
+    V(AllocateCommandBuffers) \
+    V(AllocateDescriptorSets) \
+    V(AllocateMemory) \
+    V(BeginCommandBuffer) \
+    V(BindBufferMemory) \
+    V(BindImageMemory) \
+    V(CmdBindVertexBuffers) \
+    V(CmdBindVertexBuffers2) \
+    V(CmdClearColorImage) \
+    V(CmdFillBuffer) \
+    V(CmdPipelineBarrier) \
+    V(CmdPushDescriptorSet) \
+    V(CmdPushDescriptorSet2) \
+    V(CmdPushDescriptorSetWithTemplate) \
+    V(CreateBuffer) \
+    V(CreateBufferView) \
+    V(CreateCommandPool) \
+    V(CreateComputePipelines) \
+    V(CreateDescriptorUpdateTemplate) \
+    V(CreateFence) \
+    V(CreateGraphicsPipelines) \
+    V(CreateImage) \
+    V(CreateImageView) \
+    V(CreatePipelineLayout) \
+    V(CreateShaderModule) \
+    V(DestroyBuffer) \
+    V(DestroyBufferView) \
+    V(DestroyCommandPool) \
+    V(DestroyDescriptorSetLayout) \
+    V(DestroyDescriptorUpdateTemplate) \
+    V(DestroyFence) \
+    V(DestroyPipelineLayout) \
+    V(DestroyShaderModule) \
+    V(EndCommandBuffer) \
+    V(FreeCommandBuffers) \
+    V(FreeMemory) \
+    V(GetBufferMemoryRequirements) \
+    V(GetDeviceQueue) \
+    V(GetDeviceQueue2) \
+    V(GetImageMemoryRequirements) \
+    V(QueueSubmit) \
+    V(QueueSubmit2) \
+    V(UpdateDescriptorSetWithTemplate) \
+    V(UpdateDescriptorSets) \
+    V(WaitForFences) \
+    V(DestroyImage) \
+    V(DestroyImageView) \
+    V(FlushMappedMemoryRanges) \
+    V(MapMemory) \
+    V(UnmapMemory)
 struct null_dispatch {
-    PFN_vkDestroyDescriptorPool vkDestroyDescriptorPool;
-    PFN_vkResetDescriptorPool vkResetDescriptorPool;
-    PFN_vkFreeDescriptorSets vkFreeDescriptorSets;
-    PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers;
-    PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets;
-    PFN_vkAllocateMemory vkAllocateMemory;
-    PFN_vkBeginCommandBuffer vkBeginCommandBuffer;
-    PFN_vkBindBufferMemory vkBindBufferMemory;
-    PFN_vkBindImageMemory vkBindImageMemory;
-    PFN_vkCmdBindVertexBuffers vkCmdBindVertexBuffers;
-    PFN_vkCmdBindVertexBuffers2 vkCmdBindVertexBuffers2;
-    PFN_vkCmdClearColorImage vkCmdClearColorImage;
-    PFN_vkCmdFillBuffer vkCmdFillBuffer;
-    PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
-    PFN_vkCmdPushDescriptorSet vkCmdPushDescriptorSet;
-    PFN_vkCmdPushDescriptorSet2 vkCmdPushDescriptorSet2;
-    PFN_vkCmdPushDescriptorSetWithTemplate vkCmdPushDescriptorSetWithTemplate;
-    PFN_vkCreateBuffer vkCreateBuffer;
-    PFN_vkCreateBufferView vkCreateBufferView;
-    PFN_vkCreateCommandPool vkCreateCommandPool;
-    PFN_vkCreateComputePipelines vkCreateComputePipelines;
-    PFN_vkCreateDescriptorUpdateTemplate vkCreateDescriptorUpdateTemplate;
-    PFN_vkCreateFence vkCreateFence;
-    PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines;
-    PFN_vkCreateImage vkCreateImage;
-    PFN_vkCreateImageView vkCreateImageView;
-    PFN_vkCreatePipelineLayout vkCreatePipelineLayout;
-    PFN_vkCreateShaderModule vkCreateShaderModule;
-    PFN_vkDestroyBuffer vkDestroyBuffer;
-    PFN_vkDestroyBufferView vkDestroyBufferView;
-    PFN_vkDestroyCommandPool vkDestroyCommandPool;
-    PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout;
-    PFN_vkDestroyDescriptorUpdateTemplate vkDestroyDescriptorUpdateTemplate;
-    PFN_vkDestroyFence vkDestroyFence;
-    PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout;
-    PFN_vkDestroyShaderModule vkDestroyShaderModule;
-    PFN_vkEndCommandBuffer vkEndCommandBuffer;
-    PFN_vkFreeCommandBuffers vkFreeCommandBuffers;
-    PFN_vkFreeMemory vkFreeMemory;
-    PFN_vkGetBufferMemoryRequirements vkGetBufferMemoryRequirements;
-    PFN_vkGetDeviceQueue vkGetDeviceQueue;
-    PFN_vkGetDeviceQueue2 vkGetDeviceQueue2;
-    PFN_vkGetImageMemoryRequirements vkGetImageMemoryRequirements;
-    PFN_vkQueueSubmit vkQueueSubmit;
-    PFN_vkQueueSubmit2 vkQueueSubmit2;
-    PFN_vkUpdateDescriptorSetWithTemplate vkUpdateDescriptorSetWithTemplate;
-    PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets;
-    PFN_vkWaitForFences vkWaitForFences;
-    PFN_vkDestroyImage vkDestroyImage;
-    PFN_vkDestroyImageView vkDestroyImageView;
-    PFN_vkFlushMappedMemoryRanges vkFlushMappedMemoryRanges;
-    PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties;
-    PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties;
-    PFN_vkMapMemory vkMapMemory;
-    PFN_vkUnmapMemory vkUnmapMemory;
+#define DECLARE(name) PFN_vk##name vk##name;
+    NULL_DEVICE_PROCS(DECLARE)
+    DECLARE(GetPhysicalDeviceMemoryProperties)
+    DECLARE(GetPhysicalDeviceQueueFamilyProperties)
+#undef DECLARE
 };
 
 struct null_descriptors;
@@ -200,18 +204,9 @@ typedef struct null_descriptors {
     VkFence pending_fence;
     VkCommandPool pool[MAX_QUEUE_FAMILIES];
     unsigned long clears;
-    unsigned clear_misses;    /* submissions on queues that could not clear (unknown, transfer only) */
 } null_descriptors;
 
 static null_descriptors *cur(const void *handle) {
-    if(!strcmp(name,"vkCmdBindVertexBuffers2EXT"))name="vkCmdBindVertexBuffers2";
-    if(!strcmp(name,"vkCmdPushDescriptorSetKHR"))name="vkCmdPushDescriptorSet";
-    if(!strcmp(name,"vkCmdPushDescriptorSet2KHR"))name="vkCmdPushDescriptorSet2";
-    if(!strcmp(name,"vkCmdPushDescriptorSetWithTemplateKHR"))name="vkCmdPushDescriptorSetWithTemplate";
-    if(!strcmp(name,"vkCreateDescriptorUpdateTemplateKHR"))name="vkCreateDescriptorUpdateTemplate";
-    if(!strcmp(name,"vkDestroyDescriptorUpdateTemplateKHR"))name="vkDestroyDescriptorUpdateTemplate";
-    if(!strcmp(name,"vkUpdateDescriptorSetWithTemplateKHR"))name="vkUpdateDescriptorSetWithTemplate";
-    if(!strcmp(name,"vkQueueSubmit2KHR"))name="vkQueueSubmit2";
     null_device *device=lookup(handle);
     return device?device->nulldesc:NULL;
 }
@@ -862,13 +857,13 @@ static VkResult VKAPI_CALL nd_CreateDescriptorUpdateTemplate(VkDevice device, co
     VkResult r = n->create_template(device, ci, a, out);
     if (r != VK_SUCCESS) return r;
     nd_template *t = calloc(1, sizeof(*t));
-    if (!t) return r;
+    if (!t) {n->destroy_template(device,*out,a);*out=VK_NULL_HANDLE;return VK_ERROR_OUT_OF_HOST_MEMORY;}
     t->entries = malloc((size_t)ci->descriptorUpdateEntryCount * sizeof(*t->entries) + 1);
     if (!t->entries) {
-        free(t);
-        return r;
+        free(t);n->destroy_template(device,*out,a);*out=VK_NULL_HANDLE;
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
-    memcpy(t->entries, ci->pDescriptorUpdateEntries, (size_t)ci->descriptorUpdateEntryCount * sizeof(*t->entries));
+    if(ci->descriptorUpdateEntryCount)memcpy(t->entries, ci->pDescriptorUpdateEntries, (size_t)ci->descriptorUpdateEntryCount * sizeof(*t->entries));
     t->count = ci->descriptorUpdateEntryCount;
     t->tmpl = *out;
     pthread_mutex_lock(&n->lock);
@@ -1103,7 +1098,7 @@ static int clear_pending(null_descriptors *n, VkQueue q)
         VkCommandPoolCreateInfo pci = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, NULL, 0, fam};
         if (r->vkCreateCommandPool(d, &pci, NULL, &n->pool[fam]) != VK_SUCCESS) {
             n->pool[fam] = VK_NULL_HANDLE;
-            return 0;
+            __atomic_store_n(&n->lost,1,__ATOMIC_RELEASE);return 0;
         }
     }
     /* what a barrier may name on this family (VUID-vkCmdPipelineBarrier-dstAccessMask-02816) */
@@ -1111,7 +1106,7 @@ static int clear_pending(null_descriptors *n, VkQueue q)
     if (n->fam[fam].queueFlags & VK_QUEUE_GRAPHICS_BIT) reads |= VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
     VkCommandBufferAllocateInfo cai = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, NULL, n->pool[fam], VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1};
     VkCommandBuffer cb = VK_NULL_HANDLE;
-    if (r->vkAllocateCommandBuffers(d, &cai, &cb) != VK_SUCCESS) return 0;
+    if (r->vkAllocateCommandBuffers(d, &cai, &cb) != VK_SUCCESS) {__atomic_store_n(&n->lost,1,__ATOMIC_RELEASE);return 0;}
     VkCommandBufferBeginInfo bi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, NULL};
     if(r->vkBeginCommandBuffer(cb,&bi)!=VK_SUCCESS){__atomic_store_n(&n->lost,1,__ATOMIC_RELEASE);return 0;}
     unsigned images = 0;
@@ -1361,131 +1356,30 @@ VkResult hybris_null_attach(const struct hybris_layer_device *owner,
     device->id=(unsigned)owner->generation;device->key=hybris_layer_dispatch_key(owner->handle);
     struct hybris_layer_physical instance;
     if(!hybris_layer_lookup_physical(owner->physical,&instance)){free(device);return VK_ERROR_INITIALIZATION_FAILED;}
-    device->real.vkAllocateCommandBuffers=(PFN_vkAllocateCommandBuffers)owner->resolver(owner->handle,"vkAllocateCommandBuffers");
-    device->dt.vkAllocateCommandBuffers=(PFN_vkAllocateCommandBuffers)base(owner,"vkAllocateCommandBuffers");
-    device->real.vkAllocateDescriptorSets=(PFN_vkAllocateDescriptorSets)owner->resolver(owner->handle,"vkAllocateDescriptorSets");
-    device->dt.vkAllocateDescriptorSets=(PFN_vkAllocateDescriptorSets)base(owner,"vkAllocateDescriptorSets");
-    device->real.vkAllocateMemory=(PFN_vkAllocateMemory)owner->resolver(owner->handle,"vkAllocateMemory");
-    device->dt.vkAllocateMemory=(PFN_vkAllocateMemory)base(owner,"vkAllocateMemory");
-    device->real.vkBeginCommandBuffer=(PFN_vkBeginCommandBuffer)owner->resolver(owner->handle,"vkBeginCommandBuffer");
-    device->dt.vkBeginCommandBuffer=(PFN_vkBeginCommandBuffer)base(owner,"vkBeginCommandBuffer");
-    device->real.vkBindBufferMemory=(PFN_vkBindBufferMemory)owner->resolver(owner->handle,"vkBindBufferMemory");
-    device->dt.vkBindBufferMemory=(PFN_vkBindBufferMemory)base(owner,"vkBindBufferMemory");
-    device->real.vkBindImageMemory=(PFN_vkBindImageMemory)owner->resolver(owner->handle,"vkBindImageMemory");
-    device->dt.vkBindImageMemory=(PFN_vkBindImageMemory)base(owner,"vkBindImageMemory");
-    device->real.vkCmdBindVertexBuffers=(PFN_vkCmdBindVertexBuffers)owner->resolver(owner->handle,"vkCmdBindVertexBuffers");
-    device->dt.vkCmdBindVertexBuffers=(PFN_vkCmdBindVertexBuffers)base(owner,"vkCmdBindVertexBuffers");
-    device->real.vkCmdBindVertexBuffers2=(PFN_vkCmdBindVertexBuffers2)owner->resolver(owner->handle,"vkCmdBindVertexBuffers2");
-    device->dt.vkCmdBindVertexBuffers2=(PFN_vkCmdBindVertexBuffers2)base(owner,"vkCmdBindVertexBuffers2");
+#define LOAD(name) do { \
+    device->real.vk##name=(PFN_vk##name)owner->resolver(owner->handle,"vk" #name); \
+    device->dt.vk##name=(PFN_vk##name)base(owner,"vk" #name); \
+} while(0);
+    NULL_DEVICE_PROCS(LOAD)
+#undef LOAD
     if(!device->real.vkCmdBindVertexBuffers2)device->real.vkCmdBindVertexBuffers2=(PFN_vkCmdBindVertexBuffers2)owner->resolver(owner->handle,"vkCmdBindVertexBuffers2EXT");
     if(!device->dt.vkCmdBindVertexBuffers2)device->dt.vkCmdBindVertexBuffers2=(PFN_vkCmdBindVertexBuffers2)base(owner,"vkCmdBindVertexBuffers2EXT");
-    device->real.vkCmdClearColorImage=(PFN_vkCmdClearColorImage)owner->resolver(owner->handle,"vkCmdClearColorImage");
-    device->dt.vkCmdClearColorImage=(PFN_vkCmdClearColorImage)base(owner,"vkCmdClearColorImage");
-    device->real.vkCmdFillBuffer=(PFN_vkCmdFillBuffer)owner->resolver(owner->handle,"vkCmdFillBuffer");
-    device->dt.vkCmdFillBuffer=(PFN_vkCmdFillBuffer)base(owner,"vkCmdFillBuffer");
-    device->real.vkCmdPipelineBarrier=(PFN_vkCmdPipelineBarrier)owner->resolver(owner->handle,"vkCmdPipelineBarrier");
-    device->dt.vkCmdPipelineBarrier=(PFN_vkCmdPipelineBarrier)base(owner,"vkCmdPipelineBarrier");
-    device->real.vkCmdPushDescriptorSet=(PFN_vkCmdPushDescriptorSet)owner->resolver(owner->handle,"vkCmdPushDescriptorSet");
-    device->dt.vkCmdPushDescriptorSet=(PFN_vkCmdPushDescriptorSet)base(owner,"vkCmdPushDescriptorSet");
     if(!device->real.vkCmdPushDescriptorSet)device->real.vkCmdPushDescriptorSet=(PFN_vkCmdPushDescriptorSet)owner->resolver(owner->handle,"vkCmdPushDescriptorSetKHR");
     if(!device->dt.vkCmdPushDescriptorSet)device->dt.vkCmdPushDescriptorSet=(PFN_vkCmdPushDescriptorSet)base(owner,"vkCmdPushDescriptorSetKHR");
-    device->real.vkCmdPushDescriptorSet2=(PFN_vkCmdPushDescriptorSet2)owner->resolver(owner->handle,"vkCmdPushDescriptorSet2");
-    device->dt.vkCmdPushDescriptorSet2=(PFN_vkCmdPushDescriptorSet2)base(owner,"vkCmdPushDescriptorSet2");
     if(!device->real.vkCmdPushDescriptorSet2)device->real.vkCmdPushDescriptorSet2=(PFN_vkCmdPushDescriptorSet2)owner->resolver(owner->handle,"vkCmdPushDescriptorSet2KHR");
     if(!device->dt.vkCmdPushDescriptorSet2)device->dt.vkCmdPushDescriptorSet2=(PFN_vkCmdPushDescriptorSet2)base(owner,"vkCmdPushDescriptorSet2KHR");
-    device->real.vkCmdPushDescriptorSetWithTemplate=(PFN_vkCmdPushDescriptorSetWithTemplate)owner->resolver(owner->handle,"vkCmdPushDescriptorSetWithTemplate");
-    device->dt.vkCmdPushDescriptorSetWithTemplate=(PFN_vkCmdPushDescriptorSetWithTemplate)base(owner,"vkCmdPushDescriptorSetWithTemplate");
     if(!device->real.vkCmdPushDescriptorSetWithTemplate)device->real.vkCmdPushDescriptorSetWithTemplate=(PFN_vkCmdPushDescriptorSetWithTemplate)owner->resolver(owner->handle,"vkCmdPushDescriptorSetWithTemplateKHR");
     if(!device->dt.vkCmdPushDescriptorSetWithTemplate)device->dt.vkCmdPushDescriptorSetWithTemplate=(PFN_vkCmdPushDescriptorSetWithTemplate)base(owner,"vkCmdPushDescriptorSetWithTemplateKHR");
-    device->real.vkCreateBuffer=(PFN_vkCreateBuffer)owner->resolver(owner->handle,"vkCreateBuffer");
-    device->dt.vkCreateBuffer=(PFN_vkCreateBuffer)base(owner,"vkCreateBuffer");
-    device->real.vkCreateBufferView=(PFN_vkCreateBufferView)owner->resolver(owner->handle,"vkCreateBufferView");
-    device->dt.vkCreateBufferView=(PFN_vkCreateBufferView)base(owner,"vkCreateBufferView");
-    device->real.vkCreateCommandPool=(PFN_vkCreateCommandPool)owner->resolver(owner->handle,"vkCreateCommandPool");
-    device->dt.vkCreateCommandPool=(PFN_vkCreateCommandPool)base(owner,"vkCreateCommandPool");
-    device->real.vkCreateComputePipelines=(PFN_vkCreateComputePipelines)owner->resolver(owner->handle,"vkCreateComputePipelines");
-    device->dt.vkCreateComputePipelines=(PFN_vkCreateComputePipelines)base(owner,"vkCreateComputePipelines");
-    device->real.vkCreateDescriptorUpdateTemplate=(PFN_vkCreateDescriptorUpdateTemplate)owner->resolver(owner->handle,"vkCreateDescriptorUpdateTemplate");
-    device->dt.vkCreateDescriptorUpdateTemplate=(PFN_vkCreateDescriptorUpdateTemplate)base(owner,"vkCreateDescriptorUpdateTemplate");
     if(!device->real.vkCreateDescriptorUpdateTemplate)device->real.vkCreateDescriptorUpdateTemplate=(PFN_vkCreateDescriptorUpdateTemplate)owner->resolver(owner->handle,"vkCreateDescriptorUpdateTemplateKHR");
     if(!device->dt.vkCreateDescriptorUpdateTemplate)device->dt.vkCreateDescriptorUpdateTemplate=(PFN_vkCreateDescriptorUpdateTemplate)base(owner,"vkCreateDescriptorUpdateTemplateKHR");
-    device->real.vkCreateFence=(PFN_vkCreateFence)owner->resolver(owner->handle,"vkCreateFence");
-    device->dt.vkCreateFence=(PFN_vkCreateFence)base(owner,"vkCreateFence");
-    device->real.vkCreateGraphicsPipelines=(PFN_vkCreateGraphicsPipelines)owner->resolver(owner->handle,"vkCreateGraphicsPipelines");
-    device->dt.vkCreateGraphicsPipelines=(PFN_vkCreateGraphicsPipelines)base(owner,"vkCreateGraphicsPipelines");
-    device->real.vkCreateImage=(PFN_vkCreateImage)owner->resolver(owner->handle,"vkCreateImage");
-    device->dt.vkCreateImage=(PFN_vkCreateImage)base(owner,"vkCreateImage");
-    device->real.vkCreateImageView=(PFN_vkCreateImageView)owner->resolver(owner->handle,"vkCreateImageView");
-    device->dt.vkCreateImageView=(PFN_vkCreateImageView)base(owner,"vkCreateImageView");
-    device->real.vkCreatePipelineLayout=(PFN_vkCreatePipelineLayout)owner->resolver(owner->handle,"vkCreatePipelineLayout");
-    device->dt.vkCreatePipelineLayout=(PFN_vkCreatePipelineLayout)base(owner,"vkCreatePipelineLayout");
-    device->real.vkCreateShaderModule=(PFN_vkCreateShaderModule)owner->resolver(owner->handle,"vkCreateShaderModule");
-    device->dt.vkCreateShaderModule=(PFN_vkCreateShaderModule)base(owner,"vkCreateShaderModule");
-    device->real.vkDestroyBuffer=(PFN_vkDestroyBuffer)owner->resolver(owner->handle,"vkDestroyBuffer");
-    device->dt.vkDestroyBuffer=(PFN_vkDestroyBuffer)base(owner,"vkDestroyBuffer");
-    device->real.vkDestroyBufferView=(PFN_vkDestroyBufferView)owner->resolver(owner->handle,"vkDestroyBufferView");
-    device->dt.vkDestroyBufferView=(PFN_vkDestroyBufferView)base(owner,"vkDestroyBufferView");
-    device->real.vkDestroyCommandPool=(PFN_vkDestroyCommandPool)owner->resolver(owner->handle,"vkDestroyCommandPool");
-    device->dt.vkDestroyCommandPool=(PFN_vkDestroyCommandPool)base(owner,"vkDestroyCommandPool");
-    device->real.vkDestroyDescriptorSetLayout=(PFN_vkDestroyDescriptorSetLayout)owner->resolver(owner->handle,"vkDestroyDescriptorSetLayout");
-    device->dt.vkDestroyDescriptorSetLayout=(PFN_vkDestroyDescriptorSetLayout)base(owner,"vkDestroyDescriptorSetLayout");
-    device->real.vkDestroyDescriptorUpdateTemplate=(PFN_vkDestroyDescriptorUpdateTemplate)owner->resolver(owner->handle,"vkDestroyDescriptorUpdateTemplate");
-    device->dt.vkDestroyDescriptorUpdateTemplate=(PFN_vkDestroyDescriptorUpdateTemplate)base(owner,"vkDestroyDescriptorUpdateTemplate");
     if(!device->real.vkDestroyDescriptorUpdateTemplate)device->real.vkDestroyDescriptorUpdateTemplate=(PFN_vkDestroyDescriptorUpdateTemplate)owner->resolver(owner->handle,"vkDestroyDescriptorUpdateTemplateKHR");
     if(!device->dt.vkDestroyDescriptorUpdateTemplate)device->dt.vkDestroyDescriptorUpdateTemplate=(PFN_vkDestroyDescriptorUpdateTemplate)base(owner,"vkDestroyDescriptorUpdateTemplateKHR");
-    device->real.vkDestroyFence=(PFN_vkDestroyFence)owner->resolver(owner->handle,"vkDestroyFence");
-    device->dt.vkDestroyFence=(PFN_vkDestroyFence)base(owner,"vkDestroyFence");
-    device->real.vkDestroyPipelineLayout=(PFN_vkDestroyPipelineLayout)owner->resolver(owner->handle,"vkDestroyPipelineLayout");
-    device->dt.vkDestroyPipelineLayout=(PFN_vkDestroyPipelineLayout)base(owner,"vkDestroyPipelineLayout");
-    device->real.vkDestroyShaderModule=(PFN_vkDestroyShaderModule)owner->resolver(owner->handle,"vkDestroyShaderModule");
-    device->dt.vkDestroyShaderModule=(PFN_vkDestroyShaderModule)base(owner,"vkDestroyShaderModule");
-    device->real.vkEndCommandBuffer=(PFN_vkEndCommandBuffer)owner->resolver(owner->handle,"vkEndCommandBuffer");
-    device->dt.vkEndCommandBuffer=(PFN_vkEndCommandBuffer)base(owner,"vkEndCommandBuffer");
-    device->real.vkFreeCommandBuffers=(PFN_vkFreeCommandBuffers)owner->resolver(owner->handle,"vkFreeCommandBuffers");
-    device->dt.vkFreeCommandBuffers=(PFN_vkFreeCommandBuffers)base(owner,"vkFreeCommandBuffers");
-    device->real.vkFreeMemory=(PFN_vkFreeMemory)owner->resolver(owner->handle,"vkFreeMemory");
-    device->dt.vkFreeMemory=(PFN_vkFreeMemory)base(owner,"vkFreeMemory");
-    device->real.vkGetBufferMemoryRequirements=(PFN_vkGetBufferMemoryRequirements)owner->resolver(owner->handle,"vkGetBufferMemoryRequirements");
-    device->dt.vkGetBufferMemoryRequirements=(PFN_vkGetBufferMemoryRequirements)base(owner,"vkGetBufferMemoryRequirements");
-    device->real.vkGetDeviceQueue=(PFN_vkGetDeviceQueue)owner->resolver(owner->handle,"vkGetDeviceQueue");
-    device->dt.vkGetDeviceQueue=(PFN_vkGetDeviceQueue)base(owner,"vkGetDeviceQueue");
-    device->real.vkGetDeviceQueue2=(PFN_vkGetDeviceQueue2)owner->resolver(owner->handle,"vkGetDeviceQueue2");
-    device->dt.vkGetDeviceQueue2=(PFN_vkGetDeviceQueue2)base(owner,"vkGetDeviceQueue2");
-    device->real.vkGetImageMemoryRequirements=(PFN_vkGetImageMemoryRequirements)owner->resolver(owner->handle,"vkGetImageMemoryRequirements");
-    device->dt.vkGetImageMemoryRequirements=(PFN_vkGetImageMemoryRequirements)base(owner,"vkGetImageMemoryRequirements");
-    device->real.vkQueueSubmit=(PFN_vkQueueSubmit)owner->resolver(owner->handle,"vkQueueSubmit");
-    device->dt.vkQueueSubmit=(PFN_vkQueueSubmit)base(owner,"vkQueueSubmit");
-    device->real.vkQueueSubmit2=(PFN_vkQueueSubmit2)owner->resolver(owner->handle,"vkQueueSubmit2");
-    device->dt.vkQueueSubmit2=(PFN_vkQueueSubmit2)base(owner,"vkQueueSubmit2");
-    if(!device->real.vkQueueSubmit2)device->real.vkQueueSubmit2=(PFN_vkQueueSubmit2)owner->resolver(owner->handle,"vkQueueSubmit2KHR");
-    if(!device->dt.vkQueueSubmit2)device->dt.vkQueueSubmit2=(PFN_vkQueueSubmit2)base(owner,"vkQueueSubmit2KHR");
-    device->real.vkUpdateDescriptorSetWithTemplate=(PFN_vkUpdateDescriptorSetWithTemplate)owner->resolver(owner->handle,"vkUpdateDescriptorSetWithTemplate");
-    device->dt.vkUpdateDescriptorSetWithTemplate=(PFN_vkUpdateDescriptorSetWithTemplate)base(owner,"vkUpdateDescriptorSetWithTemplate");
     if(!device->real.vkUpdateDescriptorSetWithTemplate)device->real.vkUpdateDescriptorSetWithTemplate=(PFN_vkUpdateDescriptorSetWithTemplate)owner->resolver(owner->handle,"vkUpdateDescriptorSetWithTemplateKHR");
     if(!device->dt.vkUpdateDescriptorSetWithTemplate)device->dt.vkUpdateDescriptorSetWithTemplate=(PFN_vkUpdateDescriptorSetWithTemplate)base(owner,"vkUpdateDescriptorSetWithTemplateKHR");
-    device->real.vkUpdateDescriptorSets=(PFN_vkUpdateDescriptorSets)owner->resolver(owner->handle,"vkUpdateDescriptorSets");
-    device->dt.vkUpdateDescriptorSets=(PFN_vkUpdateDescriptorSets)base(owner,"vkUpdateDescriptorSets");
-    device->real.vkWaitForFences=(PFN_vkWaitForFences)owner->resolver(owner->handle,"vkWaitForFences");
-    device->dt.vkWaitForFences=(PFN_vkWaitForFences)base(owner,"vkWaitForFences");
-    device->real.vkDestroyImage=(PFN_vkDestroyImage)owner->resolver(owner->handle,"vkDestroyImage");
-    device->dt.vkDestroyImage=(PFN_vkDestroyImage)base(owner,"vkDestroyImage");
-    device->real.vkDestroyImageView=(PFN_vkDestroyImageView)owner->resolver(owner->handle,"vkDestroyImageView");
-    device->dt.vkDestroyImageView=(PFN_vkDestroyImageView)base(owner,"vkDestroyImageView");
-    device->real.vkFlushMappedMemoryRanges=(PFN_vkFlushMappedMemoryRanges)owner->resolver(owner->handle,"vkFlushMappedMemoryRanges");
-    device->dt.vkFlushMappedMemoryRanges=(PFN_vkFlushMappedMemoryRanges)base(owner,"vkFlushMappedMemoryRanges");
-    device->real.vkGetPhysicalDeviceMemoryProperties=(PFN_vkGetPhysicalDeviceMemoryProperties)owner->resolver(owner->handle,"vkGetPhysicalDeviceMemoryProperties");
-    device->real.vkGetPhysicalDeviceMemoryProperties=(PFN_vkGetPhysicalDeviceMemoryProperties)instance.resolver(instance.instance,"vkGetPhysicalDeviceMemoryProperties");
-    device->dt.vkGetPhysicalDeviceMemoryProperties=(PFN_vkGetPhysicalDeviceMemoryProperties)base(owner,"vkGetPhysicalDeviceMemoryProperties");
-    device->real.vkGetPhysicalDeviceQueueFamilyProperties=(PFN_vkGetPhysicalDeviceQueueFamilyProperties)owner->resolver(owner->handle,"vkGetPhysicalDeviceQueueFamilyProperties");
+    if(!device->real.vkQueueSubmit2)device->real.vkQueueSubmit2=(PFN_vkQueueSubmit2)owner->resolver(owner->handle,"vkQueueSubmit2KHR");
+    if(!device->dt.vkQueueSubmit2)device->dt.vkQueueSubmit2=(PFN_vkQueueSubmit2)base(owner,"vkQueueSubmit2KHR");
     device->real.vkGetPhysicalDeviceQueueFamilyProperties=(PFN_vkGetPhysicalDeviceQueueFamilyProperties)instance.resolver(instance.instance,"vkGetPhysicalDeviceQueueFamilyProperties");
-    device->dt.vkGetPhysicalDeviceQueueFamilyProperties=(PFN_vkGetPhysicalDeviceQueueFamilyProperties)base(owner,"vkGetPhysicalDeviceQueueFamilyProperties");
-    device->real.vkMapMemory=(PFN_vkMapMemory)owner->resolver(owner->handle,"vkMapMemory");
-    device->dt.vkMapMemory=(PFN_vkMapMemory)base(owner,"vkMapMemory");
-    device->real.vkUnmapMemory=(PFN_vkUnmapMemory)owner->resolver(owner->handle,"vkUnmapMemory");
-    device->dt.vkUnmapMemory=(PFN_vkUnmapMemory)base(owner,"vkUnmapMemory");
-    device->real.vkFreeDescriptorSets=(PFN_vkFreeDescriptorSets)base(owner,"vkFreeDescriptorSets");
-    device->real.vkResetDescriptorPool=(PFN_vkResetDescriptorPool)base(owner,"vkResetDescriptorPool");
-    device->real.vkDestroyDescriptorPool=(PFN_vkDestroyDescriptorPool)base(owner,"vkDestroyDescriptorPool");
+    device->real.vkGetPhysicalDeviceMemoryProperties=(PFN_vkGetPhysicalDeviceMemoryProperties)instance.resolver(instance.instance,"vkGetPhysicalDeviceMemoryProperties");
     initialize(device);
     if(!device->nulldesc){free(device);return VK_ERROR_OUT_OF_HOST_MEMORY;}
     if(!need_dummies(device->nulldesc)){destroy(device);free(device);return VK_ERROR_OUT_OF_DEVICE_MEMORY;}

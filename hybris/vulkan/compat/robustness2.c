@@ -5,7 +5,7 @@
  */
 #define VK_NO_PROTOTYPES
 #include "robustness2.h"
-#include "shader_policy.h"
+#include "clip_distance.h"
 #include "../layer/layer.h"
 #include <stdlib.h>
 #include <string.h>
@@ -98,7 +98,7 @@ static void properties2(VkPhysicalDevice physical,VkPhysicalDeviceProperties2 *o
 {
     struct hybris_layer_physical owner;
     if(!hybris_layer_lookup_physical(physical,&owner))return;
-    PFN_vkGetPhysicalDeviceProperties2 query=(void*)hybris_shader_policy_proc(name);
+    PFN_vkGetPhysicalDeviceProperties2 query=(void*)hybris_clip_policy_proc(name);
     if(!query)query=(void*)owner.resolver(owner.instance,name);
     if(!query)return;
     query(physical,out);

@@ -68,7 +68,10 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     unsigned shader_mask = layer ? 0 : hybris_shader_physical_mask(physical);
     int vertex_stores = !layer && hybris_vertex_stores_active(physical);
     struct hybris_robustness2_policy robust={0};
-    if(!layer && hybris_robustness2_policy(physical,&robust)!=VK_SUCCESS)return VK_ERROR_INITIALIZATION_FAILED;
+    if(!layer) {
+        VkResult policy_result=hybris_robustness2_policy(physical,&robust);
+        if(policy_result!=VK_SUCCESS)return policy_result;
+    }
     if (layer || (!bc_mask && !shader_mask && !vertex_stores && !robust.emulated))
         return enumerate(physical, layer, count, properties);
     uint32_t available = 0;
