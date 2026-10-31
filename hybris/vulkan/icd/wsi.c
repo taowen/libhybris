@@ -388,19 +388,13 @@ int hybris_icd_wsi_surface_headless(VkSurfaceKHR surface)
     return state && state->headless;
 }
 
-static const VkFormat surface_format_candidates[] = {
-    VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM,
-    VK_FORMAT_A2B10G10R10_UNORM_PACK32
-};
-enum { SURFACE_FORMAT_COUNT = sizeof(surface_format_candidates) / sizeof(surface_format_candidates[0]) };
-
 static uint32_t surface_formats(const struct hybris_icd_physical *context,
     VkPhysicalDevice physical, VkSurfaceFormatKHR *formats);
 
 static int present_engine(VkPhysicalDevice physical, uint32_t queue_family)
 {
     struct hybris_icd_physical context;
-    VkSurfaceFormatKHR formats[SURFACE_FORMAT_COUNT];
+    VkSurfaceFormatKHR formats[2];
     return hybris_icd_lookup_physical(physical, &context) &&
         hybris_icd_physical_has_native_buffer(physical) &&
         hybris_icd_wsi_graphics_family(physical, queue_family) &&
@@ -498,12 +492,13 @@ VkResult hybris_icd_wsi_image_properties(VkPhysicalDevice physical, VkFormat for
 static uint32_t surface_formats(const struct hybris_icd_physical *context,
     VkPhysicalDevice physical, VkSurfaceFormatKHR *formats)
 {
+    const VkFormat candidates[] = {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM};
     uint32_t count = 0;
-    for (uint32_t i = 0; i < SURFACE_FORMAT_COUNT; ++i) {
+    for (uint32_t i = 0; i < 2; ++i) {
         VkImageFormatProperties properties;
-        if (image_limits(context, physical, surface_format_candidates[i], VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        if (image_limits(context, physical, candidates[i], VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
                 &properties) == VK_SUCCESS && (properties.sampleCounts & VK_SAMPLE_COUNT_1_BIT))
-            formats[count++] = (VkSurfaceFormatKHR){surface_format_candidates[i], VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+            formats[count++] = (VkSurfaceFormatKHR){candidates[i], VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     }
     return count;
 }
@@ -515,7 +510,7 @@ VkResult hybris_icd_wsi_capabilities(VkPhysicalDevice physical,
     if (!capabilities) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context)) return VK_ERROR_SURFACE_LOST_KHR;
     if (!hybris_icd_physical_has_native_buffer(physical)) return VK_ERROR_UNKNOWN;
-    VkSurfaceFormatKHR formats[SURFACE_FORMAT_COUNT];
+    VkSurfaceFormatKHR formats[2];
     uint32_t count = surface_formats(&context, physical, formats);
     if (!count) return VK_ERROR_FORMAT_NOT_SUPPORTED;
     VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -575,7 +570,7 @@ static VkResult VKAPI_CALL get_surface_formats(VkPhysicalDevice physical,
     if (!count) return VK_ERROR_INITIALIZATION_FAILED;
     if (!owned_surface(physical, surface, &context)) return VK_ERROR_SURFACE_LOST_KHR;
     if (!hybris_icd_physical_has_native_buffer(physical)) return VK_ERROR_UNKNOWN;
-    VkSurfaceFormatKHR supported[SURFACE_FORMAT_COUNT];
+    VkSurfaceFormatKHR supported[2];
     uint32_t available = surface_formats(&context, physical, supported);
     if (!available) return VK_ERROR_FORMAT_NOT_SUPPORTED;
     return fill_array(available, count, formats, supported, sizeof(*supported));
