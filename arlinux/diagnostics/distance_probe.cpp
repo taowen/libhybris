@@ -4,6 +4,7 @@
 #include "distance_cull_vert.inc"
 #include "distance_both_vert.inc"
 #include "distance_frag.inc"
+#include "distance_read_frag.inc"
 using namespace diagnostics;
 namespace {
 constexpr uint32_t W=32,H=16;
@@ -37,10 +38,10 @@ struct Graphics {
         VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};fi.renderPass=pass;fi.attachmentCount=1;fi.pAttachments=&image.view;fi.width=W;fi.height=H;fi.layers=1;
         CHECK(c.CreateFramebuffer(c.device,&fi,nullptr,&frame));
         VkPipelineLayoutCreateInfo li{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};CHECK(c.CreatePipelineLayout(c.device,&li,nullptr,&layout));
-        VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};const uint32_t *vertices[]={distance_clip_vert_spv,distance_cull_vert_spv,distance_both_vert_spv};
-        const size_t sizes[]={sizeof(distance_clip_vert_spv),sizeof(distance_cull_vert_spv),sizeof(distance_both_vert_spv)};
+        VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};const uint32_t *vertices[]={distance_clip_vert_spv,distance_cull_vert_spv,distance_both_vert_spv,distance_clip_vert_spv};
+        const size_t sizes[]={sizeof(distance_clip_vert_spv),sizeof(distance_cull_vert_spv),sizeof(distance_both_vert_spv),sizeof(distance_clip_vert_spv)};
         sm.codeSize=sizes[variant];sm.pCode=vertices[variant];CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&vertex));
-        sm.codeSize=sizeof(distance_frag_spv);sm.pCode=distance_frag_spv;CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&fragment));
+        sm.codeSize=variant==3?sizeof(distance_read_frag_spv):sizeof(distance_frag_spv);sm.pCode=variant==3?distance_read_frag_spv:distance_frag_spv;CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&fragment));
     }
     ~Graphics(){if(!c.idle)return;if(pipeline)c.DestroyPipeline(c.device,pipeline,nullptr);if(vertex)c.DestroyShaderModule(c.device,vertex,nullptr);if(fragment)c.DestroyShaderModule(c.device,fragment,nullptr);if(layout)c.DestroyPipelineLayout(c.device,layout,nullptr);if(frame)c.DestroyFramebuffer(c.device,frame,nullptr);if(pass)c.DestroyRenderPass(c.device,pass,nullptr);}
     bool render(Buffer &output,bool dynamic,unsigned variant) {
@@ -110,15 +111,15 @@ struct Graphics {
         CHECK(c.EndCommandBuffer(image.command));VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};CHECK(c.CreateFence(c.device,&fence,nullptr,&image.fence));
         VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};submit.commandBufferCount=1;submit.pCommandBuffers=&image.command;CHECK(c.QueueSubmit(c.queue,1,&submit,image.fence));c.idle=false;CHECK(c.WaitForFences(c.device,1,&image.fence,VK_TRUE,UINT64_C(10000000000)));c.idle=true;output.visibility(false);
         auto pixels=(const uint8_t*)output.mapped;
-        for(unsigned y=0;y<H;++y)for(unsigned x=0;x<W;++x){const auto *p=pixels+(y*W+x)*4;bool red=variant!=1 && x>=W/2;if(p[0]!=(red?255:0)||p[1]||p[2]||p[3]!=255)return false;}
+        for(unsigned y=0;y<H;++y)for(unsigned x=0;x<W;++x){const auto *p=pixels+(y*W+x)*4;bool red=variant==1 ? !c.original.shaderCullDistance : x>=W/2;if(p[0]!=(red?255:0)||p[1]||p[2]||p[3]!=255)return false;}
         return true;
     }
 };
 std::string run(const std::string &directory,const std::string &mode) {
     Context c;c.initialize(directory,mode!="distance-native",VK_API_VERSION_1_3);
     std::ostringstream log;log<<"Device: "<<c.properties.deviceName<<"; mode="<<mode<<"\n";
-    if(!c.features.shaderClipDistance || !c.features.shaderCullDistance || !c.features.geometryShader)
-        return log.str()+"SKIP: ClipDistance, CullDistance and geometry stages are required\n";
+    if(!c.features.shaderClipDistance || !c.features.shaderCullDistance)
+        return log.str()+"SKIP: ClipDistance and CullDistance are required\n";
     uint32_t count=0;
     auto enumerate=c.instance_proc<PFN_vkEnumerateDeviceExtensionProperties>("vkEnumerateDeviceExtensionProperties");
     CHECK(enumerate(c.physical,nullptr,&count,nullptr));std::vector<VkExtensionProperties> extensions(count);
@@ -129,20 +130,21 @@ std::string run(const std::string &directory,const std::string &mode) {
     VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     if(available){query.pNext=&dynamic;c.instance_proc<PFN_vkGetPhysicalDeviceFeatures2>("vkGetPhysicalDeviceFeatures2")(c.physical,&query);}
     const char *extension=VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME;
-    VkPhysicalDeviceFeatures enabled{};enabled.shaderClipDistance=enabled.shaderCullDistance=enabled.geometryShader=VK_TRUE;
+    VkPhysicalDeviceFeatures enabled{};enabled.shaderClipDistance=enabled.shaderCullDistance=VK_TRUE;
     c.create_device(enabled,dynamic.dynamicRendering?(VkBaseOutStructure*)&dynamic:nullptr,!core&&dynamic.dynamicRendering?1:0,&extension);
     log<<"Native components: VS output="<<c.properties.limits.maxVertexOutputComponents
        <<" FS input="<<c.properties.limits.maxFragmentInputComponents
        <<" GS input="<<c.properties.limits.maxGeometryInputComponents
        <<" GS output="<<c.properties.limits.maxGeometryOutputComponents<<"\n";
+    if(!c.original.shaderCullDistance)log<<"LIMITATION: MaliBridge demotes CullDistance without culling; expected full coverage\n";
     Buffer output(c,W*H*4,VK_BUFFER_USAGE_TRANSFER_DST_BIT);unsigned cases=0,failed=0;
-    for(unsigned variant=0;variant<3;++variant) {
+    for(unsigned variant=0;variant<4;++variant) {
         Graphics graphics(c,variant);
         for(unsigned d=0;d<2;++d) {
             if(d&&!dynamic.dynamicRendering)continue;
             bool pass=graphics.render(output,d,variant);++cases;if(!pass)++failed;
             log<<(pass?"PASS ":"FAIL ")<<"distance="<<variant<<" dynamic="<<d
-               <<"; occupied Locations 16..31, exact RGBA readback, caller state unchanged\n";
+               <<"; occupied Locations 0..7, exact RGBA readback, caller state unchanged\n";
         }
     }
     if(!dynamic.dynamicRendering)log<<"SKIP: native dynamic rendering unavailable\n";
@@ -156,15 +158,9 @@ int main(int argc,char **argv) {
     try {
         result=run(argv[1],mode);fflush(stderr);
         if(mode=="distance-normal" && result.find("PASS: ")!=std::string::npos) {
-            std::ifstream trace(std::string(argv[3])+"/trace.txt");std::string line;unsigned observed=0;
-            while(std::getline(trace,line)) {
-                unsigned builtin,location,count,limit;
-                if(sscanf(line.c_str(),"HYBRIS_DISTANCE builtin=%u location=%u count=%u limit=%u",&builtin,&location,&count,&limit)!=4)continue;
-                if(location>=16 || location>limit || count>limit-location)
-                    throw std::runtime_error("Distance allocation exceeded low free slots or native location limit");
-                if(builtin==3)observed|=1;if(builtin==4)observed|=2;
-            }
-            if(observed!=3)throw std::runtime_error("Clip/Cull allocation paths were not both observed");
+            std::ifstream trace(std::string(argv[3])+"/trace.txt");std::string line;bool observed=false;
+            while(std::getline(trace,line))observed|=line.find("HYBRIS_MALIBRIDGE_DISTANCE pipeline_base=")==0;
+            if(!observed)throw std::runtime_error("MaliBridge pipeline lowering was not observed");
         }
     }catch(const std::exception &e){result="FAIL: "+std::string(e.what())+"\n";}
     return report_result(result);

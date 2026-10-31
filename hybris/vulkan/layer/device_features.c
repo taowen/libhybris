@@ -99,8 +99,9 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     int transcode = compression.textureCompressionETC2 || compression.textureCompressionASTC_LDR;
     int hdr = hybris_bc_astc_hdr(physical);
     int cull = hybris_cull_active(physical);
+    int stage_point = hybris_stage_point_active(physical);
     int polygon=hybris_shader_polygon_emulated(physical);
-    if (!dual_src && !multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !polygon && !transcode && !hdr && !(robust_node && robust.emulated)) return VK_SUCCESS;
+    if (!dual_src && !multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !stage_point && !polygon && !transcode && !hdr && !(robust_node && robust.emulated)) return VK_SUCCESS;
     if (info->pEnabledFeatures) {
         out->features = *info->pEnabledFeatures;
         if(dual_src)out->features.dualSrcBlend=VK_FALSE;
@@ -111,10 +112,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
         if (clip) out->features.shaderClipDistance = VK_FALSE;
         if (stores) out->features.vertexPipelineStoresAndAtomics = VK_FALSE;
         if (bc) out->features.textureCompressionBC = VK_FALSE;
-        if (cull) {
-            out->features.shaderCullDistance = VK_FALSE;
-            out->features.geometryShader = VK_TRUE;
-        }
+        if (cull) out->features.shaderCullDistance = VK_FALSE;
+        if (stage_point) out->features.shaderTessellationAndGeometryPointSize = VK_FALSE;
         if (polygon && out->features.fillModeNonSolid) {
             out->features.fillModeNonSolid=VK_FALSE;
         }
@@ -202,10 +201,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
             if (clip) ((VkPhysicalDeviceFeatures2 *)copy)->features.shaderClipDistance = VK_FALSE;
             if (stores) ((VkPhysicalDeviceFeatures2 *)copy)->features.vertexPipelineStoresAndAtomics = VK_FALSE;
             if (bc) ((VkPhysicalDeviceFeatures2 *)copy)->features.textureCompressionBC = VK_FALSE;
-            if (cull) {
-                ((VkPhysicalDeviceFeatures2 *)copy)->features.shaderCullDistance = VK_FALSE;
-                ((VkPhysicalDeviceFeatures2 *)copy)->features.geometryShader = VK_TRUE;
-            }
+            if (cull) ((VkPhysicalDeviceFeatures2 *)copy)->features.shaderCullDistance = VK_FALSE;
+            if (stage_point) ((VkPhysicalDeviceFeatures2 *)copy)->features.shaderTessellationAndGeometryPointSize = VK_FALSE;
             if (polygon && ((VkPhysicalDeviceFeatures2*)copy)->features.fillModeNonSolid) {
                 ((VkPhysicalDeviceFeatures2*)copy)->features.fillModeNonSolid=VK_FALSE;
             }

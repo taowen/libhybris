@@ -35,29 +35,19 @@ int hybris_cull_active(VkPhysicalDevice physical)
         context.resolver(context.instance, "vkGetPhysicalDeviceFeatures");
     if (!query) return 0;
     query(physical, &features);
-    return !features.shaderCullDistance && features.geometryShader;
+    return !features.shaderCullDistance;
 }
 
-int hybris_clip_pipeline(const VkGraphicsPipelineCreateInfo *info)
+int hybris_stage_point_active(VkPhysicalDevice physical)
 {
-    unsigned vertex = 0, fragment = 0;
-    /* Shader rewrite does not depend on pipeline pNext (dynamic rendering,
-     * creation feedback). Skipping on any pNext left ClipDistance in the HAL
-     * modules of every Blender graphics pipeline. */
-    if (!info || (info->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR)) return 0;
-    for (uint32_t i = 0; i < info->stageCount; ++i) {
-        if (info->pStages[i].pNext) return 0;
-        vertex += info->pStages[i].stage == VK_SHADER_STAGE_VERTEX_BIT;
-        fragment += info->pStages[i].stage == VK_SHADER_STAGE_FRAGMENT_BIT;
-        if (info->pStages[i].stage != VK_SHADER_STAGE_VERTEX_BIT &&
-            info->pStages[i].stage != VK_SHADER_STAGE_FRAGMENT_BIT) return 0;
-    }
-    return vertex == 1 && fragment == 1;
-}
-
-void hybris_clip_filter_features(VkPhysicalDevice physical, VkPhysicalDeviceFeatures *features)
-{
-    if (features && hybris_clip_active(physical)) features->shaderClipDistance = VK_FALSE;
+    struct hybris_layer_physical context;
+    VkPhysicalDeviceFeatures features;
+    if (!hybris_layer_lookup_physical(physical, &context)) return 0;
+    PFN_vkGetPhysicalDeviceFeatures query = (PFN_vkGetPhysicalDeviceFeatures)
+        context.resolver(context.instance, "vkGetPhysicalDeviceFeatures");
+    if (!query) return 0;
+    query(physical, &features);
+    return !features.shaderTessellationAndGeometryPointSize;
 }
 
 static PFN_vkVoidFunction backend_proc(VkPhysicalDevice physical, const char *name)
@@ -78,6 +68,7 @@ static void VKAPI_CALL features(VkPhysicalDevice physical, VkPhysicalDeviceFeatu
     query(physical, out);
     if (hybris_clip_active(physical)) out->shaderClipDistance = VK_TRUE;
     if (hybris_cull_active(physical)) out->shaderCullDistance = VK_TRUE;
+    if (hybris_stage_point_active(physical)) out->shaderTessellationAndGeometryPointSize = VK_TRUE;
     if (hybris_vertex_stores_active(physical)) out->vertexPipelineStoresAndAtomics = VK_TRUE;
 }
 
@@ -88,6 +79,7 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     query(physical, out);
     if (hybris_clip_active(physical)) out->features.shaderClipDistance = VK_TRUE;
     if (hybris_cull_active(physical)) out->features.shaderCullDistance = VK_TRUE;
+    if (hybris_stage_point_active(physical)) out->features.shaderTessellationAndGeometryPointSize = VK_TRUE;
     if (hybris_vertex_stores_active(physical)) {
         out->features.vertexPipelineStoresAndAtomics = VK_TRUE;
         /* Preserve native transform feedback. Pipelines needing discard

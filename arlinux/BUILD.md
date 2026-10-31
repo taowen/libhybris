@@ -59,7 +59,7 @@ process cancellation, identity verification and report display are shared.
 | Dual-source blend | `.DualSourceProbeActivity` | `libhybris_dual_source_probe.so` | `files/dual_source/` |
 | Polygon modes | `.PolygonProbeActivity` | `libhybris_polygon_probe.so` | `files/polygon/` |
 | Shader interfaces | `.InOutProbeActivity` | `libhybris_inout_probe.so` | `files/inout/` |
-| Clip/Cull interfaces | `.DistanceProbeActivity` | `libhybris_distance_probe.so` | `files/distance/` |
+| MaliBridge distance interfaces | `.DistanceProbeActivity` | `libhybris_distance_probe.so` | `files/distance/` |
 
 For device automation, start the relevant Activity directly with a `mode` extra.
 BC accepts `native`, `normal`, `decode`, `auto`, `fast`, `default` or `high`, and
@@ -291,26 +291,28 @@ for every automatic-mode case. Unsupported native API paths are reported as
 skipped. This checks interface normalization, not Clip/Cull Distance support.
 `HYBRIS_VULKAN_COMPAT_INOUT=0` disables normalization for diagnosis.
 
-## Clip/Cull interface allocation
+## MaliBridge shader interfaces
 
-The fallback transports distance arrays through ordinary user varying locations.
-Like [MaliBridge's SPIR-V lowering](https://github.com/ASEbrahim/MaliBridge/blob/95a1e600a51299294e06bb09db2db8cc509fe6a3/server/spirv_clip.c),
-a float array occupies one location per element, and producer and consumer must
-use the same selected locations. [PanVK's lowering](https://github.com/JimVulkan/mali-panvk/blob/d896b0a9c10b92f0f9d53ef3373006b79ed709e8/src/panfrost/vulkan/panvk_vX_shader.c)
-uses compiler-owned CLIP_DIST slots and packs four values per vec4; those slots
-are not Vulkan user Location numbers and cannot be copied into a HAL wrapper.
+The vendored `compat/malibridge/spirv_edit`, `spirv_clip` and `spirv_pervertex`
+files are unchanged from MaliBridge commit
+`95a1e600a51299294e06bb09db2db8cc509fe6a3`. Keep upstream transformations and
+notices together; `distance_lowering.c` adapts their lifetime, allocator, entry
+selection and ordered pipeline integration to this layer.
 
-The wrapper searches unoccupied locations from zero, bounded by native vertex
-output and fragment input location ranges. The CullDistance geometry adapter
-also respects native geometry input/output ranges. Clip and Cull are planned
-again after rewriting so they cannot overlap. No available span returns
-`VK_ERROR_FEATURE_NOT_PRESENT`; there is no fallback to an out-of-range number.
-This bounds locations, not every aggregate component or geometry output budget.
-It does not implement geometry/tessellation stage chains or full Vulkan clipping
-semantics, and it preserves the current whole-primitive CullDistance adapter.
+Like MaliBridge, absent Clip/Cull and geometry/tessellation PointSize features
+are demoted to ordinary varyings. Every pipeline uses a shared location base
+past its highest occupied location, propagated from producer to consumer through
+VS, TCS, TES, GS and FS. Fragment clipping reuses a shader's own ClipDistance
+input when present. Arm drivers also receive the upstream per-vertex block fold.
+Missing CullDistance is not applied: geometry which should be culled can remain
+visible. Missing geometry/tessellation PointSize is not implemented as a varying
+rasterization size. Fragment clipping has the upstream rasterization/early-test
+limitations; no fragment shader means clipping is not applied. No Vulkan
+conformance is claimed. Unsupported shapes fail explicitly instead of submitting
+partially rewritten modules. The independent VS constant-PointSize cleanup and
+VS/FS vector-width normalization retain their separate purposes.
 
 The independent distance probe accepts `distance-normal` and `distance-native`.
-It occupies Locations 16 through 31 and checks Clip-only, Cull-only and combined
-pipelines with real GPU pixel readback and allocation traces. Native dynamic
-rendering is exercised when available. A native route without the required
-features is reported as skipped, never treated as an emulation result.
+It checks GPU pixels for Clip, Cull, combined and fragment ClipDistance-input
+paths, and logs the Cull approximation separately. Native dynamic rendering is
+exercised when available; unsupported native features are reported as skipped.

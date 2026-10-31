@@ -6,8 +6,8 @@ import java.io.File;
 
 public final class DistanceProbeActivity extends ProbeActivity {
     @Override protected String probeId() { return "distance"; }
-    @Override protected String probeTitle() { return "Clip/Cull interface allocation"; }
-    @Override protected String description() { return "Reserves Locations 16 through 31 and checks Clip/Cull fallback allocation, clipping and whole-primitive culling using real GPU pixels."; }
+    @Override protected String probeTitle() { return "MaliBridge shader interfaces"; }
+    @Override protected String description() { return "MaliBridge Clip/Cull lowering and fragment ClipDistance reads. CullDistance is demoted without culling when native support is absent; this limitation is reported."; }
     @Override protected void addControls(LinearLayout content) {
         String[][] modes = {{"distance-native", "Native driver"}, {"distance-normal", "Automatic compatibility"}};
         for (String[] mode : modes) addMode(content, mode[1], () -> runProbe(mode[0], 64));
