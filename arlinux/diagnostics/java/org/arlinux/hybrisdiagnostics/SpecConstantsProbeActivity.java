@@ -7,7 +7,7 @@ import java.io.File;
 public final class SpecConstantsProbeActivity extends ProbeActivity {
     @Override protected String probeId() { return "spec_constants"; }
     @Override protected String probeTitle() { return "Mali specialization constants"; }
-    @Override protected String description() { return "Compare validator-checked reference shaders with the historical composite form after repair. Samples a real texture using default, overridden and nested specialization constants. Native and disabled routes use only valid reference shaders."; }
+    @Override protected String description() { return "Compare validator-checked reference shaders with the historical composite form after repair. Samples a real texture using default, overridden and derived specialization constants. Native and disabled routes use only valid reference shaders."; }
     @Override protected void addControls(LinearLayout content) {
         String[][] modes = {{"spec-native", "Native reference"}, {"spec-normal", "Automatic Mali repair"},
             {"spec-force", "Force repair"}, {"spec-off", "Repair disabled · reference"}};

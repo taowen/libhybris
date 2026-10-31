@@ -131,7 +131,7 @@ The independent specialization probe accepts `spec-native`, `spec-normal`,
 a deliberate historical composite variant only on an enabled repair route.
 Native/disabled routes run references, never the historical variant. Checks
 sample an actual texture with defaults, partial/full overrides, specialization
-operations and nested composites; reuse one module across specializations;
+operations and ordinary constant controls; reuse one module across specializations;
 and verify caller code remains unchanged. Inline compute is checked when native
 maintenance5 is available. A repair trace confirms that force mode executed the
 pass. These are targeted GPU checks, not application/game acceptance.
