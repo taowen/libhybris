@@ -6,7 +6,7 @@ using namespace diagnostics;
 namespace {
 constexpr uint32_t W=32,H=16;
 struct Graphics {
-    Context &c;ImageResources image;bool rendering;
+    Context &c;ImageResources image;bool rendering;VkCommandBuffer secondary=VK_NULL_HANDLE;unsigned runs=0;
     VkRenderPass pass=VK_NULL_HANDLE;VkFramebuffer frame=VK_NULL_HANDLE;
     VkPipelineLayout layout=VK_NULL_HANDLE;VkPipeline pipeline=VK_NULL_HANDLE;
     VkShaderModule vertex=VK_NULL_HANDLE,fragment=VK_NULL_HANDLE;
@@ -38,12 +38,12 @@ struct Graphics {
         VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};sm.codeSize=sizeof(viewport_vert_spv);sm.pCode=viewport_vert_spv;CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&vertex));
         sm.codeSize=sizeof(viewport_frag_spv);sm.pCode=viewport_frag_spv;CHECK(c.CreateShaderModule(c.device,&sm,nullptr,&fragment));
     }
-    ~Graphics(){if(!c.idle)return;if(pipeline)c.DestroyPipeline(c.device,pipeline,nullptr);if(vertex)c.DestroyShaderModule(c.device,vertex,nullptr);if(fragment)c.DestroyShaderModule(c.device,fragment,nullptr);if(layout)c.DestroyPipelineLayout(c.device,layout,nullptr);if(frame)c.DestroyFramebuffer(c.device,frame,nullptr);if(pass)c.DestroyRenderPass(c.device,pass,nullptr);}
-    bool render(Buffer &output,uint32_t count,int dynamic,int resolver,bool reject_later) {
+    ~Graphics(){if(!c.idle)return;if(secondary)c.FreeCommandBuffers(c.device,c.pool,1,&secondary);if(pipeline)c.DestroyPipeline(c.device,pipeline,nullptr);if(vertex)c.DestroyShaderModule(c.device,vertex,nullptr);if(fragment)c.DestroyShaderModule(c.device,fragment,nullptr);if(layout)c.DestroyPipelineLayout(c.device,layout,nullptr);if(frame)c.DestroyFramebuffer(c.device,frame,nullptr);if(pass)c.DestroyRenderPass(c.device,pass,nullptr);}
+    bool render(Buffer &output,bool dynamic,int resolver,bool use_secondary) {
         if(pipeline){c.DestroyPipeline(c.device,pipeline,nullptr);pipeline=VK_NULL_HANDLE;}
         VkViewport views[]={{0,0,W/2.0f,float(H),0,1},{W/2.0f,0,W/2.0f,float(H),0,1}};
         VkRect2D scissors[]={{{0,0},{W,H/2}},{{0,H/2},{W,H/2}}};
-        VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};vp.viewportCount=vp.scissorCount=dynamic>=2?0:count;vp.pViewports=views;vp.pScissors=scissors;
+        VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};vp.viewportCount=vp.scissorCount=1;vp.pViewports=views;vp.pScissors=scissors;
         const auto before=vp;
         VkPipelineShaderStageCreateInfo stages[2]{};
         for(auto &s:stages){s.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;s.pName="main";}
@@ -54,7 +54,7 @@ struct Graphics {
         VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};samples.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT;
         VkPipelineColorBlendAttachmentState color{};color.colorWriteMask=0xf;
         VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};blend.attachmentCount=1;blend.pAttachments=&color;
-        VkDynamicState states[]={dynamic>=2?VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT:VK_DYNAMIC_STATE_VIEWPORT,dynamic>=2?VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT:VK_DYNAMIC_STATE_SCISSOR};
+        VkDynamicState states[]={VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR};
         VkPipelineDynamicStateCreateInfo dyn{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};dyn.dynamicStateCount=2;dyn.pDynamicStates=states;
         VkGraphicsPipelineCreateInfo pi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};pi.stageCount=2;pi.pStages=stages;pi.pVertexInputState=&input;pi.pInputAssemblyState=&assembly;pi.pViewportState=&vp;pi.pRasterizationState=&raster;pi.pMultisampleState=&samples;pi.pColorBlendState=&blend;pi.pDynamicState=dynamic?&dyn:nullptr;pi.layout=layout;pi.renderPass=rendering?VK_NULL_HANDLE:pass;
         VkFormat format=VK_FORMAT_R8G8B8A8_UNORM;VkPipelineRenderingCreateInfo rendering_info{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
@@ -63,10 +63,15 @@ struct Graphics {
         CHECK(c.CreateGraphicsPipelines(c.device,VK_NULL_HANDLE,1,&pi,nullptr,&pipeline));
         if(memcmp(&pipeline_input,&pi,sizeof(pi)) || memcmp(&rendering_input,&rendering_info,sizeof(rendering_info)))throw std::runtime_error("Caller pipeline create info changed");
         if(memcmp(&before,&vp,sizeof(vp)))throw std::runtime_error("Application pipeline state mutated");
-        if(image.command){c.FreeCommandBuffers(c.device,c.pool,1,&image.command);image.command=VK_NULL_HANDLE;}
+        if(image.command && (++runs%2)) {
+            CHECK(((PFN_vkResetCommandPool)c.gdpa(c.device,"vkResetCommandPool"))(c.device,c.pool,0));
+        } else {
+            if(secondary){c.FreeCommandBuffers(c.device,c.pool,1,&secondary);secondary=VK_NULL_HANDLE;}
+            if(image.command){c.FreeCommandBuffers(c.device,c.pool,1,&image.command);image.command=VK_NULL_HANDLE;}
+        }
         if(image.fence){c.DestroyFence(c.device,image.fence,nullptr);image.fence=VK_NULL_HANDLE;}
         VkCommandBufferAllocateInfo ca{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};ca.commandPool=c.pool;ca.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;ca.commandBufferCount=1;
-        CHECK(c.AllocateCommandBuffers(c.device,&ca,&image.command));VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};CHECK(c.BeginCommandBuffer(image.command,&begin));
+        if(!image.command)CHECK(c.AllocateCommandBuffers(c.device,&ca,&image.command));VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};CHECK(c.BeginCommandBuffer(image.command,&begin));
         VkClearValue clear{};clear.color.float32[3]=1;
         VkRenderPassBeginInfo rb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};rb.renderPass=pass;rb.framebuffer=frame;rb.renderArea={{0,0},{W,H}};rb.clearValueCount=1;rb.pClearValues=&clear;
         auto rendering_proc=[&](const char *name){auto p=resolver?c.gipa(c.instance,name):c.gdpa(c.device,name);if(!p)throw std::runtime_error(std::string("Missing ")+name);return p;};
@@ -78,24 +83,36 @@ struct Graphics {
             VkRenderingAttachmentInfo attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};attachment.imageView=image.view;attachment.imageLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             attachment.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;attachment.storeOp=VK_ATTACHMENT_STORE_OP_STORE;attachment.clearValue=clear;
             VkRenderingInfo info{VK_STRUCTURE_TYPE_RENDERING_INFO};info.renderArea={{0,0},{W,H}};info.layerCount=1;info.colorAttachmentCount=1;info.pColorAttachments=&attachment;
+            if(use_secondary)info.flags=VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
             const auto original_info=info;const auto original_attachment=attachment;
             ((PFN_vkCmdBeginRenderingKHR)rendering_proc("vkCmdBeginRenderingKHR"))(image.command,&info);
             if(memcmp(&info,&original_info,sizeof(info)) || memcmp(&attachment,&original_attachment,sizeof(attachment)))throw std::runtime_error("Caller rendering data changed");
-        } else c.CmdBeginRenderPass(image.command,&rb,VK_SUBPASS_CONTENTS_INLINE);
-        c.CmdBindPipeline(image.command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
-        auto proc=[&](const char *name){auto p=resolver?c.gipa(c.instance,name):c.gdpa(c.device,name);if(!p)throw std::runtime_error(std::string("Missing ")+name);return p;};
-        if(dynamic==1) {
-            auto setv=(PFN_vkCmdSetViewport)proc("vkCmdSetViewport");auto sets=(PFN_vkCmdSetScissor)proc("vkCmdSetScissor");
-            setv(image.command,0,count,views);sets(image.command,0,count,scissors);
-            if(count>1){setv(image.command,1,1,views+1);sets(image.command,1,1,scissors+1);}
-            // In compatibility mode index-one updates must be ignored, including their payload.
-            if(reject_later){setv(image.command,1,1,views);sets(image.command,1,1,scissors);}
-        } else if(dynamic>=2) {
-            auto setv=(PFN_vkCmdSetViewportWithCount)proc(dynamic==3?"vkCmdSetViewportWithCountEXT":"vkCmdSetViewportWithCount");
-            auto sets=(PFN_vkCmdSetScissorWithCount)proc(dynamic==3?"vkCmdSetScissorWithCountEXT":"vkCmdSetScissorWithCount");
-            setv(image.command,count,views);sets(image.command,count,scissors);
+        } else c.CmdBeginRenderPass(image.command,&rb,use_secondary?VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS:VK_SUBPASS_CONTENTS_INLINE);
+        VkCommandBuffer draw=image.command;
+        if(use_secondary) {
+            ca.level=VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+            if(!secondary)CHECK(c.AllocateCommandBuffers(c.device,&ca,&secondary));
+            VkCommandBufferInheritanceRenderingInfo formats{VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO};
+            formats.colorAttachmentCount=1;formats.pColorAttachmentFormats=&format;formats.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT;
+            VkCommandBufferInheritanceInfo inheritance{VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO};
+            inheritance.renderPass=rendering?VK_NULL_HANDLE:pass;inheritance.pNext=rendering?&formats:nullptr;
+            VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};bi.flags=VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;bi.pInheritanceInfo=&inheritance;
+            const auto original_inheritance=inheritance;const auto original_formats=formats;
+            CHECK(c.BeginCommandBuffer(secondary,&bi));
+            if(memcmp(&inheritance,&original_inheritance,sizeof(inheritance)) || memcmp(&formats,&original_formats,sizeof(formats)))throw std::runtime_error("Caller secondary inheritance changed");
+            draw=secondary;
         }
-        c.CmdDraw(image.command,3,1,0,0);
+        c.CmdBindPipeline(draw,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
+        auto proc=[&](const char *name){auto p=resolver?c.gipa(c.instance,name):c.gdpa(c.device,name);if(!p)throw std::runtime_error(std::string("Missing ")+name);return p;};
+        if(dynamic) {
+            ((PFN_vkCmdSetViewport)proc("vkCmdSetViewport"))(draw,0,1,views);
+            ((PFN_vkCmdSetScissor)proc("vkCmdSetScissor"))(draw,0,1,scissors);
+        }
+        c.CmdDraw(draw,3,1,0,0);
+        if(use_secondary) {
+            CHECK(c.EndCommandBuffer(secondary));
+            ((PFN_vkCmdExecuteCommands)proc("vkCmdExecuteCommands"))(image.command,1,&secondary);
+        }
         if(rendering) {
             ((PFN_vkCmdEndRenderingKHR)rendering_proc("vkCmdEndRenderingKHR"))(image.command);
             VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
@@ -130,9 +147,9 @@ std::string run(const std::string &directory,const std::string &mode,bool featur
     Buffer output(c,W*H*4,VK_BUFFER_USAGE_TRANSFER_DST_BIT);Graphics graphics(c,rendering);
     std::ostringstream log;log<<"GPU: "<<c.properties.deviceName<<" dynamic="<<rendering<<" features2="<<features2<<"\n";
     unsigned cases=0,failed=0;
-    for(int state=0;state<2;++state)for(int resolver=0;resolver<2;++resolver) {
-        bool pass=graphics.render(output,1,state,resolver,false);++cases;if(!pass)++failed;
-        log<<(pass?"PASS ":"FAIL ")<<"state="<<state<<" resolver="<<(resolver?"GIPA":"GDPA")<<" RGBA pixels and caller-owned input\n";
+    for(int state=0;state<2;++state)for(int resolver=0;resolver<2;++resolver)for(int secondary=0;secondary<2;++secondary) {
+        bool pass=graphics.render(output,state,resolver,secondary);++cases;if(!pass)++failed;
+        log<<(pass?"PASS ":"FAIL ")<<"state="<<state<<" resolver="<<(resolver?"GIPA":"GDPA")<<" secondary="<<secondary<<" RGBA pixels and caller-owned input\n";
     }
     log<<(failed?"FAIL: ":"PASS: ")<<cases<<" actual GPU graphics cases, "<<failed<<" failed\n";return log.str();
 }
