@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/multidraw.h"
 #include "../compat/multiviewport.h"
 #include "layer.h"
 #include "device_features.h"
@@ -66,7 +67,8 @@ static PFN_vkVoidFunction resolve_base(const struct hybris_layer_device *device,
     if (!hybris_shader_device_proc_allowed(device->handle, name)) return NULL;
     PFN_vkVoidFunction next = device->resolver(device->handle, name);
     if (!next) return NULL;
-    PFN_vkVoidFunction compat = hybris_bc_proc(name);
+    PFN_vkVoidFunction compat=device->multi_draw?hybris_multidraw_proc(name):NULL;
+    if(!compat)compat=hybris_bc_proc(name);
     if (!compat) compat = hybris_shader_cleanup_proc(name);
     if (!compat) compat = hybris_shader_proc(name);
     if (!compat) compat = hybris_vertex_stores_proc(name);
@@ -104,6 +106,7 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
          * application-specific rendering workaround. Flush/readback changes
          * remain gated by application_policy inside their own hooks. */
         .track_commands = 1,
+        .multi_draw=hybris_multidraw_requested(info) && hybris_multidraw_active(physical),
         .multi_viewport=hybris_multiviewport_requested(info) && hybris_multiviewport_active(physical),
         .instance_generation = instance.generation}, .custom_allocator = allocator != NULL};
     if (allocator) state->allocator = *allocator;
