@@ -63,3 +63,27 @@ signing key, never the product signing key. A new build may require uninstalling
 the previous diagnostic APK; its private reports are then removed. Retain useful
 evidence outside the app first. Keep device records outside Git. Real application
 and game regression remains required after these targeted experiments.
+
+## Robustness2 compatibility
+
+Native robustness2 feature bits are retained. On drivers lacking all or part of
+robustness2, the layer follows MaliBridge's compatibility policy: enable core
+buffer/image robustness where available, and replace null descriptors with
+initialized read-only resources or separate writable sinks. This is an
+approximation: writable null resources can read back prior writes, and core
+buffer robustness does not promise robustness2's precise zero/out-of-bounds
+semantics. It must not be described as Vulkan conformance.
+
+`HYBRIS_ROBUSTNESS2=0` disables this compatibility policy; `force` exercises it on
+a native-capable GPU for diagnosis. The default is automatic per missing feature,
+not an application-specific rule. Full null compatibility hides descriptor-buffer,
+shader-object and ray-tracing extensions, whose resource paths are not covered.
+Image stand-ins infer view shape and numeric class from pipeline SPIR-V; unknown
+or conflicting declarations use a 2D fallback. Multisampled and 64-bit typed null
+images are not supported by that approximation.
+
+The diagnostic APK accepts `robust-native`, `robust`, `robust-force` and
+`robust-off` modes. It dispatches real GPU reads, writes and atomics against null
+and out-of-bounds descriptors, checks normal/template updates leave caller-owned
+memory intact, and reports compatibility limitations separately from failures.
+These focused probes do not replace real application acceptance.

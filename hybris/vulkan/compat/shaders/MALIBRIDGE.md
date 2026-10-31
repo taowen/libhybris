@@ -45,8 +45,9 @@ image instead of disabling every BC format for an unsupported optional usage.
 Work is scheduled per 4x4 block with explicit padded scratch rows. The existing
 raw BC backing remains authoritative for copies and readback, which upstream
 does not implement. RGB8/RGB16F output variants remain internal diagnostic
-facilities and do not select application image formats. No robustness feature
-is emulated or advertised by this port.
+facilities and do not select application image formats. Robustness compatibility
+is a separate policy; its scope and limitations are documented in
+[the component guide](../../../../arlinux/BUILD.md#robustness2-compatibility).
 
 `generate-bc.py` is the existing offline kernel generator. It uses glslc and
 spirv-val (GLSLC/SPIRV_VAL may select executables) and writes bc_decode.inc.

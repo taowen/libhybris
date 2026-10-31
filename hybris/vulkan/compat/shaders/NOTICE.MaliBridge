@@ -19,3 +19,9 @@ Additional terms under section 7 of the GNU GPL version 3:
 
 Third-party components keep their own licences and notices (third_party/ and the files that name
 them).
+
+The robustness2 policy and null descriptor implementation in ../robustness2.c,
+../null_descriptors.c and ../null_map.h are also adapted from MaliBridge commit
+95a1e600a51299294e06bb09db2db8cc509fe6a3 (server/server_emu.c,
+server/server_instance.c, server/server_nulldesc.c and server/nd_map.h), under
+GPL-3.0-or-later. They are compatibility approximations, not conformance claims.

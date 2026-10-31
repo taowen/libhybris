@@ -1,0 +1,13 @@
+#version 450
+// SPDX-License-Identifier: Apache-2.0
+layout(local_size_x=1) in;
+layout(binding=0,std430) buffer Output { uint v[]; } output_data;
+layout(binding=1,r32ui) uniform uimage2D image_data;
+void main() {
+    output_data.v[0]=imageLoad(image_data,ivec2(1,0)).x;
+    imageStore(image_data,ivec2(2,0),uvec4(0x12345678u));
+    memoryBarrierImage();
+    output_data.v[1]=imageLoad(image_data,ivec2(1,0)).x;
+    output_data.v[2]=imageAtomicAdd(image_data,ivec2(2,0),1u);
+    output_data.v[3]=imageLoad(image_data,ivec2(0)).x;
+}

@@ -1,0 +1,15 @@
+#version 450
+// SPDX-License-Identifier: Apache-2.0
+layout(local_size_x=1) in;
+layout(binding=0,std430) buffer Output { uint v[]; } output_data;
+layout(binding=1,std430) buffer Storage { uint value[]; } storage_data;
+layout(binding=2,std140) uniform Uniform { uvec4 value[32]; } uniform_data;
+layout(push_constant) uniform Bounds { uint storage_index; uint uniform_index; } bounds;
+void main() {
+    output_data.v[0]=storage_data.value[bounds.storage_index];
+    storage_data.value[bounds.storage_index]=0x12345678u;
+    memoryBarrierBuffer();
+    output_data.v[1]=storage_data.value[bounds.storage_index];
+    output_data.v[2]=atomicAdd(storage_data.value[bounds.storage_index],1u);
+    output_data.v[3]=uniform_data.value[bounds.uniform_index].x;
+}

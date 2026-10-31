@@ -24,11 +24,11 @@ public final class MainActivity extends Activity {
         scroll.addView(content);
         setContentView(scroll);
         TextView title = new TextView(this);
-        title.setText("libhybris · Vulkan BC diagnostics");
+        title.setText("libhybris · Vulkan diagnostics");
         title.setTextSize(22);
         content.addView(title);
         TextView description = new TextView(this);
-        description.setText("Runs on this phone's GPU. No Linux, Wine or root required. Each run starts a fresh probe process. Results cover offscreen BC upload, sampling and compressed readback; they do not certify games or window presentation.\n\nBC kernels: MaliBridge by ASEbrahim · https://github.com/ASEbrahim/MaliBridge\nThis is an independent libhybris integration, not an official MaliBridge build. GPL-3.0-or-later and component notices are included in the APK assets.");
+        description.setText("Runs on this phone's GPU. No Linux, Wine or root required. Each run starts a fresh probe process. Robustness compatibility is approximate; deviations from strict null/OOB behavior are reported separately. Results cover offscreen BC upload, sampling and compressed readback; they do not certify games or window presentation.\n\nBC kernels: MaliBridge by ASEbrahim · https://github.com/ASEbrahim/MaliBridge\nThis is an independent libhybris integration, not an official MaliBridge build. GPL-3.0-or-later and component notices are included in the APK assets.");
         android.text.util.Linkify.addLinks(description, android.text.util.Linkify.WEB_URLS);
         content.addView(description);
         large = new CheckBox(this);
@@ -37,7 +37,9 @@ public final class MainActivity extends Activity {
         String[][] modes = {{"native", "Native driver"}, {"normal", "Compatibility layer · normal policy"},
             {"decode", "Force BC decoding"}, {"auto", "Force BC transcoding · auto"},
             {"fast", "Force BC transcoding · fast"}, {"default", "Force BC transcoding · default"},
-            {"high", "Force BC transcoding · high"}};
+            {"high", "Force BC transcoding · high"}, {"robust-native", "Robustness2 · native driver"},
+            {"robust", "Robustness2 · normal policy"}, {"robust-force", "Robustness2 · force compatibility"},
+            {"robust-off", "Robustness2 · compatibility disabled"}};
         for (String[] mode : modes) {
             Button button = new Button(this);
             button.setText(mode[1]);
@@ -62,7 +64,7 @@ public final class MainActivity extends Activity {
     }
 
     private void startProbe(String mode, int size) {
-        if (!java.util.Arrays.asList("native", "normal", "decode", "auto", "fast", "default", "high").contains(mode)
+        if (!java.util.Arrays.asList("native", "normal", "decode", "auto", "fast", "default", "high", "robust-native", "robust", "robust-force", "robust-off").contains(mode)
                 || (size != 64 && size != 1024)) throw new IllegalArgumentException("Invalid probe mode or size");
         startActivityForResult(new Intent(this, ProbeActivity.class).putExtra("mode", mode).putExtra("size", size), 1);
     }
