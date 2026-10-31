@@ -124,7 +124,7 @@ VkResult hybris_dual_source_spirv(uint32_t *code,size_t bytes,uint32_t attachmen
                 if((code[scan]&0xffff)==71 && (code[scan]>>16)>=4 && code[scan+2]==30 && code[scan+3]==free_location && output_type(code,words,code[scan+1]))occupied=1;
             if(!occupied)break;
         }
-        if(free_location==limit)return VK_ERROR_FEATURE_NOT_PRESENT;
+        if(free_location>=limit)return VK_ERROR_FEATURE_NOT_PRESENT;
         uint32_t *location=NULL;
         for(size_t scan=5;scan<words;scan+=code[scan]>>16)
             if((code[scan]&0xffff)==71 && (code[scan]>>16)>=4 && code[scan+1]==id && code[scan+2]==30)location=&code[scan+3];

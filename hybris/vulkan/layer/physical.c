@@ -66,14 +66,15 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     PFN_vkEnumerateDeviceExtensionProperties enumerate = (PFN_vkEnumerateDeviceExtensionProperties)
         context.resolver(context.instance, "vkEnumerateDeviceExtensionProperties");
     unsigned bc_mask = layer ? 0 : hybris_bc_physical_mask(physical);
-    unsigned shader_mask = layer ? 0 : (hybris_shader_physical_mask(physical) || hybris_dual_source_active(physical));
+    unsigned shader_mask = layer ? 0 : hybris_shader_physical_mask(physical);
+    int dual_source = !layer && hybris_dual_source_active(physical);
     int vertex_stores = !layer && hybris_vertex_stores_active(physical);
     struct hybris_robustness2_policy robust={0};
     if(!layer) {
         VkResult policy_result=hybris_robustness2_policy(physical,&robust);
         if(policy_result!=VK_SUCCESS)return policy_result;
     }
-    if (layer || (!bc_mask && !shader_mask && !vertex_stores && !robust.emulated))
+    if (layer || (!bc_mask && !shader_mask && !dual_source && !vertex_stores && !robust.emulated))
         return enumerate(physical, layer, count, properties);
     uint32_t available = 0;
     VkResult result = enumerate(physical, NULL, &available, NULL);
@@ -91,7 +92,7 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
              !strcmp(all[i].extensionName,"VK_KHR_ray_tracing_pipeline") ||
              !strcmp(all[i].extensionName,"VK_KHR_ray_query")))continue;
         if ((bc_mask && !hybris_bc_extension_allowed(all[i].extensionName)) ||
-            ((shader_mask || vertex_stores) && !hybris_shader_extension_allowed(all[i].extensionName))) continue;
+            ((shader_mask || dual_source || vertex_stores) && !hybris_shader_extension_allowed(all[i].extensionName))) continue;
         if (properties && written < capacity) properties[written++] = all[i];
         ++kept;
     }

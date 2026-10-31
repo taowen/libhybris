@@ -208,9 +208,10 @@ It is not full dual-source blending or Vulkan conformance. PanVK can implement
 actual source-one blending through its internal blend shaders and Mali compiler;
 this layer above the proprietary driver cannot invoke that driver-internal path.
 
-The rewrite supports ordinary scalar/vector 32-bit fragment outputs. Arrays,
-interface blocks, grouped decorations and exhausted output locations fail
-explicitly rather than overlapping another output. The existing pipeline
+The local rewrite supports ordinary scalar/vector 32-bit fragment outputs
+with direct decorations after the existing entry-point normalizer. Arrays,
+interface blocks, unresolved decoration groups and exhausted output locations
+fail explicitly rather than overlapping another output. The existing pipeline
 conversion restrictions also apply: shader objects and graphics pipeline
 libraries are unavailable. Dynamic color-blend equations are disabled when
 this approximation is active; static blend state is the supported path.
