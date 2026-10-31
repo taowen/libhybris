@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "dual_source.h"
 #include "multidraw.h"
 #include "multiviewport.h"
 #include "shader_policy.h"
@@ -39,12 +40,15 @@ int hybris_shader_command_allowed(const char *name)
 VkResult hybris_shader_prepare_device(VkPhysicalDevice physical, const VkDeviceCreateInfo *info)
 {
     if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical) &&
-        !hybris_shader_polygon_emulated(physical)) return VK_SUCCESS;
+        !hybris_shader_polygon_emulated(physical) && !hybris_dual_source_active(physical)) return VK_SUCCESS;
     for (uint32_t i = 0; i < info->enabledExtensionCount; ++i)
         if (!hybris_shader_extension_allowed(info->ppEnabledExtensionNames[i])) return VK_ERROR_EXTENSION_NOT_PRESENT;
     for (const VkBaseInStructure *node = info->pNext; node; node = node->pNext) {
         VkBool32 enabled = VK_FALSE;
         switch (node->sType) {
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT:
+            enabled=hybris_dual_source_active(physical) && ((const VkPhysicalDeviceExtendedDynamicState3FeaturesEXT*)node)->extendedDynamicState3ColorBlendEquation;
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
             enabled = ((const VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *)node)->vertexInputDynamicState;
             break;
@@ -67,6 +71,7 @@ static void VKAPI_CALL features(VkPhysicalDevice physical,VkPhysicalDeviceFeatur
     PFN_vkGetPhysicalDeviceFeatures query=(void*)hybris_bc_policy_proc("vkGetPhysicalDeviceFeatures");
     if(!query) query=(void*)context.resolver(context.instance,"vkGetPhysicalDeviceFeatures");
     query(physical,out);
+    if(hybris_dual_source_active(physical))out->dualSrcBlend=VK_TRUE;
     if(hybris_multidraw_active(physical))out->multiDrawIndirect=VK_TRUE;
     if(hybris_multiviewport_active(physical))out->multiViewport=VK_TRUE;
     if(hybris_shader_polygon_emulated(physical)) out->fillModeNonSolid=VK_TRUE;
@@ -80,14 +85,18 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     PFN_vkGetPhysicalDeviceFeatures2 query = (PFN_vkGetPhysicalDeviceFeatures2)hybris_bc_policy_proc(name);
     if (!query) query = (PFN_vkGetPhysicalDeviceFeatures2)context.resolver(context.instance, name);
     query(physical, out);
+    if(hybris_dual_source_active(physical))out->features.dualSrcBlend=VK_TRUE;
     if(hybris_multidraw_active(physical))out->features.multiDrawIndirect=VK_TRUE;
     if(hybris_multiviewport_active(physical))out->features.multiViewport=VK_TRUE;
     hybris_robustness2_features(physical,out);
     int polygon=hybris_shader_polygon_emulated(physical);
     if(polygon) out->features.fillModeNonSolid=VK_TRUE;
-    if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical) && !polygon) return;
+    if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical) && !polygon && !hybris_dual_source_active(physical)) return;
     for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext) {
         switch (node->sType) {
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT:
+            if(hybris_dual_source_active(physical))((VkPhysicalDeviceExtendedDynamicState3FeaturesEXT*)node)->extendedDynamicState3ColorBlendEquation=VK_FALSE;
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
             ((VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *)node)->vertexInputDynamicState = VK_FALSE;
             break;

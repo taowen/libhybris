@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/dual_source.h"
 #include "../compat/multidraw.h"
 #include "../compat/multiviewport.h"
 #include "device_features.h"
@@ -87,6 +88,7 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
             hybris_scaled_free(allocator,out->extensions);out->extensions=names;out->info.ppEnabledExtensionNames=names;
         }
     }
+    int dual_src=hybris_dual_source_active(physical);
     int multi_draw=hybris_multidraw_active(physical);
     int multi_viewport=hybris_multiviewport_active(physical);
     int clip = hybris_clip_active(physical);
@@ -98,9 +100,10 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     int hdr = hybris_bc_astc_hdr(physical);
     int cull = hybris_cull_active(physical);
     int polygon=hybris_shader_polygon_emulated(physical);
-    if (!multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !polygon && !transcode && !hdr && !(robust_node && robust.emulated)) return VK_SUCCESS;
+    if (!dual_src && !multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !polygon && !transcode && !hdr && !(robust_node && robust.emulated)) return VK_SUCCESS;
     if (info->pEnabledFeatures) {
         out->features = *info->pEnabledFeatures;
+        if(dual_src)out->features.dualSrcBlend=VK_FALSE;
         if(multi_draw)out->features.multiDrawIndirect=VK_FALSE;
         if(multi_viewport)out->features.multiViewport=VK_FALSE;
         if(force_buffer)out->features.robustBufferAccess=VK_TRUE;
@@ -192,6 +195,7 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
         *slot = copy;
         slot = &copy->pNext;
         if (node == features2) {
+            if(dual_src)((VkPhysicalDeviceFeatures2*)copy)->features.dualSrcBlend=VK_FALSE;
             if(multi_draw)((VkPhysicalDeviceFeatures2*)copy)->features.multiDrawIndirect=VK_FALSE;
             if(multi_viewport)((VkPhysicalDeviceFeatures2*)copy)->features.multiViewport=VK_FALSE;
             if(force_buffer)((VkPhysicalDeviceFeatures2*)copy)->features.robustBufferAccess=VK_TRUE;

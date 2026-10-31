@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
+#include "dual_source.h"
 #include "multiviewport.h"
 #include "shader_dispatch.h"
 #include "scaled_vertex.h"
@@ -50,6 +51,8 @@ struct shader_device {
     int polygon;
     int mali_spec;
     int multi_viewport;
+    int dual_src;
+    uint32_t output_limit;
     _Atomic unsigned spec_changes;
     VkAllocationCallbacks allocator;
     int custom;
@@ -74,9 +77,10 @@ static struct shader_device *find_device(VkDevice handle)
 }
 int hybris_shader_device_proc_allowed(VkDevice handle, const char *name)
 {
-    if (hybris_shader_command_allowed(name)) return 1;
     struct shader_device *device = find_device(handle);
-    return !device || (!device->mask && !device->vertex_stores && !device->polygon);
+    if(device && device->dual_src && !strcmp(name,"vkCmdSetColorBlendEquationEXT"))return 0;
+    if (hybris_shader_command_allowed(name)) return 1;
+    return !device || (!device->mask && !device->vertex_stores && !device->polygon && !device->dual_src);
 }
 int hybris_shader_polygon_active(VkDevice handle)
 {
@@ -109,6 +113,15 @@ VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
     device->destroy_shader = (PFN_vkDestroyShaderModule)resolver(handle, "vkDestroyShaderModule");
     device->create_pipelines = (PFN_vkCreateGraphicsPipelines)resolver(handle, "vkCreateGraphicsPipelines");
     device->mali_spec=hybris_mali_spec_active(physical);
+    device->dual_src=hybris_dual_source_requested(requested) && hybris_dual_source_active(physical);
+    if(device->dual_src) {
+        struct hybris_layer_physical owner;
+        if(hybris_layer_lookup_physical(physical,&owner)) {
+            VkPhysicalDeviceProperties properties;
+            ((PFN_vkGetPhysicalDeviceProperties)owner.resolver(owner.instance,"vkGetPhysicalDeviceProperties"))(physical,&properties);
+            device->output_limit=properties.limits.maxFragmentOutputAttachments;
+        }
+    }
     device->create_compute=(PFN_vkCreateComputePipelines)resolver(handle,"vkCreateComputePipelines");
     device->destroy_pipeline = (PFN_vkDestroyPipeline)resolver(handle, "vkDestroyPipeline");
     device->resolver = resolver;
@@ -159,7 +172,7 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
     struct shader_device *device = find_device(handle);
     if (!device) return VK_ERROR_INITIALIZATION_FAILED;
     if (!device->mask && !device->point_size && !device->inout &&
-        !device->clip && !device->cull && !device->vertex_stores && !device->polygon && !device->mali_spec)
+        !device->clip && !device->cull && !device->vertex_stores && !device->polygon && !device->mali_spec && !device->dual_src)
         return device->create_shader(handle, info, allocator, module);
     struct shader *shader = hybris_scaled_alloc(allocator, sizeof(*shader), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!shader) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -448,9 +461,24 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
         discard = writes && info->pRasterizationState && info->pRasterizationState->rasterizerDiscardEnable;
         if (discard) { point = inout = clip = 0; }
     }
+    int dual=device->dual_src && !discard && !(info->pRasterizationState && info->pRasterizationState->rasterizerDiscardEnable);
+    if(dual && info->pColorBlendState && info->pColorBlendState->attachmentCount) {
+        copy->blend=*info->pColorBlendState;
+        copy->attachments=hybris_scaled_alloc(allocator,copy->blend.attachmentCount*sizeof(*copy->attachments),VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+        if(!copy->attachments)return VK_ERROR_OUT_OF_HOST_MEMORY;
+        memcpy(copy->attachments,copy->blend.pAttachments,copy->blend.attachmentCount*sizeof(*copy->attachments));
+        for(uint32_t a=0;a<copy->blend.attachmentCount;++a) {
+            VkPipelineColorBlendAttachmentState *attachment=&copy->attachments[a];
+            attachment->srcColorBlendFactor=hybris_dual_source_factor(attachment->srcColorBlendFactor);
+            attachment->dstColorBlendFactor=hybris_dual_source_factor(attachment->dstColorBlendFactor);
+            attachment->srcAlphaBlendFactor=hybris_dual_source_factor(attachment->srcAlphaBlendFactor);
+            attachment->dstAlphaBlendFactor=hybris_dual_source_factor(attachment->dstAlphaBlendFactor);
+        }
+        copy->blend.pAttachments=copy->attachments;info->pColorBlendState=&copy->blend;
+    }
     if (info->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR) {
         *reason = "vertex format conversion does not support graphics pipeline libraries";
-        return (device->mask || device->vertex_stores) ? VK_ERROR_UNKNOWN : VK_SUCCESS;
+        return (device->mask || device->vertex_stores || device->dual_src) ? VK_ERROR_UNKNOWN : VK_SUCCESS;
     }
     int vertex_stage = 0;
     for (uint32_t j = 0; j < info->stageCount; ++j)
@@ -466,7 +494,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
     if (input) for (uint32_t j = 0; j < input->vertexAttributeDescriptionCount; ++j)
         for (unsigned i = 0; i < HYBRIS_SCALED_FORMAT_COUNT; ++i)
             if ((device->mask & (1u << i)) && input->pVertexAttributeDescriptions[j].format == hybris_scaled_formats[i].scaled) ++count;
-    if (!count && !point && !inout && !clip && !discard && !cull_count) return VK_SUCCESS;
+    if (!count && !point && !inout && !clip && !discard && !cull_count && !dual) return VK_SUCCESS;
     /* Scaled and integer fetch use the same bytes and binding cadence. Keep
      * the divisor chain (EXT/KHR aliases) intact for the backend; reject other
      * vertex-input extensions whose interaction has not been established. */
@@ -518,13 +546,14 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
         struct shader *shader = device->shaders;
         while (shader && shader->handle != stage->module) shader = shader->next;
         pthread_mutex_unlock(&guard);
+        int stage_dual=dual && fragment && shader && hybris_dual_source_outputs(shader->code,shader->size)!=0;
         int stage_discard = discard && stage->stage == last_stage;
         int stage_clip = clip && clip_count && (vertex || fragment) && shader && !shader->extensions;
         int stage_cull = vertex && cull_count;
         /* Module destruction is externally synchronized against pipeline use. */
-        if (!vertex && !inout && !stage_clip && !stage_discard &&
+        if (!vertex && !inout && !stage_clip && !stage_discard && !stage_dual &&
             (!count || !shader || !hybris_spirv_multiple(shader->code, shader->size))) continue;
-        if ((!shader || stage->pNext) && !count && !inout && !stage_clip && !stage_discard) continue;
+        if ((!shader || stage->pNext) && !count && !inout && !stage_clip && !stage_discard && !stage_dual) continue;
         if (!shader || stage->pNext) {
             *reason = "stage conversion requires a captured module without stage extensions";
             result = VK_ERROR_UNKNOWN;
@@ -532,7 +561,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
         }
         int stage_point = point && !shader->extensions;
         int stage_inout = inout && fragment && !shader->extensions;
-        if (!count && !stage_point && !stage_inout && !stage_clip && !stage_discard && !stage_cull) continue;
+        if (!count && !stage_point && !stage_inout && !stage_clip && !stage_discard && !stage_cull && !stage_dual) continue;
         uint32_t *code = NULL;
         size_t size = 0;
         if (vertex && count) result = hybris_scaled_spirv(shader->code, shader->size, stage->pName, attrs, count,
@@ -543,7 +572,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
             result = model < 5 ? hybris_spirv_entry(shader->code, shader->size, model,
                 stage->pName, allocator, &code, &size, reason) : VK_ERROR_UNKNOWN;
         }
-        if (result == VK_ERROR_UNKNOWN && !count && !stage_inout && !stage_clip && !stage_discard && !stage_cull) {
+        if (result == VK_ERROR_UNKNOWN && !count && !stage_inout && !stage_clip && !stage_discard && !stage_cull && !stage_dual) {
             result = VK_SUCCESS;
             continue;
         }
@@ -584,7 +613,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
             result = hybris_spirv_inout(vs->code, vs->size, code, size, allocator, &wide, &wide_size, &widened);
             if (result != VK_SUCCESS) { hybris_scaled_free(allocator, code); goto done; }
             if (wide) { hybris_scaled_free(allocator, code); code = wide; size = wide_size; }
-            else if (!count && !stage_point && !stage_clip && !stage_cull) { hybris_scaled_free(allocator, code); continue; }
+            else if (!count && !stage_point && !stage_clip && !stage_cull && !stage_dual) { hybris_scaled_free(allocator, code); continue; }
         }
         if (hybris_shader_cleanup_enabled()) {
             uint32_t *clean = NULL;
@@ -655,6 +684,13 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
             hybris_scaled_free(allocator, code);
             if (result != VK_SUCCESS) goto done;
             code = clipped; size = clipped_size;
+        }
+        if(stage_dual) {
+            result=hybris_dual_source_spirv(code,size,info->pColorBlendState?info->pColorBlendState->attachmentCount:0,device->output_limit);
+            if(result!=VK_SUCCESS) {
+                *reason="dual-source fallback cannot reserve an unused plain fragment output";
+                hybris_scaled_free(allocator,code);goto done;
+            }
         }
         if (!code) continue;
         hybris_scaled_dump(shader->code, shader->size, code, size, vertex ? attrs : NULL, vertex ? count : 0, stage->pSpecializationInfo);
@@ -817,7 +853,7 @@ inline_done:
     }
     struct shader_device *device = find_device(handle);
     if (!device) return VK_ERROR_INITIALIZATION_FAILED;
-    if (!device->mask && !device->point_size && !device->inout && !device->clip && !device->cull && !device->vertex_stores && !device->polygon && !device->multi_viewport)
+    if (!device->mask && !device->point_size && !device->inout && !device->clip && !device->cull && !device->vertex_stores && !device->polygon && !device->multi_viewport && !device->dual_src)
         return device->create_pipelines(handle, cache, count, infos, allocator, pipelines);
     VkGraphicsPipelineCreateInfo *changed = hybris_scaled_alloc(allocator, count * sizeof(*changed), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
     struct pipeline_copy *copies = hybris_scaled_alloc(allocator, count * sizeof(*copies), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
