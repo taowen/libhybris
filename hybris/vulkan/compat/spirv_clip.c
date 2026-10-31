@@ -2,6 +2,9 @@
 #include "clip_distance.h"
 #include "spirv_builtins.h"
 #include <string.h>
+#include <stdatomic.h>
+#include <stdio.h>
+static _Atomic unsigned distance_reports;
 
 struct emit {
     uint32_t *w;
@@ -223,10 +226,15 @@ static int find_distance(const uint32_t *code, size_t words, const struct parse_
     return 1;
 }
 
-static uint32_t pick_location(unsigned used[64], uint32_t count)
+static uint32_t pick_location(unsigned used[64], uint32_t count, uint32_t limit)
 {
     uint32_t start, i;
-    for (start = 16; start + count <= 64; ++start) {
+    /* SPIR-V float arrays consume one Location per element (MaliBridge's
+     * spirv_clip slots() uses the same rule). Unlike PanVK's internal reserved
+     * CLIP_DIST slots, these are ordinary application interface locations:
+     * search holes, and never allocate past the native stage location range. */
+    if (limit > 64) limit = 64;
+    for (start = 0; count <= limit && start <= limit - count; ++start) {
         for (i = 0; i < count; ++i)
             if (used[start + i]) break;
         if (i == count) return start;
@@ -243,7 +251,7 @@ static uint32_t find_id_by_op(const struct parse_id *ids, uint32_t bound, uint32
 }
 
 static VkResult distance_plan(const uint32_t *vs, size_t vs_size, const uint32_t *fs, size_t fs_size, uint32_t builtin,
-    uint32_t *location, uint32_t *count)
+    uint32_t location_limit, uint32_t *location, uint32_t *count)
 {
     struct parse_id *ids = NULL;
     uint32_t bound, var, member, array;
@@ -274,8 +282,11 @@ static VkResult distance_plan(const uint32_t *vs, size_t vs_size, const uint32_t
         *count = 0;
         goto done;
     }
-    *location = pick_location(used, *count);
+    *location = pick_location(used, *count, location_limit);
     if (*location == 0xffffffffu) { *count = 0; result = VK_ERROR_FEATURE_NOT_PRESENT; }
+    else if (atomic_fetch_add(&distance_reports, 1) < 16)
+        fprintf(stderr, "HYBRIS_DISTANCE builtin=%u location=%u count=%u limit=%u\n",
+            builtin, *location, *count, location_limit);
 done:
     hybris_scaled_free(NULL, ids);
     hybris_scaled_free(NULL, cleaned);
@@ -283,15 +294,15 @@ done:
 }
 
 VkResult hybris_spirv_clip_plan(const uint32_t *vs, size_t vs_size, const uint32_t *fs, size_t fs_size,
-    uint32_t *location, uint32_t *count)
+    uint32_t location_limit, uint32_t *location, uint32_t *count)
 {
-    return distance_plan(vs, vs_size, fs, fs_size, 3, location, count);
+    return distance_plan(vs, vs_size, fs, fs_size, 3, location_limit, location, count);
 }
 
 VkResult hybris_spirv_cull_plan(const uint32_t *vs, size_t vs_size, const uint32_t *fs, size_t fs_size,
-    uint32_t *location, uint32_t *count)
+    uint32_t location_limit, uint32_t *location, uint32_t *count)
 {
-    return distance_plan(vs, vs_size, fs, fs_size, 4, location, count);
+    return distance_plan(vs, vs_size, fs, fs_size, 4, location_limit, location, count);
 }
 
 static int whole_struct_use(const uint32_t *code, size_t words, uint32_t var)

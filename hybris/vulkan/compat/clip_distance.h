@@ -11,9 +11,9 @@ void hybris_clip_filter_features(VkPhysicalDevice physical, VkPhysicalDeviceFeat
 PFN_vkVoidFunction hybris_clip_policy_proc(const char *name);
 /* count==0 means the vertex module does not write ClipDistance. */
 VkResult hybris_spirv_clip_plan(const uint32_t *vs, size_t vs_size, const uint32_t *fs, size_t fs_size,
-    uint32_t *location, uint32_t *count);
+    uint32_t location_limit, uint32_t *location, uint32_t *count);
 VkResult hybris_spirv_cull_plan(const uint32_t *vs, size_t vs_size, const uint32_t *fs, size_t fs_size,
-    uint32_t *location, uint32_t *count);
+    uint32_t location_limit, uint32_t *location, uint32_t *count);
 VkResult hybris_spirv_clip_vertex(const uint32_t *code, size_t size, uint32_t location,
     const VkAllocationCallbacks *allocator, uint32_t **output, size_t *output_size, unsigned *rewritten);
 /* Extract an active CullDistance output for a primitive-stage consumer. This

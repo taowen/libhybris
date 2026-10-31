@@ -53,6 +53,7 @@ struct shader_device {
     int multi_viewport;
     int dual_src;
     uint32_t output_limit;
+    uint32_t clip_location_limit, cull_location_limit;
     _Atomic unsigned spec_changes;
     VkAllocationCallbacks allocator;
     int custom;
@@ -133,6 +134,27 @@ VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
     device->clip = hybris_clip_active(physical);
     device->cull = hybris_cull_active(physical);
     device->vertex_stores = hybris_vertex_stores_active(physical);
+    if (device->clip || device->cull) {
+        struct hybris_layer_physical owner;
+        if (hybris_layer_lookup_physical(physical, &owner)) {
+            PFN_vkGetPhysicalDeviceProperties get = (PFN_vkGetPhysicalDeviceProperties)
+                owner.resolver(owner.instance, "vkGetPhysicalDeviceProperties");
+            if (get) {
+                VkPhysicalDeviceProperties properties;
+                get(physical, &properties);
+                const VkPhysicalDeviceLimits *limits = &properties.limits;
+                uint32_t components = limits->maxVertexOutputComponents;
+                if (components > limits->maxFragmentInputComponents)
+                    components = limits->maxFragmentInputComponents;
+                device->clip_location_limit = components / 4;
+                if (components > limits->maxGeometryInputComponents)
+                    components = limits->maxGeometryInputComponents;
+                if (components > limits->maxGeometryOutputComponents)
+                    components = limits->maxGeometryOutputComponents;
+                device->cull_location_limit = components / 4;
+            }
+        }
+    }
     pthread_mutex_lock(&guard);
     device->next = devices;
     devices = device;
@@ -210,7 +232,7 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
     uint32_t *clip_extracted = NULL;
     if (device->clip && !info->pNext) {
         uint32_t location = 0, count = 0;
-        result = hybris_spirv_clip_plan(created.pCode, created.codeSize, NULL, 0, &location, &count);
+        result = hybris_spirv_clip_plan(created.pCode, created.codeSize, NULL, 0, device->clip_location_limit, &location, &count);
         if (result == VK_SUCCESS && count) {
             size_t size = 0;
             unsigned rewritten = 0;
@@ -228,7 +250,7 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
     uint32_t *extracted = NULL;
     if (result == VK_SUCCESS && device->cull && !info->pNext) {
         uint32_t location = 0, count = 0;
-        result = hybris_spirv_cull_plan(created.pCode, created.codeSize, NULL, 0, &location, &count);
+        result = hybris_spirv_cull_plan(created.pCode, created.codeSize, NULL, 0, device->cull_location_limit, &location, &count);
         if (result == VK_SUCCESS && count) {
             size_t size = 0;
             unsigned rewritten = 0;
@@ -394,7 +416,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
         if (vertex_shader && !vertex_shader->extensions) {
             VkResult planned = hybris_spirv_cull_plan(vertex_shader->code, vertex_shader->size,
                 fragment_shader ? fragment_shader->code : NULL,
-                fragment_shader ? fragment_shader->size : 0, &cull_location, &cull_count);
+                fragment_shader ? fragment_shader->size : 0, device->cull_location_limit, &cull_location, &cull_count);
             if (planned != VK_SUCCESS) return planned;
         }
         if (cull_count) {
@@ -532,7 +554,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
         pthread_mutex_unlock(&guard);
         if (vs && fs && !vs->extensions && !fs->extensions)
             result = hybris_spirv_clip_plan(vs->code, vs->size, fs->code, fs->size,
-                &clip_location, &clip_count);
+                device->clip_location_limit, &clip_location, &clip_count);
         if (result != VK_SUCCESS) goto done;
     }
     for (uint32_t j = 0; j < info->stageCount; ++j) {
@@ -646,7 +668,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
              * cannot overlap. Geometry forwards the clip varying unchanged. */
             result = hybris_spirv_cull_plan(code, size,
                 fragment_shader ? fragment_shader->code : NULL,
-                fragment_shader ? fragment_shader->size : 0, &cull_location, &cull_count);
+                fragment_shader ? fragment_shader->size : 0, device->cull_location_limit, &cull_location, &cull_count);
             uint32_t *extracted = NULL, *geometry = NULL;
             size_t extracted_size = 0, geometry_size = 0;
             unsigned made = 0;

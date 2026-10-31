@@ -28,7 +28,7 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
         assets = work/'assets'
         assets.mkdir()
         shader_tools = ndk/'shader-tools/linux-x86_64'
-        for name in ('sample.comp', 'robust_null.comp', 'robust_buffer.comp', 'robust_image.comp', 'viewport.vert', 'viewport.frag', 'multidraw.vert', 'multidraw.frag', 'multidraw_drawid.vert', 'dual_single.frag', 'dual_pair.frag', 'dual_extra.frag', 'dual_full.frag', 'dual_array.frag', 'polygon.vert', 'polygon.frag', 'inout.vert', 'inout.frag'):
+        for name in ('sample.comp', 'robust_null.comp', 'robust_buffer.comp', 'robust_image.comp', 'viewport.vert', 'viewport.frag', 'multidraw.vert', 'multidraw.frag', 'multidraw_drawid.vert', 'dual_single.frag', 'dual_pair.frag', 'dual_extra.frag', 'dual_full.frag', 'dual_array.frag', 'polygon.vert', 'polygon.frag', 'inout.vert', 'inout.frag', 'distance_clip.vert', 'distance_cull.vert', 'distance_both.vert', 'distance.frag'):
             filename = name
             name = name.replace('.', '_') if not name.endswith('.comp') else name[:-5]
             spv = work/(name+'.spv')
@@ -59,7 +59,7 @@ def build_diagnostics(source, output, compiler, flags, layer, ndk):
         sha = lambda file: hashlib.sha256(file.read_bytes()).hexdigest()
         probes = {}
         executables = []
-        for name in ('bc', 'robustness', 'spec_constants', 'multiviewport', 'multidraw', 'dual_source', 'polygon', 'inout'):
+        for name in ('bc', 'robustness', 'spec_constants', 'multiviewport', 'multidraw', 'dual_source', 'polygon', 'inout', 'distance'):
             executable = work/('libhybris_'+name+'_probe.so')
             subprocess.run([str(compiler)+'++', *flags, '-std=gnu++17', '-I'+str(work),
                             '-pie', '-static-libstdc++', str(recipe/(name+'_probe.cpp')), '-ldl', '-llog',
