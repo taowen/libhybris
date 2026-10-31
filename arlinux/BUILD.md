@@ -56,6 +56,7 @@ process cancellation, identity verification and report display are shared.
 | Specialization constants | `.SpecConstantsProbeActivity` | `libhybris_spec_constants_probe.so` | `files/spec_constants/` |
 | Multi-viewport | `.MultiViewportProbeActivity` | `libhybris_multiviewport_probe.so` | `files/multiviewport/` |
 | Indirect multi-draw | `.MultiDrawProbeActivity` | `libhybris_multidraw_probe.so` | `files/multidraw/` |
+| Dual-source blend | `.DualSourceProbeActivity` | `libhybris_dual_source_probe.so` | `files/dual_source/` |
 
 For device automation, start the relevant Activity directly with a `mode` extra.
 BC accepts `native`, `normal`, `decode`, `auto`, `fast`, `default` or `high`, and
@@ -189,3 +190,37 @@ limitation through a real shader. When the feature is unavailable/disabled,
 three draws use an explicit application-side single-draw reference. Those
 controls must not be reported as native multiDrawIndirect support. These
 offscreen checks do not replace application or game acceptance.
+
+## Dual-source blend approximation
+
+When native `dualSrcBlend` is absent, the MaliBridge-derived policy exposes
+the feature and a minimum `maxFragmentDualSrcAttachments` of one. It clears
+the emulated feature in private device-create inputs, substitutes SRC0 factors
+for SRC1 in copied static blend state and relocates fragment Index=1 outputs
+to unused output locations with Index=0. Captured application modules, blend
+state and specialization inputs remain unchanged. Native-supported devices
+retain native behavior. `HYBRIS_DUAL_SOURCE_BLEND=0` disables the policy;
+`force` selects it for diagnosis. Only devices requesting the feature rewrite
+pipelines. Bionic and glibc share the source, without application-name rules.
+
+This approximation changes blending when source zero and source one differ.
+It is not full dual-source blending or Vulkan conformance. PanVK can implement
+actual source-one blending through its internal blend shaders and Mali compiler;
+this layer above the proprietary driver cannot invoke that driver-internal path.
+
+The rewrite supports ordinary scalar/vector 32-bit fragment outputs. Arrays,
+interface blocks, grouped decorations and exhausted output locations fail
+explicitly rather than overlapping another output. The existing pipeline
+conversion restrictions also apply: shader objects and graphics pipeline
+libraries are unavailable. Dynamic color-blend equations are disabled when
+this approximation is active; static blend state is the supported path.
+
+The separate probe accepts `dual-native`, `dual-normal`, `dual-force`,
+`dual-off` and `dual-unrequested`. It compares real offscreen blended pixels
+for all four SRC1 factor variants in source/destination color and alpha slots,
+checks blending disabled and preservation of an existing auxiliary output,
+checks explicit rejection of unsupported interfaces, and verifies unchanged
+caller inputs. Legacy/Features2 device creation and GDPA/GIPA pipeline queries
+are covered. Native/disabled/unrequested modes use legal first-source controls
+when native dualSrcBlend is absent. These results do not establish game or
+application acceptance.

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/dual_source.h"
 #include "layer.h"
 #include "../compat/vertex_stores.h"
 #include "../compat/shader_dispatch.h"
@@ -65,7 +66,7 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     PFN_vkEnumerateDeviceExtensionProperties enumerate = (PFN_vkEnumerateDeviceExtensionProperties)
         context.resolver(context.instance, "vkEnumerateDeviceExtensionProperties");
     unsigned bc_mask = layer ? 0 : hybris_bc_physical_mask(physical);
-    unsigned shader_mask = layer ? 0 : hybris_shader_physical_mask(physical);
+    unsigned shader_mask = layer ? 0 : (hybris_shader_physical_mask(physical) || hybris_dual_source_active(physical));
     int vertex_stores = !layer && hybris_vertex_stores_active(physical);
     struct hybris_robustness2_policy robust={0};
     if(!layer) {

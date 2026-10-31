@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
+#include "dual_source.h"
 #include "multidraw.h"
 #include "multiviewport.h"
 #include "clip_distance.h"
@@ -102,6 +103,7 @@ static void VKAPI_CALL features2_khr(VkPhysicalDevice physical, VkPhysicalDevice
 
 static void apply_limits(VkPhysicalDevice physical, VkPhysicalDeviceLimits *limits)
 {
+    if(hybris_dual_source_active(physical) && limits->maxFragmentDualSrcAttachments<1)limits->maxFragmentDualSrcAttachments=1;
     if(hybris_multidraw_active(physical))limits->maxDrawIndirectCount=UINT32_MAX;
     if(hybris_multiviewport_active(physical) && limits->maxViewports<16)limits->maxViewports=16;
     if (!hybris_clip_active(physical) && !hybris_cull_active(physical)) return;
