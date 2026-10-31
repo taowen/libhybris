@@ -94,7 +94,7 @@ static int draw_polygon(VkCommandBuffer c,const struct hybris_layer_device *d,Vk
         struct hybris_bc_device *bc=hybris_bc_device_find(d->handle);if(!bc)goto unsupported;
         VkDescriptorBufferInfo source;uint32_t byte_offset=0,index_size=0;VkCommandBuffer pre=VK_NULL_HANDLE;
         if(indexed) {
-            if(!s->index||written(s,s->index)||(s->usage&VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)||(restart&&shape!=1))goto unsupported;
+            if(!s->index||written(s,s->index)||(s->usage&VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)||(restart&&(shape!=1 || vertex_offset<0)))goto unsupported;
             index_size=s->index_type==VK_INDEX_TYPE_UINT32?4:s->index_type==VK_INDEX_TYPE_UINT16?2:s->index_type==VK_INDEX_TYPE_UINT8_EXT?1:0;
             if(!index_size || (s->index_size!=VK_WHOLE_SIZE && ((uint64_t)first+count)*index_size>s->index_size))goto unsupported;
             uint64_t first_byte=s->index_offset+(uint64_t)first*index_size,alignment=bc->properties.limits.minStorageBufferOffsetAlignment;

@@ -212,7 +212,7 @@ static VkResult VKAPI_CALL allocate_memory(VkDevice handle, const VkMemoryAlloca
     a->generation = ++next_generation;
     pthread_mutex_unlock(&guard);
     VkResult result = ((PFN_vkAllocateMemory)hybris_layer_device_inner_proc(handle,
-        "vkAllocateMemory"))(handle, &translated, allocator, out);
+        "vkAllocateMemory"))(handle, info, allocator, out);
     if (result != VK_SUCCESS) { hybris_scaled_free(allocator, a); return result; }
     a->memory = *out;
     pthread_mutex_lock(&guard);

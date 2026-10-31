@@ -57,6 +57,7 @@ process cancellation, identity verification and report display are shared.
 | Multi-viewport | `.MultiViewportProbeActivity` | `libhybris_multiviewport_probe.so` | `files/multiviewport/` |
 | Indirect multi-draw | `.MultiDrawProbeActivity` | `libhybris_multidraw_probe.so` | `files/multidraw/` |
 | Dual-source blend | `.DualSourceProbeActivity` | `libhybris_dual_source_probe.so` | `files/dual_source/` |
+| Polygon modes | `.PolygonProbeActivity` | `libhybris_polygon_probe.so` | `files/polygon/` |
 
 For device automation, start the relevant Activity directly with a `mode` extra.
 BC accepts `native`, `normal`, `decode`, `auto`, `fast`, `default` or `high`, and
@@ -225,3 +226,47 @@ caller inputs. Legacy/Features2 device creation and GDPA/GIPA pipeline queries
 are covered. Native/disabled/unrequested modes use legal first-source controls
 when native dualSrcBlend is absent. These results do not establish game or
 application acceptance.
+
+## Polygon LINE/POINT fallback
+
+`HYBRIS_POLYGON_MODE` defaults to devices missing `fillModeNonSolid`; `0`
+disables it and `force` selects it for diagnosis. The feature is filtered from
+private device-create inputs without enabling unrelated indirect-draw features.
+A non-solid pipeline keeps its filled application handle and a line-list or
+point-list variant using the same shaders, vertex input and application layout.
+Non-indexed LINE draws use host-generated triangle-edge indices; indexed LINE
+draws use MaliBridge's GPU index-expansion kernel. POINT draws use the same
+vertices/indices with point-list topology. Application shaders must meet the
+ordinary point-size requirements. Original pipeline, index binding and dynamic
+topology/restart state are restored after each variant draw.
+
+Index buffers receive storage usage and word padding at creation for GPU index
+reads. Only indices are processed; there is no vertex-shader compute rewrite,
+descriptor-layout extension or post-VS replay. Private prepass pools and scratch
+resources live with the existing command recording. Both ordinary render passes
+and secondary render-pass command buffers use this path. Submission inserts
+index prepasses immediately before each owning primary and extends semaphore
+wait stages to cover compute. Legacy device-group masks and Submit2 command
+metadata are preserved. Unknown prefix nodes before a legacy device-group
+submit node are rejected when they cannot be copied safely.
+
+This is approximate polygon-mode support, following MaliBridge. Triangle
+culling, polygon depth bias, geometry/tessellation/mesh shaders, indirect draws
+and dynamic polygon mode are not emulated. Shared strip/fan vertices can be
+processed once rather than once per triangle in POINT mode. Unsupported draws
+use the full filled draw and log a bounded warning. Indexed LINE also uses
+filled fallback for simultaneous-use recordings, index writes/dispatches
+earlier in that recording, fan/list restart and negative vertex offsets with
+strip restart. If a primary writes a secondary's index-prepass input before
+executing it, EndCommandBuffer fails explicitly instead of submitting stale
+edges. Shader writes to index memory through aliasing/resources not identified
+by these command-level guards remain outside this compatibility path.
+
+The independent probe accepts `polygon-native`, `polygon-normal`,
+`polygon-force` and `polygon-off`. It compares exact native-reference pixels
+for triangle lists/strips/fans, LINE/POINT, indexed/non-indexed, 16/32-bit indices,
+secondary command buffers, descriptor/push-constant state and GDPA/GIPA. It also
+checks same-submission uploads, index-binding restoration, strip restart and
+explicit primary/secondary write-hazard rejection. Native/disabled modes use
+legal explicit line/point references on GPUs missing fillModeNonSolid. These
+checks do not establish native polygon-mode conformance or game acceptance.
