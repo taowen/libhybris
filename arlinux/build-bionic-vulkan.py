@@ -56,7 +56,23 @@ int bionic_hw_get_module(const char*, const hw_module_t**);
 #define hybris_dlopen dlopen
 #define hybris_dlsym dlsym
 #define hybris_dlerror dlerror
+#define hybris_dladdr dladdr
 #define hw_get_module bionic_hw_get_module
+''')
+    (generated / 'hybris/properties').mkdir(parents=True, exist_ok=True)
+    (generated / 'hybris/properties/properties.h').write_text('''#pragma once
+#include <sys/system_properties.h>
+#include <string.h>
+static inline int property_get(const char *key, char *value, const char *fallback) {
+    int length = __system_property_get(key, value);
+    if (!length && fallback) {
+        length = (int)strlen(fallback);
+        if (length >= PROP_VALUE_MAX) length = PROP_VALUE_MAX - 1;
+        memcpy(value, fallback, length);
+        value[length] = 0;
+    }
+    return length;
+}
 ''')
     # Diagnostics dumping belongs to libhybris and is not part of native WSI.
     path = stage / 'vulkan/icd/wayland_window.cpp'

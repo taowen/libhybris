@@ -10,8 +10,17 @@ instances, initializing the platform metadata that some vendor shader compilers
 read. The desktop loader owns device dispatch; devices, queues, commands and
 desktop WSI continue through the HAL adapter. We do not fabricate Android
 private structures, rewrite dispatch headers, or build a second device layer chain.
-The platform and HAL must resolve the same unhooked physical-device query;
-an independently selected Android driver/layer is rejected instead of mixing handles.
+HAL discovery follows Android's `ro.vulkan.apex` namespace first, then the
+SP-HAL namespace using `ro.hardware.vulkan` and `ro.board.platform`. Older
+linkers without exported namespaces use hardware-module discovery. The same
+selection code is compiled for glibc and Bionic; only property/linker calls
+are adapted to the host libc.
+The platform's physical-device query and the HAL's query must belong to the
+same loaded driver image; their individual function addresses need not match.
+An independently selected driver, layer-owned query or unknown image ownership
+is explicitly unsupported and rejected before device dispatch. Android loader
+creation errors and adapter ownership rejection have separate diagnostics;
+the latter returns initialization failure, not a fabricated driver incompatibility.
 
 The Arlinux desktop path uses the standard glibc Vulkan loader with this ICD
 for Mali/vendor HALs, or Turnip WSI for supported Adreno devices. The replacement
@@ -20,7 +29,7 @@ plugins and plugin-loading layer have been deleted. EGL Wayland/X11 and
 PRESENT_SOCKET have also been deleted.
 No system ICD manifest is installed by this standalone library build. Baseline
 run.py stages a private manifest with --icd-hal and --vulkan-loader. The HAL override is ignored for secure execution; without an
-override the hardware module lookup selects the Vulkan HAL. The adapter and
+override the Android namespace/property discovery selects the Vulkan HAL. The adapter and
 HAL and Android instance loader remain resident. Full driver unloading is not implemented.
 
 The adapter owns an instance record containing its real HAL resolver,

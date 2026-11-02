@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <dlfcn.h>
+#include <hybris/common/dlfcn.h>
 
 /* Driver handles keep their loader-owned dispatch header untouched. */
 struct physical_state {
@@ -103,6 +105,7 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
     VkResult result = create(&filtered, allocator, instance);
     hybris_icd_wsi_finish_instance(wsi_names);
     if (result != VK_SUCCESS) {
+        fprintf(stderr, "hybris ICD: Android loader vkCreateInstance failed: VkResult %d\n", result);
         free_state(state);
         return result;
     }
@@ -111,16 +114,24 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
         info->pApplicationInfo->apiVersion : VK_API_VERSION_1_0;
     state->resolver = hal->GetInstanceProcAddr;
     state->destroy = (PFN_vkDestroyInstance)platform(*instance, "vkDestroyInstance");
-    /* Never pass a handle from an Android layer or an independently selected
-     * updatable driver to our HAL. This core query is an unhooked driver entry
-     * in Android's loader and must resolve to the same implementation. */
-    if (platform(*instance, "vkGetPhysicalDeviceProperties") !=
-        state->resolver(*instance, "vkGetPhysicalDeviceProperties")) {
-        fprintf(stderr, "hybris ICD: Android instance and configured HAL use different dispatch implementations\n");
+    /* Function pointers can differ across aliases/wrappers. Verify loaded DSO
+     * ownership instead. The desktop device path needs a raw HAL instance;
+     * loader/layer-owned wrappers are explicitly unsupported, never guessed
+     * or bypassed by passing their handles to an independently opened HAL. */
+    PFN_vkVoidFunction platform_query = platform(*instance, "vkGetPhysicalDeviceProperties");
+    PFN_vkVoidFunction hal_query = state->resolver(*instance, "vkGetPhysicalDeviceProperties");
+    Dl_info platform_owner = {0}, hal_owner = {0};
+    if (!platform_query || !hal_query ||
+        !hybris_dladdr((const void *)platform_query, &platform_owner) ||
+        !hybris_dladdr((const void *)hal_query, &hal_owner) ||
+        !platform_owner.dli_fbase || platform_owner.dli_fbase != hal_owner.dli_fbase) {
+        fprintf(stderr, "hybris ICD: unsupported Android loader/HAL ownership: loader=%s HAL=%s; refusing mixed dispatch\n",
+            platform_owner.dli_fname ? platform_owner.dli_fname : "unknown",
+            hal_owner.dli_fname ? hal_owner.dli_fname : "unknown");
         state->destroy(*instance, allocator);
         *instance = VK_NULL_HANDLE;
         free_state(state);
-        return VK_ERROR_INCOMPATIBLE_DRIVER;
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
     pthread_mutex_lock(&instance_guard);
     state->next = instances;

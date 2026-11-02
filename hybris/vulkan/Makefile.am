@@ -84,6 +84,7 @@ libhybris_vulkan_icd_la_LDFLAGS = \
     -ldl -pthread -Wl,-z,nodelete \
     $(top_builddir)/common/libhybris-common.la \
     $(top_builddir)/hardware/libhardware.la \
+    $(top_builddir)/properties/libandroid-properties.la \
     -version-info 0:0:0
 if WANT_WAYLAND
 if WANT_X11

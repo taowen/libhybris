@@ -9,6 +9,7 @@
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <hybris/common/dlfcn.h>
+#include <hybris/properties/properties.h>
 /* Android API availability annotations do not apply to this glibc adapter. */
 #ifndef __INTRODUCED_IN
 #define __INTRODUCED_IN(api)
@@ -23,11 +24,59 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/auxv.h>
+#include <errno.h>
 
 #define ICD_EXPORT __attribute__((visibility("default")))
 static pthread_once_t hal_once = PTHREAD_ONCE_INIT;
 static hwvulkan_device_t *hal;
 static PFN_vkGetInstanceProcAddr platform_instance_proc;
+
+/* Follow Android libvulkan's property/namespace discovery. In particular an
+ * Android 15+ Vulkan APEX takes precedence over the built-in SP-HAL. Do not
+ * choose a second driver by scanning vendor filenames or GPU model names. */
+static int load_namespace_hal(void *ns, const char *name, const hw_module_t **module)
+{
+    const char *keys[] = {"ro.hardware.vulkan", "ro.board.platform"};
+    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+        char value[PROP_VALUE_MAX], library[PROP_VALUE_MAX + 16];
+        if (property_get(keys[i], value, "") <= 0) continue;
+        snprintf(library, sizeof(library), "vulkan.%s.so", value);
+        android_dlextinfo ext = {.flags = ANDROID_DLEXT_USE_NAMESPACE,
+            .library_namespace = ns};
+        void *handle = hybris_dlopen_ext(library, RTLD_NOW | RTLD_LOCAL, &ext);
+        if (!handle) {
+            fprintf(stderr, "hybris ICD: cannot load %s from %s namespace: %s\n",
+                library, name, hybris_dlerror());
+            continue;
+        }
+        const hw_module_t *loaded = hybris_dlsym(handle, HAL_MODULE_INFO_SYM_AS_STR);
+        if (!loaded || !loaded->id || strcmp(loaded->id, HWVULKAN_HARDWARE_MODULE_ID)) {
+            fprintf(stderr, "hybris ICD: invalid Vulkan module in %s namespace: %s\n", name, library);
+            return -EINVAL;
+        }
+        fprintf(stderr, "hybris ICD: selected %s from %s namespace\n", library, name);
+        *module = loaded;
+        return 0;
+    }
+    return -ENOENT;
+}
+
+static int load_system_hal(const hw_module_t **module)
+{
+    char apex[PROP_VALUE_MAX];
+    if (property_get("ro.vulkan.apex", apex, "") > 0) {
+        for (char *p = apex; *p; ++p) if (*p == '.') *p = '_';
+        void *ns = hybris_get_exported_namespace(apex);
+        if (ns) {
+            int result = load_namespace_hal(ns, apex, module);
+            if (result != -ENOENT) return result;
+        }
+    }
+    void *ns = hybris_get_exported_namespace("sphal");
+    if (ns) return load_namespace_hal(ns, "sphal", module);
+    /* Pre-Treble/no-namespace linkers retain the platform's legacy discovery. */
+    return hw_get_module(HWVULKAN_HARDWARE_MODULE_ID, module);
+}
 
 /* HAL and common remain resident together. This is intentionally not a driver
  * unloading implementation: vendor TLS/exit callbacks can outlive a frontend. */
@@ -57,7 +106,7 @@ static void initialize_hal(void)
         module = hybris_dlsym(handle, HAL_MODULE_INFO_SYM_AS_STR);
         /* Retain the Android library reference for the lifetime of the ICD. */
     } else {
-        if (hw_get_module(HWVULKAN_HARDWARE_MODULE_ID, &module) != 0) {
+        if (load_system_hal(&module) != 0) {
             fprintf(stderr, "hybris ICD: Vulkan hardware module not found\n");
             return;
         }
