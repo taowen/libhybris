@@ -37,8 +37,8 @@
  * initial-exec TLS; Android module data must not consume glibc's small static-TLS
  * surplus when libhybris is dlopened into an existing process.
  *
- * Reserve virtual addresses once per thread and commit pages as the Android
- * linker promotes modules. The base never moves: native code can retain pointers
+ * Reserve demand-paged virtual addresses once per thread. The base never moves:
+ * native code can retain pointers
  * to earlier TLS variables while later dlopens extend the static layout.
  * Untouched pages have no physical backing. The reserve is an explicit bound
  * against corrupt module offsets, not a preallocated physical buffer.
@@ -69,8 +69,6 @@
 static __attribute__((tls_model ("initial-exec")))
        __thread char *bionic_thread_pointer;
 static __attribute__((tls_model ("initial-exec")))
-       __thread size_t tls_mapped_bytes;
-static __attribute__((tls_model ("initial-exec")))
        __thread int tls_inited;
 static __attribute__((tls_model ("initial-exec")))
        __thread int tls_module_init_count;
@@ -88,7 +86,6 @@ static void _bionic_tls_cleanup(void *area)
     /* A later pthread-key destructor may enter Android code again. Publish an
      * uninitialized slot before releasing this thread's old arena and shadows. */
     bionic_thread_pointer = NULL;
-    tls_mapped_bytes = 0;
     tls_inited = 0;
     tls_module_init_count = 0;
     free(*(void **)((char *)area + BIONIC_TLS_PTR_OFFSET));
@@ -111,22 +108,15 @@ static void hybris_ensure_static_tls(size_t end)
         fprintf(stderr, "HYBRIS: fatal: bionic static TLS exceeds virtual reserve (%zu bytes)\n", end);
         abort();
     }
-    if (end < BIONIC_TCB_SIZE) end = BIONIC_TCB_SIZE;
-    if (bionic_thread_pointer && end <= tls_mapped_bytes) return;
-    long page_size = sysconf(_SC_PAGESIZE);
-    if (page_size <= 0) abort();
+    if (bionic_thread_pointer) return;
     if (!bionic_thread_pointer) {
-        void *area = mmap(NULL, BIONIC_TLS_RESERVE_SIZE, PROT_NONE,
-                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        /* Keep the arena accessible for inlined TLS reads by already-running
+         * threads after another thread promotes a module. Anonymous pages are
+         * zero-filled on demand; no per-page protection replay is needed. */
+        void *area = mmap(NULL, BIONIC_TLS_RESERVE_SIZE, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (area == MAP_FAILED) {
             fprintf(stderr, "HYBRIS: fatal: cannot reserve bionic TLS arena: %s\n", strerror(errno));
-            abort();
-        }
-        /* Commit the TCB before publishing its pointer to MRS thunks. */
-        if (mprotect(area, page_size, PROT_READ | PROT_WRITE) != 0) {
-            int error = errno;
-            munmap(area, BIONIC_TLS_RESERVE_SIZE);
-            fprintf(stderr, "HYBRIS: fatal: cannot commit bionic TCB: %s\n", strerror(error));
             abort();
         }
         pthread_once(&bionic_tls_key_once, _bionic_tls_key_init);
@@ -136,17 +126,7 @@ static void hybris_ensure_static_tls(size_t end)
             fprintf(stderr, "HYBRIS: fatal: TLS cleanup registration failed (%d)\n", error);
             abort();
         }
-        tls_mapped_bytes = page_size;
         bionic_thread_pointer = (char *)area + BIONIC_TPIDR_OFFSET;
-    }
-    if (end > tls_mapped_bytes) {
-        size_t mapped = ((end + page_size - 1) / page_size) * page_size;
-        if (mapped > BIONIC_TLS_RESERVE_SIZE || mprotect(tls_static_tls + tls_mapped_bytes,
-                mapped - tls_mapped_bytes, PROT_READ | PROT_WRITE) != 0) {
-            fprintf(stderr, "HYBRIS: fatal: cannot commit bionic TLS arena: %s\n", strerror(errno));
-            abort();
-        }
-        tls_mapped_bytes = mapped;
     }
 }
 

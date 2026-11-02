@@ -26,8 +26,8 @@ validate each product before promoting its public release.
 
 ## Linux Bionic TLS storage
 
-The glibc bridge reserves a stable 16 MiB virtual TLS arena per participating
-thread and commits pages only as the Android linker promotes modules. Only its
+The glibc bridge reserves a stable, demand-paged 16 MiB virtual TLS arena per
+participating thread; untouched pages have no private physical backing. Only its
 pointer and replay cursors use glibc initial-exec TLS, so larger vendor TLS layouts
 do not exhaust glibc's dlopen static-TLS surplus. Module addresses remain stable
 across later dlopens; a pthread-key destructor releases the arena and its TCB
