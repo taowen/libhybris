@@ -27,7 +27,7 @@ static inline int hybris_is_tls_mrs(uint32_t instruction) {
 }
 
 /* Shared by the patcher and Q linker reservation; includes 16-byte alignment. */
-#define HYBRIS_TLS_THUNK_SIZE 80
+#define HYBRIS_TLS_THUNK_SIZE 96
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,7 +45,7 @@ typedef size_t (*hybris_count_tls_t)(void* segment_addr, size_t segment_size);
  * memsz: filesz (`init_size`) bytes get memcpy'd, the trailing
  * `segment_size - init_size` bytes are .tbss zeros that the static-TLS
  * area already provides — but the bounds check covers all of memsz so a
- * future segment that overruns BIONIC_STATIC_TLS_SIZE aborts loudly. */
+ * future segment outside the reserved virtual arena aborts loudly. */
 typedef void (*hybris_init_static_tls_for_thread_t)(size_t static_offset,
                                                     const void* init_ptr,
                                                     size_t init_size,

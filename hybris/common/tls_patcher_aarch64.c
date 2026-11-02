@@ -72,7 +72,7 @@ static void generate_tls_thunk(int tls_offset_words, uint32_t target_register,
 
     /* Calculate branch offset back to the instruction after the original MRS */
     void* return_addr = (char*)mrs_location + 4;
-    intptr_t return_diff = (intptr_t)return_addr - (intptr_t)((char*)thunk + 60);
+    intptr_t return_diff = (intptr_t)return_addr - (intptr_t)((char*)thunk + 72);
     if (return_diff % 4 != 0 || return_diff / 4 < -(1 << 25) || return_diff / 4 >= (1 << 25)) {
         fprintf(stderr, "HYBRIS: fatal: return branch from thunk %p to %p out of range\n",
                 thunk, return_addr);
@@ -85,19 +85,23 @@ static void generate_tls_thunk(int tls_offset_words, uint32_t target_register,
     code[2] = 0xd53bd050; /* mrs x16, tpidr_el0 */
     code[3] = 0x91000210 | (imm_lo << 10);
     code[4] = 0x91400210 | (imm_hi << 10);
-    code[5] = 0xf9400611; /* ldr x17, [x16, #8]: bionic pthread shadow */
-    code[6] = 0xb5000091; /* cbnz x17, +16 (restore) */
-    code[7] = 0x58000131; /* ldr x17, +36 (helper pointer) */
-    code[8] = 0xd63f0220; /* blr x17 */
-    code[9] = 0xd503201f; /* nop */
-    code[10] = 0xf9400bfe; /* ldr x30, [sp, #16] */
-    code[11] = 0xa8c247f0; /* ldp x16, x17, [sp], #32 */
-    code[12] = 0xd53bd040 | target_register;
-    code[13] = 0x91000000 | (target_register << 5) | target_register | (imm_lo << 10);
-    code[14] = 0x91400000 | (target_register << 5) | target_register | (imm_hi << 10);
-    code[15] = 0x14000000 | (return_offset & 0x3ffffff);
+    code[5] = 0xf9400211; /* ldr x17, [x16]: arena thread pointer */
+    code[6] = 0xb4000071; /* cbz x17, +12 (first touch) */
+    code[7] = 0xf9400631; /* ldr x17, [x17, #8]: bionic pthread shadow */
+    code[8] = 0xb5000091; /* cbnz x17, +16 (restore) */
+    code[9] = 0x580001b1; /* ldr x17, +52 (helper pointer) */
+    code[10] = 0xd63f0220; /* blr x17 */
+    code[11] = 0xd503201f; /* nop */
+    code[12] = 0xf9400bfe; /* ldr x30, [sp, #16] */
+    code[13] = 0xa8c247f0; /* ldp x16, x17, [sp], #32 */
+    code[14] = 0xd53bd040 | target_register;
+    code[15] = 0x91000000 | (target_register << 5) | target_register | (imm_lo << 10);
+    code[16] = 0x91400000 | (target_register << 5) | target_register | (imm_hi << 10);
+    code[17] = 0xf9400000 | (target_register << 5) | target_register; /* ldr target, [target] */
+    code[18] = 0x14000000 | (return_offset & 0x3ffffff);
+    code[19] = code[20] = code[21] = 0xd503201f; /* padding */
     uintptr_t helper = (uintptr_t)hybris_tls_first_touch;
-    memcpy(&code[16], &helper, sizeof(helper));
+    memcpy(&code[22], &helper, sizeof(helper));
 
 }
 

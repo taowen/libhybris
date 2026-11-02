@@ -24,6 +24,16 @@ they do not implement another build graph. Keep the rootfs and Wine submodule
 pins synchronized when integrating a graphics change. Update both pins and
 validate each product before promoting its public release.
 
+## Linux Bionic TLS storage
+
+The glibc bridge reserves a stable 16 MiB virtual TLS arena per participating
+thread and commits pages only as the Android linker promotes modules. Only its
+pointer and replay cursors use glibc initial-exec TLS, so larger vendor TLS layouts
+do not exhaust glibc's dlopen static-TLS surplus. Module addresses remain stable
+across later dlopens; a pthread-key destructor releases the arena and its TCB
+shadows. MRS thunks load the pointer slot and preserve the first-touch register
+contract. This storage adapter is not part of the Android-native Bionic build.
+
 ## Standalone Android diagnostics
 
 Every Bionic Vulkan build also produces `diagnostics/libhybris-diagnostics.apk`

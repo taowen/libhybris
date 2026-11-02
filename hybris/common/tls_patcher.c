@@ -16,6 +16,7 @@
  */
 
 #include "tls_patcher.h"
+#include "bionic_tls.h"
 #include "logging.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +26,6 @@
 #include <pthread.h>
 #include <unistd.h>
 
-extern void* _hybris_hook___get_tls_hooks(void);
 
 /* Forward declarations for arch-specific functions (#included at bottom) */
 static void hybris_patch_tls_arch(void* segment_addr, size_t segment_size, int tls_offset);
@@ -79,10 +79,10 @@ static void* hybris_allocate_thunk_near(void* target_addr, size_t thunk_size) {
     return result;
 }
 
-/* Calculate offset from thread pointer to our TLS area */
+/* Calculate the fixed glibc TP offset of the arena-pointer slot. */
 static int hybris_calculate_tls_offset(void) {
     void* tp = __builtin_thread_pointer();
-    void* tls_area = _hybris_hook___get_tls_hooks();
+    void* tls_area = hybris_bionic_tls_pointer_slot();
     return (int)((uintptr_t)tls_area - (uintptr_t)tp) / sizeof(uintptr_t);
 }
 
@@ -94,7 +94,7 @@ void hybris_patch_tls(void* segment_addr, size_t segment_size, const char* libra
     HYBRIS_DEBUG_LOG(HOOKS, "Patching TLS accesses in %s", library_name);
 
     int tls_offset = hybris_calculate_tls_offset();
-    HYBRIS_DEBUG_LOG(HOOKS, "Offset from thread pointer to hybris tls_space (in words): %d",
+    HYBRIS_DEBUG_LOG(HOOKS, "Offset from thread pointer to hybris TLS pointer slot (in words): %d",
         tls_offset);
 
     hybris_patch_tls_arch(segment_addr, segment_size, tls_offset);

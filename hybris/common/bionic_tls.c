@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <sys/mman.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,67 +32,25 @@
 
 #define TRACE_HOOK(message, ...) HYBRIS_DEBUG_LOG(HOOKS, message, ##__VA_ARGS__)
 
-/* Bionic TLS compat for stock (unpatched) Android firmware.
+/* Bionic's simulated thread pointer has a process-independent offset in each
+ * thread's private arena. Only the arena pointer and replay cursors use glibc
+ * initial-exec TLS; Android module data must not consume glibc's small static-TLS
+ * surplus when libhybris is dlopened into an existing process.
  *
- * Layout, per thread (zero-initialised by glibc TLS image init):
+ * Reserve virtual addresses once per thread and commit pages as the Android
+ * linker promotes modules. The base never moves: native code can retain pointers
+ * to earlier TLS variables while later dlopens extend the static layout.
+ * Untouched pages have no physical backing. The reserve is an explicit bound
+ * against corrupt module offsets, not a preallocated physical buffer.
  *
- *   tls_static_tls[0..7]    = TLS_SLOT_BIONIC_TLS (-> bionic_tls_ptr),
- *                              the lone bionic negative slot in this Q
- *                              vendor (MIN_TLS_SLOT = -1, see
- *                              q/bionic/libc/private/bionic_asm_tls.h).
- *   tls_static_tls[8]        = bionic THREAD POINTER (= "TPIDR" from bionic's POV)
- *                              [8..15]  = slot 0 (TLS_SLOT_DTV)
- *                              [16..23] = slot 1 (TLS_SLOT_THREAD_ID)
- *                              ...
- *                              [64..71] = slot 7 (end of bionic_tcb positive slots)
- *   tls_static_tls[72..]     = per-.so static TLS data (.tdata copied here
- *                              from promote_tls_module_to_static() at the
- *                              offsets the bionic linker assigns)
- *
- * BIONIC_TPIDR_OFFSET (8) and BIONIC_TLS_PTR_OFFSET (0) are calibrated
- * to bionic Q's StaticTlsLayout: offset_bionic_tcb_ = 0 after the
- * initial reserve_exe_segment_and_tcb(nullptr,...), and
- * offset_thread_pointer() = offset_bionic_tcb_ + (-MIN_TLS_SLOT * 8) =
- * 0 + 1*8 = 8. linker.cpp's tls_tp_base reads offset_thread_pointer()
- * dynamically, so it stays in sync if a future bionic vendor changes
- * MIN_TLS_SLOT (e.g. R+ adds TLS_SLOT_NATIVE_BRIDGE_GUEST_STATE = -2,
- * pushing TP to offset 16).
- *
- * The TLS thunk patcher (tls_patcher_aarch64.c) rewrites bionic code's
- * `mrs xN, tpidr_el0` to point at &tls_static_tls[BIONIC_TPIDR_OFFSET],
- * so a bionic instruction `[TPIDR + disp]` (disp = static_offset -
- * tls_tp_base) reads tls_static_tls[8 + disp] = tls_static_tls[
- * static_offset], where this hook memcpy'd the .tdata.
- *
- * Size constraint: this whole array lives in the static-TLS *initial-exec*
- * block (required so the patcher can compute a fixed tp-relative offset).
- * For the main exe the kernel allocates whatever the link map needs; for
- * libhybris dlopened mid-process (GTK/firefox loading libEGL.so.1 ->
- * libhybris-common.so.1) the new IE bytes have to fit into glibc's
- * static_tls_surplus reserve, which varies per process based on what IE
- * TLS the binary's DT_NEEDED libs already pulled in. firefox's link map
- * is fatter than gtk3-demo-application's: 1536 bytes loads cleanly into
- * gtk3 but blows firefox's surplus ("cannot allocate memory in static
- * TLS block" on dlopen of libhybris-common). 1024 bytes (matching the
- * original libhybris tls_area struct of `void* + void*[128]`) loads
- * into every process we test on aarch64 + Arch ARM glibc 2.41, so we
- * keep that as the ceiling here.
- *
- * Cost: the 952 bytes left after subtracting bionic_tcb (72B = 9 slots
- * * 8) is the total per-process budget for promoted bionic .so .tdata.
- * apex libc + the Adreno/Mesa/Vulkan vendor TLS in our integration
- * suite fits well inside that. The libhybris-tls-repro stress test
- * deliberately leaks per dlopen+dlclose iteration (libhybris's promoted
- * static_tls slots can't be recycled without risking a static-pointer
- * free in the dynamic-tls path -- see linker_tls.cpp::get_unused_module_index),
- * so the test caps at STRESS_ITERATIONS to fit. If a real future
- * bionic stack actually needs more, the right move is to make
- * tls_static_tls a small IE-allocated `char* heap_block` and have the
- * patcher emit one extra LDR in the thunk to dereference it -- that
- * frees us from the IE-surplus cap entirely, at the cost of growing
- * the thunk from 16 to 20 bytes and matching count_tls/THUNK_SIZE.
+ * Q's bionic TCB occupies bytes [0,72): slot -1 points to bionic_tls, slot 0 is
+ * the thread pointer at offset 8, and slot 1 points to the pthread shadow. Module
+ * offsets come from the linker's StaticTlsLayout and are copied unchanged.
+ * MRS thunks load the arena's thread pointer through its initial-exec pointer
+ * slot; first touch initializes the TCB without clobbering registers or errno.
  */
-#define BIONIC_STATIC_TLS_SIZE   1024
+#define BIONIC_TLS_RESERVE_SIZE  (16U * 1024U * 1024U)
+#define BIONIC_TCB_SIZE          72U
 #define BIONIC_TPIDR_OFFSET      8    /* matches StaticTlsLayout::offset_thread_pointer() with MIN_TLS_SLOT=-1 (bionic Q) */
 #define BIONIC_TLS_PTR_OFFSET    0    /* slot -1 (TLS_SLOT_BIONIC_TLS) at TP-8 = 0 */
 #define BIONIC_TLS_COMPAT_SIZE   16384
@@ -107,40 +66,95 @@
 #define BIONIC_THREAD_ID_PTR_OFFSET  (BIONIC_TPIDR_OFFSET + 8)  /* TP+8 = 16 */
 #define BIONIC_PTHREAD_SHADOW_SIZE   8192
 
+static __attribute__((tls_model ("initial-exec")))
+       __thread char *bionic_thread_pointer;
+static __attribute__((tls_model ("initial-exec")))
+       __thread size_t tls_mapped_bytes;
+static __attribute__((tls_model ("initial-exec")))
+       __thread int tls_inited;
+static __attribute__((tls_model ("initial-exec")))
+       __thread int tls_module_init_count;
+
+#define tls_static_tls (bionic_thread_pointer - BIONIC_TPIDR_OFFSET)
+#define bionic_tls_ptr (*(void**)(tls_static_tls + BIONIC_TLS_PTR_OFFSET))
+#define pthread_internal_shadow_ptr \
+    (*(void**)(tls_static_tls + BIONIC_THREAD_ID_PTR_OFFSET))
+
 static pthread_key_t bionic_tls_cleanup_key;
-static pthread_key_t pthread_shadow_cleanup_key;
 static pthread_once_t bionic_tls_key_once = PTHREAD_ONCE_INIT;
 
-static void _bionic_tls_cleanup(void *ptr)
+static void _bionic_tls_cleanup(void *area)
 {
-    free(ptr);
+    /* A later pthread-key destructor may enter Android code again. Publish an
+     * uninitialized slot before releasing this thread's old arena and shadows. */
+    bionic_thread_pointer = NULL;
+    tls_mapped_bytes = 0;
+    tls_inited = 0;
+    tls_module_init_count = 0;
+    free(*(void **)((char *)area + BIONIC_TLS_PTR_OFFSET));
+    free(*(void **)((char *)area + BIONIC_THREAD_ID_PTR_OFFSET));
+    munmap(area, BIONIC_TLS_RESERVE_SIZE);
 }
 
 static void _bionic_tls_key_init(void)
 {
     int error = pthread_key_create(&bionic_tls_cleanup_key, _bionic_tls_cleanup);
-    if (!error) error = pthread_key_create(&pthread_shadow_cleanup_key, _bionic_tls_cleanup);
     if (error) {
         fprintf(stderr, "HYBRIS: fatal: TLS cleanup key creation failed (%d)\n", error);
         abort();
     }
 }
 
-static __attribute__((tls_model ("initial-exec"), aligned(16)))
-       __thread char tls_static_tls[BIONIC_STATIC_TLS_SIZE];
-/* Per-thread "how many promoted-TLS-module entries from the global
- * registry have been replayed into this thread's tls_static_tls".
- * Compared against the published registry generation on bionic-side touch
- * (_hybris_hook___get_tls_hooks) to catch up modules promoted before
- * this thread first ran any bionic code. */
-static __attribute__((tls_model ("initial-exec")))
-       __thread int  tls_inited;
-static __attribute__((tls_model ("initial-exec")))
-       __thread int  tls_module_init_count;
+static void hybris_ensure_static_tls(size_t end)
+{
+    if (end > BIONIC_TLS_RESERVE_SIZE) {
+        fprintf(stderr, "HYBRIS: fatal: bionic static TLS exceeds virtual reserve (%zu bytes)\n", end);
+        abort();
+    }
+    if (end < BIONIC_TCB_SIZE) end = BIONIC_TCB_SIZE;
+    if (bionic_thread_pointer && end <= tls_mapped_bytes) return;
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0) abort();
+    if (!bionic_thread_pointer) {
+        void *area = mmap(NULL, BIONIC_TLS_RESERVE_SIZE, PROT_NONE,
+                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (area == MAP_FAILED) {
+            fprintf(stderr, "HYBRIS: fatal: cannot reserve bionic TLS arena: %s\n", strerror(errno));
+            abort();
+        }
+        /* Commit the TCB before publishing its pointer to MRS thunks. */
+        if (mprotect(area, page_size, PROT_READ | PROT_WRITE) != 0) {
+            int error = errno;
+            munmap(area, BIONIC_TLS_RESERVE_SIZE);
+            fprintf(stderr, "HYBRIS: fatal: cannot commit bionic TCB: %s\n", strerror(error));
+            abort();
+        }
+        pthread_once(&bionic_tls_key_once, _bionic_tls_key_init);
+        int error = pthread_setspecific(bionic_tls_cleanup_key, area);
+        if (error) {
+            munmap(area, BIONIC_TLS_RESERVE_SIZE);
+            fprintf(stderr, "HYBRIS: fatal: TLS cleanup registration failed (%d)\n", error);
+            abort();
+        }
+        tls_mapped_bytes = page_size;
+        bionic_thread_pointer = (char *)area + BIONIC_TPIDR_OFFSET;
+    }
+    if (end > tls_mapped_bytes) {
+        size_t mapped = ((end + page_size - 1) / page_size) * page_size;
+        if (mapped > BIONIC_TLS_RESERVE_SIZE || mprotect(tls_static_tls + tls_mapped_bytes,
+                mapped - tls_mapped_bytes, PROT_READ | PROT_WRITE) != 0) {
+            fprintf(stderr, "HYBRIS: fatal: cannot commit bionic TLS arena: %s\n", strerror(errno));
+            abort();
+        }
+        tls_mapped_bytes = mapped;
+    }
+}
 
-#define bionic_tls_ptr (*(void**)(tls_static_tls + BIONIC_TLS_PTR_OFFSET))
-#define pthread_internal_shadow_ptr \
-    (*(void**)(tls_static_tls + BIONIC_THREAD_ID_PTR_OFFSET))
+__attribute__((visibility("hidden")))
+void *hybris_bionic_tls_pointer_slot(void)
+{
+    return &bionic_thread_pointer;
+}
 
 /* Registry of every TLS-using bionic .so the linker has promoted to a
  * static-TLS slot. linker_tls.cpp's promote_tls_module_to_static() calls
@@ -168,8 +182,8 @@ struct hybris_promoted_tls {
     size_t init_size;     /* filesz: bytes to memcpy into static-TLS */
     size_t segment_size;  /* memsz: total reserved range; .tbss tail beyond
                            * init_size stays as the calling thread's existing
-                           * tls_static_tls bytes (zero-init from glibc TLS
-                           * image init -- safe because reserve_solib_segment
+                           * arena bytes (zero-filled anonymous pages -- safe
+                           * because reserve_solib_segment
                            * is monotonic and never overlaps with prior memsz) */
 };
 
@@ -186,18 +200,16 @@ static int g_promoted_tls_published;
 
 static void hybris_apply_static_tls_locked(const struct hybris_promoted_tls* e)
 {
-    /* memsz can exceed filesz when the .so has .tbss; bound on the full
-     * segment so a future bionic .so whose .tbss tail would land past
-     * BIONIC_STATIC_TLS_SIZE aborts here, instead of corrupting whatever
-     * IE TLS the host glibc allocated next to tls_static_tls. */
-    if (e->static_offset > BIONIC_STATIC_TLS_SIZE ||
-        e->segment_size > BIONIC_STATIC_TLS_SIZE - e->static_offset ||
+    /* Check all of memsz, including the zero-filled .tbss tail. */
+    if (e->static_offset > BIONIC_TLS_RESERVE_SIZE ||
+        e->segment_size > BIONIC_TLS_RESERVE_SIZE - e->static_offset ||
         e->init_size > e->segment_size) {
         fprintf(stderr, "HYBRIS: fatal: bionic static TLS overflow "
-                        "(offset=%zu memsz=%zu, max=%d). Bump BIONIC_STATIC_TLS_SIZE in bionic_tls.c.\n",
-                e->static_offset, e->segment_size, BIONIC_STATIC_TLS_SIZE);
+                        "(offset=%zu memsz=%zu, reserve=%u).\n",
+                e->static_offset, e->segment_size, BIONIC_TLS_RESERVE_SIZE);
         abort();
     }
+    hybris_ensure_static_tls(e->static_offset + e->segment_size);
     if (e->init_size > 0) {
         memcpy(tls_static_tls + e->static_offset, e->init_data, e->init_size);
     }
@@ -217,8 +229,8 @@ void _hybris_init_static_tls_for_thread(size_t static_offset,
 {
     /* Validate before allocation, source reads or publication to the registry.
      * Subtraction avoids wrapping a malicious/corrupt offset + memsz. */
-    if (static_offset > BIONIC_STATIC_TLS_SIZE ||
-        segment_size > BIONIC_STATIC_TLS_SIZE - static_offset ||
+    if (static_offset > BIONIC_TLS_RESERVE_SIZE ||
+        segment_size > BIONIC_TLS_RESERVE_SIZE - static_offset ||
         init_size > segment_size || (init_size && !init_ptr)) {
         fprintf(stderr, "HYBRIS: fatal: invalid promoted TLS range "
                         "(offset=%zu filesz=%zu memsz=%zu)\n",
@@ -267,6 +279,7 @@ __attribute__((__visibility__("default")))
 void *_hybris_hook___get_tls_hooks()
 {
     TRACE_HOOK("");
+    hybris_ensure_static_tls(BIONIC_TCB_SIZE);
 
     /* Lazily allocate a bionic_tls struct for this thread, and replay
      * any TLS-module .tdata that was promoted to static before this
@@ -299,13 +312,6 @@ void *_hybris_hook___get_tls_hooks()
         memcpy((char *)pthread_shadow + 2 * sizeof(void *), &tid, sizeof(tid));
         pthread_internal_shadow_ptr = pthread_shadow;
 
-        pthread_once(&bionic_tls_key_once, _bionic_tls_key_init);
-        int error = pthread_setspecific(bionic_tls_cleanup_key, btls);
-        if (!error) error = pthread_setspecific(pthread_shadow_cleanup_key, pthread_shadow);
-        if (error) {
-            fprintf(stderr, "HYBRIS: fatal: TLS cleanup registration failed (%d)\n", error);
-            abort();
-        }
         tls_inited = 1;
     }
 
