@@ -34,6 +34,24 @@ across later dlopens; a pthread-key destructor releases the arena and its TCB
 shadows. MRS thunks load the pointer slot and preserve the first-touch register
 contract. This storage adapter is not part of the Android-native Bionic build.
 
+The Linux component also builds `usr/lib/hybris/diagnostics/tls-probe` from
+`arlinux/diagnostics/tls-probe.c`. On a device, run it in a separate guest process
+with an explicit `libhybris-common.so.1` path and one mode:
+
+- `1` through `16`: time ten million real hook calls per thread, reporting both
+  wall throughput and thread CPU nanoseconds per call. Alternate before/after
+  libraries in fresh processes; do not compare one cold round with one warm round.
+- `--verify`: check cross-thread module publication, zero fill, retained writes
+  and stable thread pointers.
+- `--verify-large`: repeat publication with a TLS module beyond 2 MiB. This mode
+  intentionally exceeds the former fixed arena and must not run against it.
+- `--churn`: create/join 1,040 threads, including TLS calls from pthread-key
+  destructors. Check isolation and report virtual/resident memory after warmup.
+
+The publication modes register diagnostic modules; never inject this probe into
+an application or load vendor drivers in its process. These measurements do not
+establish game FPS or rendering correctness; follow them with real applications.
+
 ## Standalone Android diagnostics
 
 Every Bionic Vulkan build also produces `diagnostics/libhybris-diagnostics.apk`
