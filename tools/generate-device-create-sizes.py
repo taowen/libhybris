@@ -18,8 +18,13 @@ def generate(registry):
         for require in owner.findall('require'):
             if require.get('api') not in (None, 'vulkan'):
                 continue
+            # vulkan_core.h defines no macro for internal features (VK_BASE_VERSION_1_1 and the like);
+            # guard their types with the core version they belong to.
+            provider = owner.get('name')
+            if owner.tag == 'feature' and owner.get('apitype') == 'internal':
+                provider = 'VK_VERSION_' + owner.get('number').replace('.', '_')
             for entry in require.findall('type'):
-                providers.setdefault(entry.get('name'), set()).add(owner.get('name'))
+                providers.setdefault(entry.get('name'), set()).add(provider)
     groups = {}
     for node in root.findall('./types/type'):
         if 'VkDeviceCreateInfo' not in node.get('structextends', '').split(',') or node.get('alias'):
