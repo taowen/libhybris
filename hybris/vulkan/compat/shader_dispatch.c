@@ -352,7 +352,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
             struct shader *shader = device->shaders;
             while (shader && shader->handle != stage->module) shader = shader->next;
             pthread_mutex_unlock(&guard);
-            if (!shader || stage->pNext) {
+            if (!shader) {
                 *reason = "MaliBridge lowering requires captured SPIR-V stages";
                 return VK_ERROR_FEATURE_NOT_PRESENT;
             }
@@ -447,6 +447,9 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
     if ((count && (!attrs || !copy->attributes)) || !copy->stages || !copy->temporary) goto done;
     if (count) memcpy(copy->attributes, input->pVertexAttributeDescriptions, input->vertexAttributeDescriptionCount * sizeof(*copy->attributes));
     memcpy(copy->stages, info->pStages, info->stageCount * sizeof(*copy->stages));
+    /* Stage extensions describe pipeline state (for example robustness and
+     * subgroup size), not the captured SPIR-V. Preserve their chains when
+     * replacing modules; the driver still owns validation of that state. */
     count = 0;
     if (copy->attributes) for (uint32_t j = 0; j < input->vertexAttributeDescriptionCount; ++j)
         for (unsigned i = 0; i < HYBRIS_SCALED_FORMAT_COUNT; ++i)
@@ -471,9 +474,9 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
         /* Module destruction is externally synchronized against pipeline use. */
         if (!vertex && !inout && !stage_distance && !stage_discard && !stage_dual &&
             (!count || !shader || !hybris_spirv_multiple(shader->code, shader->size))) continue;
-        if ((!shader || stage->pNext) && !count && !inout && !stage_distance && !stage_discard && !stage_dual) continue;
-        if (!shader || stage->pNext) {
-            *reason = "stage conversion requires a captured module without stage extensions";
+        if (!shader && !count && !inout && !stage_distance && !stage_discard && !stage_dual) continue;
+        if (!shader) {
+            *reason = "stage conversion requires a captured module";
             result = VK_ERROR_UNKNOWN;
             goto done;
         }
