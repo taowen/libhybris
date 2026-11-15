@@ -379,7 +379,7 @@ static VkResult convert_pipeline(struct shader_device *device, VkGraphicsPipelin
             struct shader *shader = device->shaders;
             while (shader && shader->handle != stage->module) shader = shader->next;
             pthread_mutex_unlock(&guard);
-            if (!shader || shader->extensions || stage->pNext) {
+            if (!shader || shader->extensions) {
                 *reason = "vertex stores require captured SPIR-V stages";
                 return VK_ERROR_UNKNOWN;
             }
