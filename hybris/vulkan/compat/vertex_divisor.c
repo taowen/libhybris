@@ -85,7 +85,14 @@ struct pipeline {
     VkAllocationCallbacks allocator;struct pipeline *next;
 };
 static pthread_mutex_t guard=PTHREAD_MUTEX_INITIALIZER;
-static struct pipeline *pipelines;
+#define PIPELINE_BUCKETS 1024
+static struct pipeline *pipelines[PIPELINE_BUCKETS];
+static size_t bucket(VkDevice device,VkPipeline handle)
+{
+    uint64_t key=(uint64_t)(uintptr_t)handle ^ ((uint64_t)(uintptr_t)device>>4);
+    key^=key>>33;key*=UINT64_C(0xff51afd7ed558ccd);key^=key>>33;
+    return key&(PIPELINE_BUCKETS-1);
+}
 VkResult hybris_divisor_pipeline_publish(VkDevice device,VkPipeline handle,
     const struct hybris_divisor_pipeline *copy,const VkAllocationCallbacks *allocator)
 {
@@ -94,14 +101,15 @@ VkResult hybris_divisor_pipeline_publish(VkDevice device,VkPipeline handle,
     if(!p)return VK_ERROR_OUT_OF_HOST_MEMORY;
     *p=(struct pipeline){.device=device,.handle=handle,.mask=copy->mask,.dynamic=copy->dynamic,.custom=allocator!=NULL};
     if(allocator)p->allocator=*allocator;
-    pthread_mutex_lock(&guard);p->next=pipelines;pipelines=p;pthread_mutex_unlock(&guard);
+    size_t index=bucket(device,handle);
+    pthread_mutex_lock(&guard);p->next=pipelines[index];pipelines[index]=p;pthread_mutex_unlock(&guard);
     return VK_SUCCESS;
 }
 void hybris_divisor_pipeline_remove(VkDevice device,VkPipeline handle)
 {
     struct pipeline *p=NULL;
     pthread_mutex_lock(&guard);
-    for(struct pipeline **slot=&pipelines;*slot;slot=&(*slot)->next)
+    for(struct pipeline **slot=&pipelines[bucket(device,handle)];*slot;slot=&(*slot)->next)
         if((*slot)->device==device && (*slot)->handle==handle){p=*slot;*slot=p->next;break;}
     pthread_mutex_unlock(&guard);
     if(p)hybris_scaled_free(p->custom?&p->allocator:NULL,p);
@@ -109,7 +117,7 @@ void hybris_divisor_pipeline_remove(VkDevice device,VkPipeline handle)
 void hybris_divisor_device_release(VkDevice device)
 {
     pthread_mutex_lock(&guard);
-    for(struct pipeline **slot=&pipelines;*slot;)
+    for(size_t i=0;i<PIPELINE_BUCKETS;++i)for(struct pipeline **slot=&pipelines[i];*slot;)
         if((*slot)->device==device){struct pipeline *p=*slot;*slot=p->next;hybris_scaled_free(p->custom?&p->allocator:NULL,p);}
         else slot=&(*slot)->next;
     pthread_mutex_unlock(&guard);
@@ -138,7 +146,7 @@ void hybris_divisor_bind(VkCommandBuffer command,const struct hybris_layer_devic
     if(!s)return;
     s->zero=0;s->dynamic=0;
     pthread_mutex_lock(&guard);
-    for(struct pipeline *p=pipelines;p;p=p->next)
+    for(struct pipeline *p=pipelines[bucket(device->handle,handle)];p;p=p->next)
         if(p->device==device->handle && p->handle==handle){s->zero=p->mask;s->dynamic=p->dynamic;break;}
     pthread_mutex_unlock(&guard);
     /* Restore app strides on transitions between dynamic pipelines. Static
@@ -146,6 +154,7 @@ void hybris_divisor_bind(VkCommandBuffer command,const struct hybris_layer_devic
     if(!s->dynamic)return;
     uint32_t changed=(s->overridden|s->zero)&s->strides_known&s->buffers_known;
     s->overridden=s->zero;
+    if(!changed)return;
     PFN_vkCmdBindVertexBuffers2 bind=device->recording->CmdBindVertexBuffers2;
     if(!bind)bind=device->recording->CmdBindVertexBuffers2EXT;
     if(!bind){hybris_layer_command_error(command,VK_ERROR_FEATURE_NOT_PRESENT);return;}

@@ -100,7 +100,7 @@ VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
     PFN_vkGetDeviceProcAddr resolver, PFN_vkGetPhysicalDeviceFormatProperties query,
     const VkAllocationCallbacks *allocator,const VkDeviceCreateInfo *requested)
 {
-    if (!hybris_shader_enabled()) return VK_SUCCESS;
+    if (!hybris_shader_enabled() && !hybris_divisor_policy(physical).zero) return VK_SUCCESS;
     struct shader_device *device = hybris_scaled_alloc(allocator, sizeof(*device), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
     if (!device) return VK_ERROR_OUT_OF_HOST_MEMORY;
     memset(device, 0, sizeof(*device));
@@ -729,7 +729,10 @@ inline_done:
     result = device->create_pipelines(handle, cache, count, changed, allocator, pipelines);
     for (uint32_t i = 0; i < count; ++i) if(pipelines[i]) {
         VkResult attached = hybris_divisor_pipeline_publish(handle,pipelines[i],&copies[i].divisor,allocator);
-        if(attached==VK_SUCCESS)attached=attach_polygon(device, &infos[i], &changed[i], allocator, &pipelines[i]);
+        if(attached!=VK_SUCCESS) {
+            device->destroy_pipeline(handle,pipelines[i],allocator);
+            pipelines[i]=VK_NULL_HANDLE;
+        } else attached=attach_polygon(device, &infos[i], &changed[i], allocator, &pipelines[i]);
         if (attached != VK_SUCCESS && result == VK_SUCCESS) result = attached;
     }
 done:
