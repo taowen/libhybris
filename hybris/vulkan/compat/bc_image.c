@@ -133,6 +133,13 @@ VkResult hybris_bc_image_describe(const VkImageCreateInfo *info, struct hybris_b
         } else if (next->sType == VK_STRUCTURE_TYPE_IMAGE_SWAPCHAIN_CREATE_INFO_KHR) {
             if (((const VkImageSwapchainCreateInfoKHR *)next)->swapchain)
                 return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        } else if (next->sType == VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_CONTROL_EXT) {
+            /* BC decoding changes the storage format, not the caller's lossless
+             * driver-compression policy. Fixed-rate plane constraints cannot
+             * be translated between these formats. */
+            VkImageCompressionFlagsEXT flags=((const VkImageCompressionControlEXT *)next)->flags;
+            if(flags!=VK_IMAGE_COMPRESSION_DEFAULT_EXT && flags!=VK_IMAGE_COMPRESSION_DISABLED_EXT)
+                return VK_ERROR_FORMAT_NOT_SUPPORTED;
         } else {
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
         }
@@ -196,6 +203,13 @@ VkResult hybris_bc_image_create(VkDevice device, PFN_vkGetDeviceProcAddr resolve
     }
     VkImageCreateInfo decoded = *info;
     decoded.pNext = NULL;
+    VkImageCompressionControlEXT compression;
+    for(const VkBaseInStructure *node=info->pNext;node;node=node->pNext)
+        if(node->sType==VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_CONTROL_EXT) {
+            compression=*(const VkImageCompressionControlEXT *)node;
+            compression.pNext=NULL;
+            decoded.pNext=&compression;
+        }
     /* The two transfer functions must use the same storage representation. */
     image->decoded_format = hybris_bc_image_format(info->format);
     if (output_format != VK_FORMAT_UNDEFINED) image->decoded_format = output_format;

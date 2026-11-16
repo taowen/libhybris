@@ -410,6 +410,8 @@ static VkResult image_properties2(VkPhysicalDevice physical, const VkPhysicalDev
     trace_image_query(info->format, info->type, info->tiling, info->usage, info->flags, info->pNext);
     out->imageFormatProperties = (VkImageFormatProperties){0};
     if (!image_supported(info->format, info->type, info->tiling, info->usage, info->flags)) return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    VkImageCompressionControlEXT compression;
+    const void *compression_chain=NULL;
     for (const VkBaseInStructure *node = info->pNext; node; node = node->pNext) {
         if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO) {
             if (((const VkPhysicalDeviceExternalImageFormatInfo *)node)->handleType) return VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -417,12 +419,17 @@ static VkResult image_properties2(VkPhysicalDevice physical, const VkPhysicalDev
             const VkImageFormatListCreateInfo *list = (const void *)node;
             for (uint32_t i = 0; i < list->viewFormatCount; ++i)
                 if (!hybris_bc_view_format_allowed(info->format, list->pViewFormats[i], info->flags)) return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        } else if (node->sType == VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_CONTROL_EXT) {
+            compression=*(const VkImageCompressionControlEXT *)node;
+            if(compression.flags!=VK_IMAGE_COMPRESSION_DEFAULT_EXT && compression.flags!=VK_IMAGE_COMPRESSION_DISABLED_EXT)
+                return VK_ERROR_FORMAT_NOT_SUPPORTED;
+            compression.pNext=NULL;compression_chain=&compression;
         } else if (node->sType != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_VIEW_IMAGE_FORMAT_INFO_EXT) {
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
         }
     }
     VkPhysicalDeviceImageFormatInfo2 translated = *info;
-    translated.pNext = NULL;
+    translated.pNext = compression_chain;
     translated.format = hybris_bc_image_format(info->format);
     translated.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     VkResult result = query(physical, &translated, out);
