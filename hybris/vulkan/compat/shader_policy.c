@@ -6,6 +6,7 @@
 #include "multidraw.h"
 #include "multiviewport.h"
 #include "shader_policy.h"
+#include "vertex_divisor.h"
 #include "robustness2.h"
 #include "vertex_stores.h"
 #include "scaled_formats.h"
@@ -42,7 +43,7 @@ int hybris_shader_command_allowed(const char *name)
 VkResult hybris_shader_prepare_device(VkPhysicalDevice physical, const VkDeviceCreateInfo *info)
 {
     if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical) &&
-        !hybris_shader_polygon_emulated(physical) && !hybris_dual_source_active(physical)) return VK_SUCCESS;
+        !hybris_shader_polygon_emulated(physical) && !hybris_dual_source_active(physical) && !hybris_divisor_policy(physical).zero) return VK_SUCCESS;
     for (uint32_t i = 0; i < info->enabledExtensionCount; ++i)
         if (!hybris_shader_extension_allowed(info->ppEnabledExtensionNames[i])) return VK_ERROR_EXTENSION_NOT_PRESENT;
     for (const VkBaseInStructure *node = info->pNext; node; node = node->pNext) {
@@ -94,9 +95,16 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     hybris_robustness2_features(physical,out);
     hybris_dynamic_features(physical,out);
     hybris_maintenance5_features(physical,out);
+    int zero_divisor=hybris_divisor_policy(physical).zero;
+    if(zero_divisor)for(VkBaseOutStructure *node=out->pNext;node;node=node->pNext) {
+        if(node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT)
+            ((VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT*)node)->vertexAttributeInstanceRateZeroDivisor=VK_TRUE;
+        if(node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES)
+            ((VkPhysicalDeviceVulkan14Features*)node)->vertexAttributeInstanceRateZeroDivisor=VK_TRUE;
+    }
     int polygon=hybris_shader_polygon_emulated(physical);
     if(polygon) out->features.fillModeNonSolid=VK_TRUE;
-    if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical) && !polygon && !hybris_dual_source_active(physical)) return;
+    if (!hybris_shader_physical_mask(physical) && !hybris_vertex_stores_active(physical) && !polygon && !hybris_dual_source_active(physical) && !zero_divisor) return;
     for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext) {
         switch (node->sType) {
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT:
@@ -157,11 +165,18 @@ static void properties2(VkPhysicalDevice physical, VkPhysicalDeviceProperties2 *
     query(physical, out);
     hybris_maintenance5_properties(physical,out);
     filter_float_controls(physical,out,query);
+    struct hybris_divisor_policy policy=hybris_divisor_policy(physical);
+    if(policy.zero)for(VkBaseOutStructure *node=out->pNext;node;node=node->pNext) {
+        if(node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_KHR)
+            ((VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR*)node)->supportsNonZeroFirstInstance=VK_FALSE;
+        if(node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES)
+            ((VkPhysicalDeviceVulkan14Properties*)node)->supportsNonZeroFirstInstance=VK_FALSE;
+    }
     VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT *legacy = NULL;
     for (VkBaseOutStructure *node = out->pNext; node; node = node->pNext)
         if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT)
             legacy = (void *)node;
-    if (!legacy || legacy->maxVertexAttribDivisor || !hybris_shader_physical_mask(physical)) return;
+    if (!legacy || legacy->maxVertexAttribDivisor || !policy.alias) return;
     PFN_vkEnumerateDeviceExtensionProperties enumerate = (PFN_vkEnumerateDeviceExtensionProperties)
         context.resolver(context.instance, "vkEnumerateDeviceExtensionProperties");
     uint32_t count = 0;

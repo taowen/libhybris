@@ -5,6 +5,7 @@
  */
 #define VK_NO_PROTOTYPES
 #include "polygon_record.h"
+#include "vertex_divisor.h"
 #include "shader_dispatch.h"
 #include "memory_visibility.h"
 #include "../layer/layer.h"
@@ -173,11 +174,11 @@ restore:
 unsupported:hybris_polygon_note("unsupported draw uses full filled fallback (writes, restart, topology, bounds or simultaneous use)");hybris_polygon_pipeline_release(p);return 0;
 }
 static void VKAPI_CALL draw(VkCommandBuffer c,uint32_t n,uint32_t i,uint32_t first,uint32_t base)
-{struct hybris_layer_device d;if(!hybris_layer_command_device(c,&d))return;if(!hybris_shader_polygon_active(d.handle)||!draw_polygon(c,&d,0,n,i,first,0,base))d.recording->CmdDraw(c,n,i,first,base);}
+{struct hybris_layer_device d;if(!hybris_layer_command_device(c,&d))return;if(!hybris_divisor_draw(c,&d,base))return;if(!hybris_shader_polygon_active(d.handle)||!draw_polygon(c,&d,0,n,i,first,0,base))d.recording->CmdDraw(c,n,i,first,base);}
 static void VKAPI_CALL draw_indexed(VkCommandBuffer c,uint32_t n,uint32_t i,uint32_t first,int32_t offset,uint32_t base)
-{struct hybris_layer_device d;if(!hybris_layer_command_device(c,&d))return;if(!hybris_shader_polygon_active(d.handle)||!draw_polygon(c,&d,1,n,i,first,offset,base))d.recording->CmdDrawIndexed(c,n,i,first,offset,base);}
+{struct hybris_layer_device d;if(!hybris_layer_command_device(c,&d))return;if(!hybris_divisor_draw(c,&d,base))return;if(!hybris_shader_polygon_active(d.handle)||!draw_polygon(c,&d,1,n,i,first,offset,base))d.recording->CmdDrawIndexed(c,n,i,first,offset,base);}
 static void VKAPI_CALL bind(VkCommandBuffer c,VkPipelineBindPoint point,VkPipeline p)
-{struct hybris_layer_device d;if(!hybris_layer_command_device(c,&d))return;d.recording->CmdBindPipeline(c,point,p);if(point==VK_PIPELINE_BIND_POINT_GRAPHICS&&hybris_shader_polygon_active(d.handle)){struct hybris_polygon_recording *s=hybris_layer_polygon_recording(c);if(s)s->graphics=p;}}
+{struct hybris_layer_device d;if(!hybris_layer_command_device(c,&d))return;d.recording->CmdBindPipeline(c,point,p);if(point==VK_PIPELINE_BIND_POINT_GRAPHICS)hybris_divisor_bind(c,&d,p);if(point==VK_PIPELINE_BIND_POINT_GRAPHICS&&hybris_shader_polygon_active(d.handle)){struct hybris_polygon_recording *s=hybris_layer_polygon_recording(c);if(s)s->graphics=p;}}
 static void topology(VkCommandBuffer c,VkPrimitiveTopology t,int ext)
 {struct hybris_layer_device d;if(!hybris_layer_command_device(c,&d))return;((PFN_vkCmdSetPrimitiveTopology)d.resolver(d.handle,ext?"vkCmdSetPrimitiveTopologyEXT":"vkCmdSetPrimitiveTopology"))(c,t);struct hybris_polygon_recording *s=active(c,&d);if(s){s->topology=t;s->topology_known=1;}}
 static void restart(VkCommandBuffer c,VkBool32 v,int ext)

@@ -5,6 +5,7 @@
 #include "../compat/multidraw.h"
 #include "../compat/multiviewport.h"
 #include "layer.h"
+#include "../compat/vertex_divisor.h"
 #include "device_features.h"
 #include "../compat/vertex_stores.h"
 #include "../compat/application_policy.h"
@@ -128,6 +129,7 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
         .track_commands = 1,
         .maintenance5=hybris_maintenance5_requested(info) && hybris_maintenance5_emulated(physical),
         .multi_draw=hybris_multidraw_requested(info) && hybris_multidraw_active(physical),
+        .zero_divisor=hybris_divisor_policy(physical).zero,
         .multi_viewport=hybris_multiviewport_requested(info) && hybris_multiviewport_active(physical),
         .instance_generation = instance.generation}, .custom_allocator = allocator != NULL};
     if (allocator) state->allocator = *allocator;
@@ -205,6 +207,7 @@ void VKAPI_CALL hybris_layer_destroy_device(VkDevice handle, const VkAllocationC
     hybris_polygon_pipelines_release_device(handle);
     hybris_bc_device_remove(handle);
     hybris_vertex_stores_release_device(handle);
+    hybris_divisor_device_release(handle);
     hybris_shader_device_destroy(handle);
     struct device_state *retired = NULL;
     pthread_mutex_lock(&guard);

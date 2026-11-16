@@ -6,6 +6,7 @@
 #include "../compat/multidraw.h"
 #include "../compat/multiviewport.h"
 #include "device_features.h"
+#include "../compat/vertex_divisor.h"
 #include "../compat/vertex_stores.h"
 #include "../compat/clip_distance.h"
 #include "../compat/bc_policy.h"
@@ -90,6 +91,19 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
             hybris_scaled_free(allocator,out->extensions);out->extensions=names;out->info.ppEnabledExtensionNames=names;
         }
     }
+    struct hybris_divisor_policy divisor=hybris_divisor_policy(physical);
+    if(divisor.alias && out->info.enabledExtensionCount) {
+        const char **names=hybris_scaled_alloc(allocator,out->info.enabledExtensionCount*sizeof(*names),VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+        if(!names){hybris_device_features_release(out,allocator);return VK_ERROR_OUT_OF_HOST_MEMORY;}
+        uint32_t n=0;int khr=0;
+        for(uint32_t i=0;i<out->info.enabledExtensionCount;++i) {
+            const char *name=out->info.ppEnabledExtensionNames[i];
+            if(!strcmp(name,VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME))name=VK_KHR_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME;
+            if(!strcmp(name,VK_KHR_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME)){if(khr)continue;khr=1;}
+            names[n++]=name;
+        }
+        hybris_scaled_free(allocator,out->extensions);out->extensions=names;out->info.ppEnabledExtensionNames=names;out->info.enabledExtensionCount=n;
+    }
     int maintenance5=hybris_maintenance5_emulated(physical);
     int dynamic=hybris_dynamic_emulated(physical);
     if(dynamic || maintenance5) {
@@ -127,7 +141,7 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     int cull = hybris_cull_active(physical);
     int stage_point = hybris_stage_point_active(physical);
     int polygon=hybris_shader_polygon_emulated(physical);
-    if (!dual_src && !multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !stage_point && !polygon && !transcode && !hdr && !(robust_node && robust.emulated) && !dynamic && !maintenance5) return VK_SUCCESS;
+    if (!dual_src && !multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !stage_point && !polygon && !transcode && !hdr && !(robust_node && robust.emulated) && !dynamic && !maintenance5 && !divisor.zero) return VK_SUCCESS;
     if (info->pEnabledFeatures) {
         out->features = *info->pEnabledFeatures;
         if(dual_src)out->features.dualSrcBlend=VK_FALSE;
@@ -157,6 +171,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
             target = node;
         }
         if(node==robust_node && robust.emulated)target=node;
+        if(divisor.zero && (node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT ||
+            node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES))target=node;
         if(maintenance5 && (node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES ||
             node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES)){maintenance_node=node;target=node;}
         if(dynamic && (node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES ||
@@ -239,6 +255,10 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
                 ((VkPhysicalDeviceFeatures2*)copy)->features.fillModeNonSolid=VK_FALSE;
             }
         }
+        if(divisor.zero && node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT)
+            ((VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT*)copy)->vertexAttributeInstanceRateZeroDivisor=VK_FALSE;
+        if(divisor.zero && node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES)
+            ((VkPhysicalDeviceVulkan14Features*)copy)->vertexAttributeInstanceRateZeroDivisor=VK_FALSE;
         if(node==maintenance_node && node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES)
             ((VkPhysicalDeviceVulkan14Features*)copy)->maintenance5=VK_FALSE;
         if(node==dynamic_node && node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES)

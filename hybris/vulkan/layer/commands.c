@@ -2,6 +2,7 @@
 #define VK_NO_PROTOTYPES
 #include "../compat/multiviewport.h"
 #include "layer.h"
+#include "../compat/vertex_divisor.h"
 #include "../compat/application_policy.h"
 #include "../compat/scaled_vertex.h"
 #include "../compat/readback.h"
@@ -33,6 +34,7 @@ struct command_state {
     int custom_allocator;
     VkCommandBufferLevel level;
     struct hybris_polygon_recording polygon;
+    struct hybris_divisor_recording divisor;
     struct hybris_dynamic_recording dynamic_rendering;
     unsigned touched;
     struct retained_resource *resources;
@@ -108,6 +110,7 @@ static void reset_resources(VkCommandBuffer command)
         hybris_polygon_record_reset(&state->polygon);
         state->polygon.epoch=state->upload_epoch;
         state->dynamic_rendering=(struct hybris_dynamic_recording){0};
+        state->divisor=(struct hybris_divisor_recording){0};
     }
 }
 static void free_commands(struct command_state *list)
@@ -449,6 +452,7 @@ static void VKAPI_CALL bind_vertices(VkCommandBuffer c,uint32_t first,uint32_t c
     const VkBuffer *buffers,const VkDeviceSize *offsets)
 {
     struct hybris_layer_device device;if(!hybris_layer_command_device(c,&device)) return;
+    if(device.zero_divisor){struct hybris_divisor_recording *s=hybris_layer_divisor_recording(c);if(s)hybris_divisor_vertices(s,first,count,buffers,offsets,NULL,NULL);}
     device.recording->CmdBindVertexBuffers(c,first,count,buffers,offsets);
 }
 static void bind_vertices2(VkCommandBuffer c,uint32_t first,uint32_t count,const VkBuffer *buffers,
@@ -459,9 +463,18 @@ static void bind_vertices2(VkCommandBuffer c,uint32_t first,uint32_t count,const
                                                   device.recording->CmdBindVertexBuffers2;
     if (!next) next = extension ? device.recording->CmdBindVertexBuffers2 :
                                  device.recording->CmdBindVertexBuffers2EXT;
+    VkDeviceSize patched[HYBRIS_DIVISOR_BINDINGS];
+    if(device.zero_divisor) {
+        struct hybris_divisor_recording *s=hybris_layer_divisor_recording(c);
+        if(s){hybris_divisor_vertices(s,first,count,buffers,offsets,sizes,strides);
+            strides=hybris_divisor_strides(s,first,count,strides,patched);
+            if(strides && first<32 && count<=32-first){uint32_t range=count==32?UINT32_MAX:((1u<<count)-1)<<first;
+                s->overridden=(s->overridden&~range)|(s->dynamic?s->zero&range:0);}}
+    }
     if (next) next(c,first,count,buffers,offsets,sizes,strides);
     else if (!sizes && !strides && device.recording->CmdBindVertexBuffers)
-        device.recording->CmdBindVertexBuffers(c,first,count,buffers,offsets);
+        if(device.zero_divisor){struct hybris_divisor_recording *s=hybris_layer_divisor_recording(c);if(s)hybris_divisor_vertices(s,first,count,buffers,offsets,NULL,NULL);}
+    device.recording->CmdBindVertexBuffers(c,first,count,buffers,offsets);
     else hybris_layer_command_error(c,VK_ERROR_FEATURE_NOT_PRESENT);
 }
 static void VKAPI_CALL vertices_core(VkCommandBuffer c,uint32_t f,uint32_t n,const VkBuffer *b,
@@ -560,3 +573,6 @@ struct hybris_polygon_recording *hybris_layer_polygon_recording(VkCommandBuffer 
 {struct command_state *state=find_command(command);if(state)state->touched=1;return state?&state->polygon:NULL;}
 struct hybris_dynamic_recording *hybris_layer_dynamic_recording(VkCommandBuffer command)
 {struct command_state *state=find_command(command);if(state)state->touched=1;return state?&state->dynamic_rendering:NULL;}
+
+struct hybris_divisor_recording *hybris_layer_divisor_recording(VkCommandBuffer command)
+{struct command_state *state=find_command(command);if(state)state->touched=1;return state?&state->divisor:NULL;}

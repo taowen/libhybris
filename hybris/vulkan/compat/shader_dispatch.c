@@ -4,6 +4,7 @@
 #include "dual_source.h"
 #include "multiviewport.h"
 #include "shader_dispatch.h"
+#include "vertex_divisor.h"
 #include "scaled_vertex.h"
 #include "scaled_formats.h"
 #include "spirv_entry.h"
@@ -53,6 +54,7 @@ struct shader_device {
     int mali_spec;
     int multi_viewport;
     int dual_src;
+    int zero_divisor;
     uint32_t output_limit;
     _Atomic unsigned spec_changes;
     VkAllocationCallbacks allocator;
@@ -83,7 +85,7 @@ int hybris_shader_device_proc_allowed(VkDevice handle, const char *name)
     if(device && device->dual_src && !strcmp(name,"vkCmdSetColorBlendEquationEXT"))return 0;
     if(device && device->polygon && !strcmp(name,"vkCmdSetPolygonModeEXT"))return 0;
     if (hybris_shader_command_allowed(name)) return 1;
-    return !device || (!device->mask && !device->vertex_stores && !device->polygon && !device->dual_src);
+    return !device || (!device->mask && !device->vertex_stores && !device->polygon && !device->dual_src && !device->zero_divisor);
 }
 int hybris_shader_polygon_active(VkDevice handle)
 {
@@ -103,6 +105,7 @@ VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
     if (!device) return VK_ERROR_OUT_OF_HOST_MEMORY;
     memset(device, 0, sizeof(*device));
     device->handle = handle;
+    device->zero_divisor=hybris_divisor_policy(physical).zero;
     device->custom = allocator != NULL;
     if (allocator) device->allocator = *allocator;
     device->create_shader = hybris_shader_cleanup_enabled() ? hybris_shader_cleanup_create :
@@ -240,6 +243,7 @@ struct pipeline_copy {
     VkShaderModule *temporary;
     uint32_t stage_count;
     struct hybris_distance_code distances[5];
+    struct hybris_divisor_pipeline divisor;
     VkPipelineRasterizationStateCreateInfo raster;
     VkPipelineViewportStateCreateInfo viewport_state;
     VkViewport viewport;
@@ -641,6 +645,7 @@ static void VKAPI_CALL destroy_pipeline(VkDevice handle,VkPipeline pipeline,
 {
     struct shader_device *device = find_device(handle);
     if (!device) return;
+    hybris_divisor_pipeline_remove(handle,pipeline);
     if (!hybris_polygon_pipeline_remove(handle, pipeline))
         device->destroy_pipeline(handle, pipeline, allocator);
 }
@@ -703,7 +708,7 @@ inline_done:
     }
     struct shader_device *device = find_device(handle);
     if (!device) return VK_ERROR_INITIALIZATION_FAILED;
-    if (!device->mask && !device->point_size && !device->inout && !device->clip && !device->cull && !device->stage_point_size && !device->pervertex && !device->vertex_stores && !device->polygon && !device->multi_viewport && !device->dual_src)
+    if (!device->mask && !device->point_size && !device->inout && !device->clip && !device->cull && !device->stage_point_size && !device->pervertex && !device->vertex_stores && !device->polygon && !device->multi_viewport && !device->dual_src && !device->zero_divisor)
         return device->create_pipelines(handle, cache, count, infos, allocator, pipelines);
     VkGraphicsPipelineCreateInfo *changed = hybris_scaled_alloc(allocator, count * sizeof(*changed), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
     struct pipeline_copy *copies = hybris_scaled_alloc(allocator, count * sizeof(*copies), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
@@ -715,14 +720,16 @@ inline_done:
     memcpy(changed, infos, count * sizeof(*changed));
     for (uint32_t i = 0; i < count; ++i) {
         result = convert_pipeline(device, &changed[i], &copies[i], allocator, &reason);
+        if(result==VK_SUCCESS && device->zero_divisor)result=hybris_divisor_pipeline_prepare(&changed[i],&copies[i].divisor,allocator);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "HYBRIS_SCALED_VERTEX pipeline=%u result=%d reason=%s\n", i, result, reason ? reason : "allocation or driver failure");
             goto done;
         }
     }
     result = device->create_pipelines(handle, cache, count, changed, allocator, pipelines);
-    if (result == VK_SUCCESS) for (uint32_t i = 0; i < count; ++i) {
-        VkResult attached = attach_polygon(device, &infos[i], &changed[i], allocator, &pipelines[i]);
+    for (uint32_t i = 0; i < count; ++i) if(pipelines[i]) {
+        VkResult attached = hybris_divisor_pipeline_publish(handle,pipelines[i],&copies[i].divisor,allocator);
+        if(attached==VK_SUCCESS)attached=attach_polygon(device, &infos[i], &changed[i], allocator, &pipelines[i]);
         if (attached != VK_SUCCESS && result == VK_SUCCESS) result = attached;
     }
 done:
@@ -735,6 +742,7 @@ done:
         hybris_scaled_free(allocator, copies[i].attributes);
         hybris_scaled_free(allocator, copies[i].attachments);
         hybris_scaled_free(allocator, copies[i].dynamic_states);
+        hybris_divisor_pipeline_release(&copies[i].divisor,allocator);
     }
     hybris_scaled_free(allocator, copies);
     hybris_scaled_free(allocator, changed);

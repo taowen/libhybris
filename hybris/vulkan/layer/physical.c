@@ -4,6 +4,7 @@
 #include "../compat/maintenance5.h"
 #include "../compat/dual_source.h"
 #include "layer.h"
+#include "../compat/vertex_divisor.h"
 #include "../compat/vertex_stores.h"
 #include "../compat/shader_dispatch.h"
 #include "../compat/shader_policy.h"
@@ -69,7 +70,8 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
         context.resolver(context.instance, "vkEnumerateDeviceExtensionProperties");
     unsigned bc_mask = layer ? 0 : hybris_bc_physical_mask(physical);
     unsigned shader_mask = layer ? 0 : hybris_shader_physical_mask(physical);
-    int pipeline_compat = !layer && (hybris_dual_source_active(physical) || hybris_shader_polygon_emulated(physical));
+    struct hybris_divisor_policy divisor=layer?(struct hybris_divisor_policy){0}:hybris_divisor_policy(physical);
+    int pipeline_compat = !layer && (hybris_dual_source_active(physical) || hybris_shader_polygon_emulated(physical) || divisor.zero);
     int vertex_stores = !layer && hybris_vertex_stores_active(physical);
     int dynamic = !layer && hybris_dynamic_emulated(physical);
     int maintenance5 = !layer && hybris_maintenance5_emulated(physical);
@@ -78,7 +80,7 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
         VkResult policy_result=hybris_robustness2_policy(physical,&robust);
         if(policy_result!=VK_SUCCESS)return policy_result;
     }
-    if (layer || (!bc_mask && !shader_mask && !pipeline_compat && !vertex_stores && !robust.emulated && !dynamic && !maintenance5))
+    if (layer || (!bc_mask && !shader_mask && !pipeline_compat && !vertex_stores && !robust.emulated && !dynamic && !maintenance5 && !divisor.alias))
         return enumerate(physical, layer, count, properties);
     uint32_t available = 0;
     VkResult result = enumerate(physical, NULL, &available, NULL);
@@ -115,6 +117,10 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     }
     if(maintenance5 && !hybris_dynamic_native_extension(physical,VK_KHR_MAINTENANCE_5_EXTENSION_NAME)) {
         if(properties && written<capacity)properties[written++]=(VkExtensionProperties){.extensionName=VK_KHR_MAINTENANCE_5_EXTENSION_NAME,.specVersion=1};
+        ++kept;
+    }
+    if(divisor.alias) {
+        if(properties && written<capacity)properties[written++]=(VkExtensionProperties){.extensionName=VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,.specVersion=3};
         ++kept;
     }
     free(all);
