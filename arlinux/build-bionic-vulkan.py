@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import re
 import importlib.util
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 
 def main():
@@ -120,14 +122,17 @@ static inline int property_get(const char *key, char *value, const char *fallbac
     # Use the AOSP usage conversion already shipped with the shared adapter.
     files.append(source / 'gralloc/GrallocUsageConversion.cpp')
     flags += ['-I' + str(source / 'libsync/include')]
-    objects = []
-    for index, path in enumerate(files):
+    jobs = max(1, min(int(os.environ.get('JOBS', '4')), os.cpu_count() or 1))
+    def compile_adapter(item):
+        index, path = item
         obj = output / f'{index}-{path.stem}.o'
         cpp = path.suffix == '.cpp'
         cmd = [str(compiler) + ('++' if cpp else ''), *flags]
         if cpp: cmd += ['-std=gnu++17']
         subprocess.run([*cmd, '-c', str(path), '-o', str(obj)], check=True)
-        objects.append(str(obj))
+        return str(obj)
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        objects = list(pool.map(compile_adapter, enumerate(files)))
     library = output / 'libvulkan_android_desktop.so'
     subprocess.run([str(compiler) + '++', '-shared', '-static-libstdc++', *objects,
                     '-L' + str(args.native_prefix.resolve() / 'lib'), '-landroid', '-lnativewindow', '-ldl',
@@ -144,11 +149,13 @@ static inline int property_get(const char *key, char *value, const char *fallbac
     files = [stage / 'vulkan' / path for path in re.findall(r'\b(?:layer|compat)/[\w/]+\.c\b', layer_sources)]
     if not files:
         raise RuntimeError('Shared Vulkan compatibility source list changed')
-    objects = []
-    for index, path in enumerate(files):
+    def compile_compat(item):
+        index, path = item
         obj = output / f'compat-{index}-{path.stem}.o'
         subprocess.run([str(compiler), *flags, '-std=gnu11', '-c', str(path), '-o', str(obj)], check=True)
-        objects.append(str(obj))
+        return str(obj)
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        objects = list(pool.map(compile_compat, enumerate(files)))
     layer = output / 'libVkLayer_hybris_compat.so'
     subprocess.run([str(compiler), '-shared', *objects, '-lm',
                     '-Wl,--no-undefined,-z,nodelete,-z,max-page-size=16384',
