@@ -21,7 +21,7 @@ static size_t layout_bucket(VkPipelineLayout handle)
     key ^= key >> 33;
     return (size_t)key & (HYBRIS_BC_LAYOUT_BUCKETS - 1);
 }
-enum saved_kind { SAVED_DESCRIPTORS, SAVED_PUSH };
+enum saved_kind { SAVED_DESCRIPTORS, SAVED_PUSH, SAVED_PUSHED_DESCRIPTORS };
 struct hybris_bc_saved_command {
     struct hybris_bc_saved_command *next;
     struct hybris_bc_layout *layout;
@@ -30,7 +30,7 @@ struct hybris_bc_saved_command {
     uint32_t first, count, offset_count;
     VkShaderStageFlags stages;
     /* Descriptor handles followed by uint32_t offsets, or push bytes. */
-    _Alignas(VkDescriptorSet) unsigned char data[];
+    _Alignas(VkWriteDescriptorSet) unsigned char data[];
 };
 
 void hybris_bc_layouts_init(struct hybris_bc_layouts *layouts, VkDevice device,
@@ -187,6 +187,67 @@ void hybris_bc_save_push(struct hybris_bc_command_state *state, VkPipelineLayout
     if (size) memcpy(saved->data, values, size);
 }
 
+/* The caller's write arrays and payloads cease to exist after recording.
+ * Keep immutable snapshots, in the same order as ordinary descriptor binds.
+ * Replaying the writes preserves partial updates to an existing pushed set. */
+static int descriptor_payload(VkDescriptorType type)
+{
+    switch(type) {
+    case VK_DESCRIPTOR_TYPE_SAMPLER:
+    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: return 1;
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: return 2;
+    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: return 3;
+    default: return 0;
+    }
+}
+void hybris_bc_save_pushed_descriptors(struct hybris_bc_command_state *state,
+    VkPipelineBindPoint point, VkPipelineLayout layout, uint32_t set,
+    uint32_t count, const VkWriteDescriptorSet *writes)
+{
+    if (!count || (point != VK_PIPELINE_BIND_POINT_COMPUTE &&
+        !(state->track_graphics && point == VK_PIPELINE_BIND_POINT_GRAPHICS))) return;
+    size_t bytes = (size_t)count * sizeof(*writes);
+    for (uint32_t i = 0; i < count; ++i) {
+        const VkWriteDescriptorSet *w = &writes[i];
+        int kind=descriptor_payload(w->descriptorType);
+        size_t element = kind==1 ? sizeof(VkDescriptorImageInfo) :
+            kind==2 ? sizeof(VkDescriptorBufferInfo) : kind==3 ? sizeof(VkBufferView) : 0;
+        if (w->pNext || (!element && w->descriptorCount)) {
+            state->error = VK_ERROR_FEATURE_NOT_PRESENT; return;
+        }
+        if (element && w->descriptorCount > (SIZE_MAX - bytes) / element) {
+            state->error = VK_ERROR_OUT_OF_HOST_MEMORY; return;
+        }
+        bytes += (size_t)w->descriptorCount * element;
+    }
+    struct hybris_bc_saved_command *saved = save(state, layout, bytes);
+    if (!saved) return;
+    saved->kind = SAVED_PUSHED_DESCRIPTORS;
+    saved->bind_point = point; saved->first = set; saved->count = count;
+    VkWriteDescriptorSet *copy = (void *)saved->data;
+    unsigned char *payload = (void *)(copy + count);
+    for (uint32_t i = 0; i < count; ++i) {
+        copy[i] = writes[i];
+        int kind=descriptor_payload(writes[i].descriptorType);
+        size_t element = kind==1 ? sizeof(VkDescriptorImageInfo) :
+            kind==2 ? sizeof(VkDescriptorBufferInfo) : kind==3 ? sizeof(VkBufferView) : 0;
+        size_t size = (size_t)writes[i].descriptorCount * element;
+        const void *source = kind==1 ? (const void *)writes[i].pImageInfo :
+            kind==2 ? (const void *)writes[i].pBufferInfo : (const void *)writes[i].pTexelBufferView;
+        copy[i].pImageInfo = NULL; copy[i].pBufferInfo = NULL; copy[i].pTexelBufferView = NULL;
+        if (kind==1) copy[i].pImageInfo = (void *)payload;
+        else if (kind==2) copy[i].pBufferInfo = (void *)payload;
+        else if (kind==3) copy[i].pTexelBufferView = (void *)payload;
+        if (size) memcpy(payload, source, size);
+        payload += size;
+    }
+}
+
 static void restore(struct hybris_bc_command_state *state, VkCommandBuffer command, VkPipelineBindPoint bind_point)
 {
     if (state->error != VK_SUCCESS) return;
@@ -196,6 +257,7 @@ static void restore(struct hybris_bc_command_state *state, VkCommandBuffer comma
     PFN_vkCmdBindDescriptorSets descriptors =
         (PFN_vkCmdBindDescriptorSets)resolver(device, "vkCmdBindDescriptorSets");
     PFN_vkCmdPushConstants push = (PFN_vkCmdPushConstants)resolver(device, "vkCmdPushConstants");
+    PFN_vkCmdPushDescriptorSetKHR pushed = (PFN_vkCmdPushDescriptorSetKHR)resolver(device, "vkCmdPushDescriptorSetKHR");
     VkPipeline handle = bind_point == VK_PIPELINE_BIND_POINT_COMPUTE ? state->compute_pipeline : state->graphics_pipeline;
     if (handle) pipeline(command, bind_point, handle);
     for (const struct hybris_bc_saved_command *saved = state->first; saved; saved = saved->next) {
@@ -205,6 +267,9 @@ static void restore(struct hybris_bc_command_state *state, VkCommandBuffer comma
                 saved->first, saved->count, (const VkDescriptorSet *)saved->data,
                 saved->offset_count,
                 (const uint32_t *)(saved->data + (size_t)saved->count * sizeof(VkDescriptorSet)));
+        } else if (saved->kind == SAVED_PUSHED_DESCRIPTORS && saved->bind_point == bind_point) {
+            pushed(command, bind_point, saved->layout->clone, saved->first,
+                saved->count, (const VkWriteDescriptorSet *)saved->data);
         }
     }
     /* Preserve the complete stage mask required by each layout's ranges.
@@ -250,6 +315,8 @@ VkResult hybris_bc_visit_graphics(const struct hybris_bc_command_state *state,
                 (const uint32_t *)(s->data + (size_t)s->count * sizeof(VkDescriptorSet)));
         else if (s->kind == SAVED_PUSH && (s->stages & VK_SHADER_STAGE_VERTEX_BIT) && visitor->push)
             result = visitor->push(visitor->user, s->layout, s->stages, s->first, s->count, s->data);
+        else if (s->kind == SAVED_PUSHED_DESCRIPTORS && s->bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
         if (result != VK_SUCCESS) return result;
     }
     return VK_SUCCESS;

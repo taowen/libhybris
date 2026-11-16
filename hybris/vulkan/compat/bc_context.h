@@ -28,6 +28,7 @@ struct hybris_bc_resource {
     struct hybris_bc_resource *next, *previous, *lookup_next;
 };
 struct hybris_bc_device {
+    struct hybris_bc_push_template *push_templates;
     VkDevice handle;
     VkPhysicalDevice physical;
     PFN_vkGetDeviceProcAddr resolver;
@@ -67,6 +68,8 @@ void *hybris_bc_alloc(struct hybris_bc_device *device, size_t size);
 void hybris_bc_free(struct hybris_bc_device *device, void *memory);
 void hybris_bc_command_retire(struct hybris_bc_command *command);
 PFN_vkVoidFunction hybris_bc_commands_proc(const char *name);
+PFN_vkVoidFunction hybris_bc_push_descriptors_proc(const char *name);
+void hybris_bc_push_templates_finish(struct hybris_bc_device *device);
 PFN_vkVoidFunction hybris_bc_resources_proc(const char *name);
 PFN_vkVoidFunction hybris_bc_image_copy_proc(const char *name);
 PFN_vkVoidFunction hybris_bc_record_proc(const char *name);

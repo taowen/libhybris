@@ -204,7 +204,7 @@ int hybris_bc_format_properties(VkPhysicalDevice physical, VkFormat format, VkFo
 int hybris_bc_extension_allowed(const char *name)
 {
     static const char *const unsupported[] = {
-        "VK_EXT_descriptor_buffer", "VK_KHR_push_descriptor", "VK_EXT_shader_object",
+        "VK_EXT_descriptor_buffer", "VK_EXT_shader_object",
         "VK_NV_per_stage_descriptor_set", "VK_KHR_maintenance8", "VK_EXT_host_image_copy",
         "VK_QCOM_rotated_copy_commands", "VK_EXT_device_generated_commands",
         "VK_NV_device_generated_commands", "VK_NV_device_generated_commands_compute",
@@ -470,6 +470,7 @@ PFN_vkVoidFunction hybris_bc_proc(const char *name)
     /* Image identity is shared resource metadata, independent of BC emulation. */
     if (!hybris_bc_enabled()) return !strcmp(name,"vkCreateImage") || !strcmp(name,"vkDestroyImage") ? hybris_bc_resources_proc(name) : NULL;
     PFN_vkVoidFunction function = hybris_bc_commands_proc(name);
+    if (!function) function = hybris_bc_push_descriptors_proc(name);
     if (!function) function = hybris_bc_resources_proc(name);
     if (!function) function = hybris_bc_record_proc(name);
     if (!function) function = hybris_bc_barriers_proc(name);

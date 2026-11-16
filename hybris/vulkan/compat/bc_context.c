@@ -176,6 +176,7 @@ void hybris_bc_device_remove(VkDevice handle)
         hybris_bc_free(device, device->images);
         device->images = next;
     }
+    hybris_bc_push_templates_finish(device);
     hybris_bc_layouts_finish(&device->layouts);
     hybris_polygon_patterns_destroy(device);
     if(device->polygon.device) hybris_polygon_indices_destroy(&device->polygon,NULL);

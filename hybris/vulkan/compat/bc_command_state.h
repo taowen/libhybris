@@ -52,6 +52,9 @@ void hybris_bc_save_descriptors(struct hybris_bc_command_state *state,
     const uint32_t *offsets);
 void hybris_bc_save_push(struct hybris_bc_command_state *state, VkPipelineLayout layout,
     VkShaderStageFlags stages, uint32_t offset, uint32_t size, const void *values);
+void hybris_bc_save_pushed_descriptors(struct hybris_bc_command_state *state,
+    VkPipelineBindPoint point, VkPipelineLayout layout, uint32_t set,
+    uint32_t count, const VkWriteDescriptorSet *writes);
 /* No allocation and no ownership changes while restoring. The caller must
  * return state->error from EndCommandBuffer if a void recording hook failed. */
 void hybris_bc_restore_compute(struct hybris_bc_command_state *state, VkCommandBuffer command);
