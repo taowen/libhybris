@@ -102,7 +102,11 @@ static void requirements2(VkDevice handle, const VkImageMemoryRequirementsInfo2 
         GetBufferMemoryRequirements2(handle, &buffer, out);
     } else {
         PFN_vkGetImageMemoryRequirements2 query = (PFN_vkGetImageMemoryRequirements2)device->resolver(handle, name);
-        query(handle, info, out);
+        VkImageCreateInfo create = *info->pCreateInfo;
+        create.flags = hybris_planar_usage(device->physical, create.format, create.tiling, create.usage, create.flags);
+        VkDeviceImageMemoryRequirements native = *info;
+        native.pCreateInfo = &create;
+        query(handle, &native, out);
     }
 }
 static void VKAPI_CALL requirements2_core(VkDevice handle, const VkImageMemoryRequirementsInfo2 *info,
