@@ -3,6 +3,7 @@
 #define VK_NO_PROTOTYPES
 #include "bc_policy.h"
 #include "bc_context.h"
+#include "planar_usage.h"
 #include "../layer/layer.h"
 #include <stdlib.h>
 #include <string.h>
@@ -397,6 +398,7 @@ static VkResult VKAPI_CALL image_properties(VkPhysicalDevice physical, VkFormat 
         if (result == VK_SUCCESS) out->sampleCounts &= VK_SAMPLE_COUNT_1_BIT;
         return result;
     }
+    flags = hybris_planar_usage(physical, format, tiling, usage, flags);
     return GetPhysicalDeviceImageFormatProperties(physical, format, type, tiling, usage, flags, out);
 }
 static VkResult image_properties2(VkPhysicalDevice physical, const VkPhysicalDeviceImageFormatInfo2 *info,
@@ -406,7 +408,11 @@ static VkResult image_properties2(VkPhysicalDevice physical, const VkPhysicalDev
     if (!hybris_layer_lookup_physical(physical, &context)) return VK_ERROR_INITIALIZATION_FAILED;
     PFN_vkGetPhysicalDeviceImageFormatProperties2 query =
         (PFN_vkGetPhysicalDeviceImageFormatProperties2)context.resolver(context.instance, name);
-    if (!emulates(physical, info->format)) return query(physical, info, out);
+    if (!emulates(physical, info->format)) {
+        VkPhysicalDeviceImageFormatInfo2 native = *info;
+        native.flags = hybris_planar_usage(physical, info->format, info->tiling, info->usage, info->flags);
+        return query(physical, &native, out);
+    }
     trace_image_query(info->format, info->type, info->tiling, info->usage, info->flags, info->pNext);
     out->imageFormatProperties = (VkImageFormatProperties){0};
     if (!image_supported(info->format, info->type, info->tiling, info->usage, info->flags)) return VK_ERROR_FORMAT_NOT_SUPPORTED;

@@ -3,6 +3,7 @@
 #include "bc_context.h"
 #include "bc_policy.h"
 #include "bc_alias.h"
+#include "planar_usage.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -35,7 +36,9 @@ static VkResult VKAPI_CALL create_image(VkDevice handle, const VkImageCreateInfo
             device->rgb_mask, hybris_bc_storage_format(device->physical, info), allocator, &resource->emulated);
         if (result == VK_SUCCESS) *out = resource->emulated.image;
     } else {
-        result = CreateImage(handle, info, allocator, out);
+        VkImageCreateInfo native = *info;
+        native.flags = hybris_planar_usage(device->physical, info->format, info->tiling, info->usage, info->flags);
+        result = CreateImage(handle, &native, allocator, out);
     }
     const char *trace = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_VULKAN_TRACE");
     if (emulates(device, info->format) && trace && !strcmp(trace, "1"))
