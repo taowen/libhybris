@@ -6,6 +6,7 @@
 #include "../compat/multiviewport.h"
 #include "layer.h"
 #include "../compat/vertex_divisor.h"
+#include "../compat/texel_alignment.h"
 #include "device_features.h"
 #include "../compat/vertex_stores.h"
 #include "../compat/application_policy.h"
@@ -130,6 +131,7 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
         .maintenance5=hybris_maintenance5_requested(info) && hybris_maintenance5_emulated(physical),
         .multi_draw=hybris_multidraw_requested(info) && hybris_multidraw_active(physical),
         .zero_divisor=hybris_divisor_policy(physical).zero,
+        .storage_texel_alignment=hybris_texel_alignment(physical),
         .multi_viewport=hybris_multiviewport_requested(info) && hybris_multiviewport_active(physical),
         .instance_generation = instance.generation}, .custom_allocator = allocator != NULL};
     if (allocator) state->allocator = *allocator;
@@ -236,6 +238,7 @@ PFN_vkVoidFunction hybris_layer_device_dispatch(const char *name, int track_comm
         if (!compat) compat = hybris_memory_visibility_proc(name);
     }
     if (!compat) compat = hybris_maintenance5_dispatch(name);
+    if (!compat) compat = hybris_texel_proc(name);
     if (!compat) compat = hybris_dynamic_dispatch(name);
     if (!compat) compat = hybris_null_dispatch(name);
     if (!compat) compat = hybris_bc_proc(name);

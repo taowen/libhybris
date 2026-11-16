@@ -7,6 +7,7 @@
 #include "multiviewport.h"
 #include "shader_policy.h"
 #include "vertex_divisor.h"
+#include "texel_alignment.h"
 #include "robustness2.h"
 #include "vertex_stores.h"
 #include "scaled_formats.h"
@@ -165,6 +166,7 @@ static void properties2(VkPhysicalDevice physical, VkPhysicalDeviceProperties2 *
     query(physical, out);
     hybris_maintenance5_properties(physical,out);
     filter_float_controls(physical,out,query);
+    hybris_texel_properties(physical,out);
     struct hybris_divisor_policy policy=hybris_divisor_policy(physical);
     if(policy.zero)for(VkBaseOutStructure *node=out->pNext;node;node=node->pNext) {
         if(node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_KHR)

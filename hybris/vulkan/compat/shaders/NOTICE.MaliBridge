@@ -76,3 +76,9 @@ The maintenance5 translations in ../maintenance5.c follow
 server/server_emu_layer.c at the same 2d674a5f commit. Copyright (C) 2026
 ASEbrahim and MaliBridge contributors, GPL-3.0-or-later. Integration uses
 private copies and existing layer resource records rather than the server arena.
+
+The storage texel alignment policy and view warnings in ../texel_alignment.c
+are adapted from common/vkb_caps.c and server/server_emu.c, server_emu_layer.c
+at 3cd7a2baaaf07f7d7a72c73675899a5ea202ebd9. Copyright (C) 2026 ASEbrahim and
+MaliBridge contributors, GPL-3.0-or-later. Views retain their requested offsets;
+the policy does not implement general misaligned storage-texel emulation.

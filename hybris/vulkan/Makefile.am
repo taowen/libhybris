@@ -19,6 +19,7 @@ libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/device.c layer/physica
     compat/multidraw.c compat/multidraw.h \
     compat/multiviewport.c compat/multiviewport.h \
     compat/vertex_divisor.c compat/vertex_divisor.h \
+    compat/texel_alignment.c compat/texel_alignment.h \
     compat/robustness2.c compat/robustness2.h compat/null_descriptors.c compat/null_descriptors.h compat/null_map.h \
     compat/bc_decode.c compat/bc_decode.h compat/shaders/bc_decode.inc \
     compat/bc_image.c compat/bc_image.h compat/bc_command_state.c compat/bc_command_state.h compat/bc_transfer.c compat/bc_transfer.h \
