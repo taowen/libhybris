@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <sys/auxv.h>
 
 #define PROC(name) PFN_vk##name name = (PFN_vk##name)device->resolver(device->handle, "vk" #name)
@@ -40,7 +41,21 @@ static VkResult VKAPI_CALL create_image(VkDevice handle, const VkImageCreateInfo
         fprintf(stderr, "HYBRIS_BC_IMAGE format=%u backing=%u extent=%ux%ux%u flags=0x%x usage=0x%x result=%d\n",
             info->format, resource->emulated.decoded_format, info->extent.width, info->extent.height,
             info->extent.depth, info->flags, info->usage, result);
-    if (result != VK_SUCCESS) { hybris_bc_free(device, resource); return result; }
+    if (result != VK_SUCCESS) {
+        /* Preserve enough information to diagnose resource admission from an
+         * ordinary application log, without enabling per-call Vulkan tracing. */
+        static _Atomic unsigned failures;
+        if (atomic_fetch_add(&failures, 1) < 8) {
+            fprintf(stderr, "HYBRIS_CREATE_IMAGE_FAILED result=%d format=%u type=%u extent=%ux%ux%u mips=%u layers=%u samples=0x%x tiling=%u flags=0x%x usage=0x%x",
+                result, info->format, info->imageType, info->extent.width, info->extent.height,
+                info->extent.depth, info->mipLevels, info->arrayLayers, info->samples,
+                info->tiling, info->flags, info->usage);
+            for (const VkBaseInStructure *node=info->pNext;node;node=node->pNext)
+                fprintf(stderr," next=%u",node->sType);
+            fprintf(stderr,"\n");
+        }
+        hybris_bc_free(device, resource); return result;
+    }
     resource->handle = *out;
     resource->format = info->format;
     resource->type = info->imageType;
