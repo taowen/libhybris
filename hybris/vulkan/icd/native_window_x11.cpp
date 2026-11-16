@@ -309,11 +309,14 @@ static int cancel(hybris_icd_window *base, ANativeWindowBuffer *native, int fd) 
 }
 static int extent(hybris_icd_window *base, uint32_t *width, uint32_t *height) {
     Owner *o = get(base); pthread_mutex_lock(&o->mutex);
-    xcb_generic_error_t *error = nullptr;
-    auto *geometry = xcb_get_geometry_reply(o->connection, xcb_get_geometry(o->connection, o->window), &error);
-    int result = !geometry || error ? -EPIPE : 0;
-    if (!result) { *width = geometry->width; *height = geometry->height; }
-    free(geometry); free(error); pthread_mutex_unlock(&o->mutex); return result;
+    /* SelectInput supplies the initial size and every subsequent configure.
+     * Consume that ordered stream rather than inserting a geometry round trip
+     * in both image acquisition and presentation on every frame. */
+    drain(o);
+    int result = o->asynchronous_error || xcb_connection_has_error(o->connection) ||
+        !o->width || !o->height ? -EPIPE : 0;
+    if (!result) { *width = o->width; *height = o->height; }
+    pthread_mutex_unlock(&o->mutex); return result;
 }
 static void destroy(hybris_icd_window *base) {
     Owner *o = get(base);
@@ -373,6 +376,10 @@ int hybris_icd_window_xcb(xcb_connection_t *connection, uint32_t window, hybris_
     if (!o->events) { destroy(&o->base); return -ENOMEM; }
     int result = select(o, TAWC_DRI_EVENT_MASK_CONFIGURE_NOTIFY | TAWC_DRI_EVENT_MASK_BUFFER_RELEASE);
     if (result) { destroy(&o->base); return result; }
+    /* The checked selection completes after the server sends its initial
+     * configure. Establish the extent before publishing this window. */
+    drain(o);
+    if (!o->width || !o->height) { destroy(&o->base); return -EPIPE; }
     result = pthread_create(&o->worker, nullptr, present_worker, o);
     if (result) { destroy(&o->base); return -result; }
     o->worker_started = true;
