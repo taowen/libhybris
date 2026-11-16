@@ -128,11 +128,6 @@ create, present, resize/out-of-date and native-X surface-lost. Remaining G11
 scope is multiwindow, disconnect, delayed release and longer lifetime, not a
 hybris EGL X11 window plugin.
 
-The ordered X11 presenter submits already queued frames before checking their
-requests, so one XCB synchronization can cover a batch. It never waits to fill
-a batch, and both successful request checking and BufferRelease remain required
-before reuse. Disconnect and destruction wait for submission and checking.
-
 The [X11 client probes](../../../tests/x11/README.md) build only clients and
 run through that same window runner. Xwayland is built in Arlinux; the runner
 attaches to the already running, installed `io.taowen.arlinux.debian` compositor and

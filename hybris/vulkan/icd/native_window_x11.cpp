@@ -35,7 +35,7 @@ struct Buffer : BaseNativeWindowBuffer {
     Buffer() { handle = nullptr; }
     ~Buffer() { if (handle) hybris_gralloc_release(handle, 1); }
 };
-struct Pending { Buffer *buffer; uint32_t serial; unsigned sequence; bool checked, released; Pending *next; };
+struct Pending { Buffer *buffer; uint32_t serial; bool checked, released; Pending *next; };
 struct Submission { Buffer *buffer; int fence; Submission *next; };
 struct Owner {
     hybris_icd_window base;
@@ -187,8 +187,7 @@ static int dequeue(hybris_icd_window *base, int64_t timeout, ANativeWindowBuffer
     }
     pthread_mutex_unlock(&o->mutex); return error;
 }
-static int submit(Owner *o, Buffer *b, int fd, Pending **submitted) {
-    *submitted = nullptr;
+static int present(Owner *o, Buffer *b, int fd) {
     int error = consume_fence(fd); if (error) return error;
     const native_handle_t *h = b->handle;
     if (!h || h->numFds < 0 || h->numFds > 64 || h->numInts < 0 || h->numInts > 1024) return -EINVAL;
@@ -218,21 +217,17 @@ static int submit(Owner *o, Buffer *b, int fd, Pending **submitted) {
     memcpy(data + sizeof(*body), h->data + h->numFds, h->numInts * sizeof(int32_t));
     iovec parts[3] = {}; parts[2] = {data, bytes};
     xcb_protocol_request_t request = {1, &extension, X_TAWCDRI_PresentBuffer, 1};
-    p->sequence = xcb_send_request_with_fds(o->connection, XCB_REQUEST_CHECKED,
+    unsigned sequence = xcb_send_request_with_fds(o->connection, XCB_REQUEST_CHECKED,
         parts + 2, &request, h->numFds, fds);
     /* libxcb owns the duplicate FDs after send_request_with_fds. */
     p->buffer = b; b->common.incRef(&b->common);
     p->next = o->pending; o->pending = p;
     trace(o, "present", p);
-    *submitted = p;
-    free(data); pthread_mutex_unlock(&o->mutex); return 0;
-}
-static void finish(Owner *o, Pending *p) {
     /* A checked X request is a server round trip. Do not hold the pool lock
      * across it: other frames can acquire/queue while the presenter waits. */
-    int error = check(o->connection, p->sequence);
+    pthread_mutex_unlock(&o->mutex);
+    error = check(o->connection, sequence);
     pthread_mutex_lock(&o->mutex);
-    Buffer *b = p->buffer;
     p->checked = true;
     if (error || p->released) {
         Pending **link = &o->pending;
@@ -252,7 +247,7 @@ static void finish(Owner *o, Pending *p) {
         }
     }
     if (error || p->released) free(p);
-    pthread_mutex_unlock(&o->mutex);
+    free(data); pthread_mutex_unlock(&o->mutex); return error;
 }
 static void *present_worker(void *argument) {
     Owner *o = static_cast<Owner *>(argument);
@@ -260,31 +255,19 @@ static void *present_worker(void *argument) {
     for (;;) {
         while (!o->work_head && !o->stopping) pthread_cond_wait(&o->work_ready, &o->mutex);
         if (!o->work_head) break;
+        Submission *s = o->work_head;
+        o->work_head = s->next;
+        if (!o->work_head) o->work_tail = nullptr;
         o->busy = true;
-        Pending *batch[sizeof(o->pool) / sizeof(o->pool[0])];
-        unsigned count = 0;
-        /* Submit already queued frames before checking them. XCB's first
-         * check then synchronizes all earlier submissions, instead of adding
-         * a round trip between each frame. Never delay a frame to fill a batch.
-         * Unchecked pending entries retain their buffers even after release. */
-        while (o->work_head && count < sizeof(batch) / sizeof(batch[0])) {
-            Submission *s = o->work_head;
-            o->work_head = s->next;
-            if (!o->work_head) o->work_tail = nullptr;
-            pthread_mutex_unlock(&o->mutex);
-            Pending *p = nullptr;
-            int error = submit(o, s->buffer, s->fence, &p);
-            pthread_mutex_lock(&o->mutex);
-            if (error) {
-                if (!o->asynchronous_error) o->asynchronous_error = error;
-                s->buffer->held = s->buffer->queued = false;
-            } else batch[count++] = p;
-            s->buffer->common.decRef(&s->buffer->common);
-            free(s);
-        }
         pthread_mutex_unlock(&o->mutex);
-        for (unsigned i = 0; i < count; ++i) finish(o, batch[i]);
+        int error = present(o, s->buffer, s->fence);
         pthread_mutex_lock(&o->mutex);
+        if (error) {
+            if (!o->asynchronous_error) o->asynchronous_error = error;
+            s->buffer->held = s->buffer->queued = false;
+        }
+        s->buffer->common.decRef(&s->buffer->common);
+        free(s);
         o->busy = false;
         pthread_cond_broadcast(&o->idle);
     }
