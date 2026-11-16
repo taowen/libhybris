@@ -2,6 +2,7 @@
 #define VK_NO_PROTOTYPES
 #include "bc_context.h"
 #include "bc_policy.h"
+#include "bc_alias.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -209,6 +210,7 @@ static VkResult bind_images(VkDevice handle, uint32_t count, const VkBindImageMe
                 "vkBindBufferMemory2KHR" : "vkBindBufferMemory2";
             PFN_vkBindBufferMemory2 bind_buffer = (PFN_vkBindBufferMemory2)device->resolver(handle, buffer_name);
             result = bind_buffer(handle, 1, &buffer);
+            if(result==VK_SUCCESS)result=hybris_bc_alias_bind(&resource->emulated,infos[i].memory,infos[i].memoryOffset);
             /* Report the actual compressed-backing binding, not the private
              * decoded image's earlier allocation. */
             for (const VkBaseInStructure *next = infos[i].pNext; next; next = next->pNext)
@@ -229,6 +231,13 @@ static VkResult VKAPI_CALL bind_images_core(VkDevice handle, uint32_t count, con
 { return bind_images(handle, count, infos, "vkBindImageMemory2"); }
 static VkResult VKAPI_CALL bind_images_khr(VkDevice handle, uint32_t count, const VkBindImageMemoryInfo *infos)
 { return bind_images(handle, count, infos, "vkBindImageMemory2KHR"); }
+static void VKAPI_CALL free_memory(VkDevice handle,VkDeviceMemory memory,const VkAllocationCallbacks *allocator)
+{
+    struct hybris_bc_device *device=hybris_bc_device_find(handle);
+    if(!device)return;
+    hybris_bc_alias_forget(handle,memory);
+    PROC(FreeMemory);FreeMemory(handle,memory,allocator);
+}
 static VkResult VKAPI_CALL create_view(VkDevice handle, const VkImageViewCreateInfo *info,
     const VkAllocationCallbacks *allocator, VkImageView *view)
 {
@@ -313,6 +322,7 @@ PFN_vkVoidFunction hybris_bc_resources_proc(const char *name)
         ENTRY(GetImageMemoryRequirements, requirements), ENTRY(GetImageMemoryRequirements2, requirements2_core),
         ENTRY(GetImageMemoryRequirements2KHR, requirements2_khr), ENTRY(BindImageMemory, bind_image),
         ENTRY(BindImageMemory2, bind_images_core), ENTRY(BindImageMemory2KHR, bind_images_khr),
+        ENTRY(FreeMemory, free_memory),
         ENTRY(CreateImageView, create_view), ENTRY(AllocateMemory, allocate_memory),
         ENTRY(GetDeviceImageSparseMemoryRequirements, device_sparse_requirements_core),
         ENTRY(GetDeviceImageSparseMemoryRequirementsKHR, device_sparse_requirements_khr),

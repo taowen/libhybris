@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
 #include "bc_image.h"
+#include "bc_alias.h"
 #include <string.h>
 
 #define PROC(name) PFN_vk##name name = (PFN_vk##name)image->resolver(image->device, "vk" #name)
@@ -94,7 +95,8 @@ void hybris_bc_image_destroy(struct hybris_bc_image *image, const VkAllocationCa
     PROC(DestroyImage); PROC(DestroyBuffer); PROC(FreeMemory);
     if (image->image) DestroyImage(image->device, image->image, allocator);
     if (image->blocks) DestroyBuffer(image->device, image->blocks, allocator);
-    if (image->decoded_memory) FreeMemory(image->device, image->decoded_memory, NULL);
+    if (image->alias) hybris_bc_alias_release(image);
+    else if (image->decoded_memory) FreeMemory(image->device, image->decoded_memory, NULL);
     memset(image, 0, sizeof(*image));
 }
 
@@ -108,7 +110,7 @@ VkResult hybris_bc_image_describe(const VkImageCreateInfo *info, struct hybris_b
         info->tiling != VK_IMAGE_TILING_OPTIMAL ||
         info->samples != VK_SAMPLE_COUNT_1_BIT ||
         (info->initialLayout != VK_IMAGE_LAYOUT_UNDEFINED && info->initialLayout != VK_IMAGE_LAYOUT_PREINITIALIZED) ||
-        (info->flags & ~(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT | VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
+        (info->flags & ~(VK_IMAGE_CREATE_ALIAS_BIT | VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT | VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
                         VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT |
                         VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT | VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT_EXT)) ||
         ((info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) && !hybris_bc_mutable_format(info->format)) ||
@@ -244,9 +246,12 @@ VkResult hybris_bc_image_create(VkDevice device, PFN_vkGetDeviceProcAddr resolve
     VkMemoryAllocateInfo allocation = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .pNext = dedicated.requiresDedicatedAllocation || dedicated.prefersDedicatedAllocation ? &owner : NULL,
         .allocationSize = requirements.size, .memoryTypeIndex = type};
-    result = AllocateMemory(device, &allocation, NULL, &image->decoded_memory);
-    if (result != VK_SUCCESS) goto fail;
-    result = BindImageMemory(device, image->image, image->decoded_memory, 0);
+    if(info->flags & VK_IMAGE_CREATE_ALIAS_BIT) {
+        result=hybris_bc_alias_prepare(image,info,&requirements,type,dedicated.requiresDedicatedAllocation);
+    } else {
+        result = AllocateMemory(device, &allocation, NULL, &image->decoded_memory);
+        if (result == VK_SUCCESS) result = BindImageMemory(device, image->image, image->decoded_memory, 0);
+    }
     if (result != VK_SUCCESS) goto fail;
     VkBufferCreateInfo backing;
     hybris_bc_image_backing_info(image, info, &backing);
@@ -266,10 +271,11 @@ fail:
     return result;
 }
 
-VkResult hybris_bc_image_bind(const struct hybris_bc_image *image,
+VkResult hybris_bc_image_bind(struct hybris_bc_image *image,
     VkDeviceMemory memory, VkDeviceSize offset)
 {
     if (!image || !image->blocks) return VK_ERROR_INITIALIZATION_FAILED;
     PROC(BindBufferMemory);
-    return BindBufferMemory(image->device, image->blocks, memory, offset);
+    VkResult result=BindBufferMemory(image->device, image->blocks, memory, offset);
+    return result==VK_SUCCESS?hybris_bc_alias_bind(image,memory,offset):result;
 }

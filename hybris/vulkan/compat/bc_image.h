@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 
 struct hybris_bc_image {
+    struct hybris_bc_alias *alias;
     VkDevice device;
     PFN_vkGetDeviceProcAddr resolver;
     VkImage image;
@@ -30,7 +31,7 @@ VkResult hybris_bc_image_create(VkDevice device, PFN_vkGetDeviceProcAddr resolve
     unsigned rgb_mask, VkFormat output_format, const VkAllocationCallbacks *allocator, struct hybris_bc_image *image);
 void hybris_bc_image_destroy(struct hybris_bc_image *image,
     const VkAllocationCallbacks *allocator);
-VkResult hybris_bc_image_bind(const struct hybris_bc_image *image,
+VkResult hybris_bc_image_bind(struct hybris_bc_image *image,
     VkDeviceMemory memory, VkDeviceSize offset);
 VkExtent3D hybris_bc_image_extent(const struct hybris_bc_image *image, uint32_t mip);
 VkDeviceSize hybris_bc_image_layer_size(const struct hybris_bc_image *image, uint32_t mip);
