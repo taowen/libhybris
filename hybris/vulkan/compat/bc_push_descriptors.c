@@ -6,6 +6,7 @@
  */
 #define VK_NO_PROTOTYPES
 #include "bc_context.h"
+#include "shader_dispatch.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -40,7 +41,8 @@ static void VKAPI_CALL push(VkCommandBuffer handle, VkPipelineBindPoint point,
     if (!command) return;
     PROC(CmdPushDescriptorSetKHR);
     CmdPushDescriptorSetKHR(handle, point, layout, set, count, writes);
-    hybris_bc_save_pushed_descriptors(&command->state, point, layout, set, count, writes);
+    if(device->format_mask || command->state.track_graphics)
+        hybris_bc_save_pushed_descriptors(&command->state, point, layout, set, count, writes);
 }
 static void push2(VkCommandBuffer handle, const VkPushDescriptorSetInfoKHR *info, const char *name)
 {
@@ -48,6 +50,7 @@ static void push2(VkCommandBuffer handle, const VkPushDescriptorSetInfoKHR *info
     struct hybris_bc_command *command = hybris_bc_command_find(handle, &device);
     if (!command) return;
     ((PFN_vkCmdPushDescriptorSet2KHR)device->resolver(device->handle,name))(handle,info);
+    if(!device->format_mask && !command->state.track_graphics)return;
     if (info->pNext || !info->layout) { command->state.error=VK_ERROR_FEATURE_NOT_PRESENT; return; }
     if (info->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
         hybris_bc_save_pushed_descriptors(&command->state,VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -67,7 +70,8 @@ static VkResult create_template(VkDevice handle,const VkDescriptorUpdateTemplate
     struct hybris_bc_device *device=hybris_bc_device_find(handle);
     if (!device) return VK_ERROR_INITIALIZATION_FAILED;
     struct hybris_bc_push_template *record=NULL;
-    if (info->templateType==VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR) {
+    if ((device->format_mask || hybris_shader_polygon_active(handle)) &&
+        info->templateType==VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR) {
         if (info->descriptorUpdateEntryCount > (SIZE_MAX-sizeof(*record))/sizeof(*record->entries))
             return VK_ERROR_OUT_OF_HOST_MEMORY;
         record=calloc(1,sizeof(*record)+(size_t)info->descriptorUpdateEntryCount*sizeof(*record->entries));
@@ -120,6 +124,10 @@ static void VKAPI_CALL push_template(VkCommandBuffer handle,VkDescriptorUpdateTe
     struct hybris_bc_device *device;
     struct hybris_bc_command *command=hybris_bc_command_find(handle,&device);
     if(!command)return;
+    if(!device->format_mask && !command->state.track_graphics) {
+        PROC(CmdPushDescriptorSetWithTemplateKHR);
+        CmdPushDescriptorSetWithTemplateKHR(handle,tmpl,layout,set,data);return;
+    }
     pthread_mutex_lock(&device->guard);
     struct hybris_bc_push_template *record=device->push_templates;
     while(record && record->handle!=tmpl)record=record->next;
@@ -157,10 +165,15 @@ static void VKAPI_CALL push_template(VkCommandBuffer handle,VkDescriptorUpdateTe
 }
 static void VKAPI_CALL push_template2(VkCommandBuffer handle,const VkPushDescriptorSetWithTemplateInfoKHR *info)
 {
+    struct hybris_bc_device *device;
+    struct hybris_bc_command *command=hybris_bc_command_find(handle,&device);
+    if(!command)return;
+    if(!device->format_mask && !command->state.track_graphics) {
+        PROC(CmdPushDescriptorSetWithTemplate2KHR);
+        CmdPushDescriptorSetWithTemplate2KHR(handle,info);return;
+    }
     if(info->pNext || !info->layout) {
-        struct hybris_bc_device *device;
-        struct hybris_bc_command *command=hybris_bc_command_find(handle,&device);
-        if(command)command->state.error=VK_ERROR_FEATURE_NOT_PRESENT;
+        command->state.error=VK_ERROR_FEATURE_NOT_PRESENT;
         return;
     }
     push_template(handle,info->descriptorUpdateTemplate,info->layout,info->set,info->pData);
