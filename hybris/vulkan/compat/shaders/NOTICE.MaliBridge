@@ -89,3 +89,9 @@ is adapted from common/vkb_caps.c and common/vkb_emu_formats.h at
 Copyright (C) 2026 ASEbrahim and MaliBridge contributors. Physical dispatch
 and shared query/create integration are modified here. Requested usages
 must all be supported natively before the redundant flag is removed.
+
+The unchanged ../malibridge/spirv_shlbarrier.[ch] files come from MaliBridge
+commit 3cd7a2baaaf07f7d7a72c73675899a5ea202ebd9, GPL-3.0-or-later.
+Copyright (C) 2026 ASEbrahim and MaliBridge contributors. They retain the
+Apache-2.0 notice for Lee Gao's MaliOptimizationBarrierPass. Shader ownership,
+Arm device selection and diagnostic integration are modified here.

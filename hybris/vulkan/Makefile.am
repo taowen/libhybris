@@ -34,6 +34,7 @@ libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/device.c layer/physica
     compat/malibridge/spirv_edit.c compat/malibridge/spirv_edit.h \
     compat/malibridge/spirv_clip.c compat/malibridge/spirv_clip.h \
     compat/malibridge/spirv_pervertex.c compat/malibridge/spirv_pervertex.h \
+    compat/malibridge/spirv_shlbarrier.c compat/malibridge/spirv_shlbarrier.h \
     compat/polygon_pipeline.c compat/polygon_pipeline.h \
     compat/polygon_indices.c compat/polygon_indices.h compat/shaders/polygon_indices.inc \
     compat/polygon_buffers.c compat/polygon_buffers.h \

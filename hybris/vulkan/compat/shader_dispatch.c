@@ -9,6 +9,7 @@
 #include "scaled_formats.h"
 #include "spirv_entry.h"
 #include "spirv_mali.h"
+#include "malibridge/spirv_shlbarrier.h"
 #include "shader_cleanup.h"
 #include "spirv_builtins.h"
 #include "point_size.h"
@@ -24,6 +25,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 
 struct shader {
@@ -52,11 +54,13 @@ struct shader_device {
     int vertex_stores;
     int polygon;
     int mali_spec;
+    int mali_shl;
     int multi_viewport;
     int dual_src;
     int zero_divisor;
     uint32_t output_limit;
     _Atomic unsigned spec_changes;
+    _Atomic unsigned shl_changes;
     VkAllocationCallbacks allocator;
     int custom;
     struct shader *shaders;
@@ -69,7 +73,7 @@ static _Atomic unsigned inout_reports;
 int hybris_shader_enabled(void)
 {
     return hybris_scaled_enabled() || hybris_point_size_enabled() ||
-        hybris_inout_enabled() || hybris_clip_enabled() || hybris_mali_spec_enabled();
+        hybris_inout_enabled() || hybris_clip_enabled() || hybris_mali_spec_enabled() || hybris_mali_shl_enabled();
 }
 static struct shader_device *find_device(VkDevice handle)
 {
@@ -113,6 +117,7 @@ VkResult hybris_shader_device_create(VkDevice handle, VkPhysicalDevice physical,
     device->destroy_shader = (PFN_vkDestroyShaderModule)resolver(handle, "vkDestroyShaderModule");
     device->create_pipelines = (PFN_vkCreateGraphicsPipelines)resolver(handle, "vkCreateGraphicsPipelines");
     device->mali_spec=hybris_mali_spec_active(physical);
+    device->mali_shl=hybris_mali_shl_active(physical);
     device->dual_src=hybris_dual_source_requested(requested) && hybris_dual_source_active(physical);
     if(device->dual_src) {
         struct hybris_layer_physical owner;
@@ -179,7 +184,7 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
     struct shader_device *device = find_device(handle);
     if (!device) return VK_ERROR_INITIALIZATION_FAILED;
     if (!device->mask && !device->point_size && !device->inout &&
-        !device->clip && !device->cull && !device->stage_point_size && !device->pervertex && !device->vertex_stores && !device->polygon && !device->mali_spec && !device->dual_src)
+        !device->clip && !device->cull && !device->stage_point_size && !device->pervertex && !device->vertex_stores && !device->polygon && !device->mali_spec && !device->mali_shl && !device->dual_src)
         return device->create_shader(handle, info, allocator, module);
     struct shader *shader = hybris_scaled_alloc(allocator, sizeof(*shader), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!shader) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -200,6 +205,29 @@ static VkResult VKAPI_CALL create_shader(VkDevice handle, const VkShaderModuleCr
         created.pCode=shader->code;
         if(changed && !atomic_fetch_add(&device->spec_changes,changed))
             fprintf(stderr,"HYBRIS_MALI_SPEC_CONSTANTS first=%u\n",changed);
+    }
+    if(device->mali_shl && !info->pNext) {
+        uint32_t *words=NULL;
+        size_t size=0;
+        vkb_shlbarrier_stats stats;
+        const char *why=NULL;
+        int rewritten=vkb_spv_shl_barrier(shader->code,shader->size,&words,&size,&stats,&why);
+        if(rewritten<0) {
+            fprintf(stderr,"HYBRIS_MALI_SHL_BARRIER failed=%s\n",why?why:"unknown");
+            result=why && !strcmp(why,"out of memory")?VK_ERROR_OUT_OF_HOST_MEMORY:VK_ERROR_UNKNOWN;
+            free(words);free_shader(shader);return result;
+        }
+        if(rewritten) {
+            uint32_t *owned=hybris_scaled_alloc(allocator,size,VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+            if(!owned){free(words);free_shader(shader);return VK_ERROR_OUT_OF_HOST_MEMORY;}
+            memcpy(owned,words,size);free(words);
+            hybris_scaled_free(allocator,shader->code);
+            shader->code=owned;shader->size=size;
+            created.pCode=owned;created.codeSize=size;
+            if(atomic_fetch_add(&device->shl_changes,1)<8)
+                fprintf(stderr,"HYBRIS_MALI_SHL_BARRIER scalar=%u vector=%u skipped_width=%u\n",
+                    stats.scalar,stats.vector,stats.skipped_width);
+        }
     }
     struct hybris_distance_code lowered = {0};
     const char *reason = NULL;

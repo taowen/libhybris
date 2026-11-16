@@ -22,16 +22,34 @@ static void configure(void)
 }
 int hybris_mali_spec_enabled(void)
 { pthread_once(&once,configure);return mode!=0; }
-int hybris_mali_spec_active(VkPhysicalDevice physical)
+static int mali_vendor(VkPhysicalDevice physical)
 {
-    if(!hybris_mali_spec_enabled())return 0;
-    if(mode==2)return 1;
     struct hybris_layer_physical owner;
     if(!hybris_layer_lookup_physical(physical,&owner))return 0;
     PFN_vkGetPhysicalDeviceProperties query=(void*)owner.resolver(owner.instance,"vkGetPhysicalDeviceProperties");
     VkPhysicalDeviceProperties properties;
     query(physical,&properties);
     return properties.vendorID==0x13b5; /* Arm; no application-name matching. */
+}
+int hybris_mali_spec_active(VkPhysicalDevice physical)
+{
+    if(!hybris_mali_spec_enabled())return 0;
+    return mode==2 || mali_vendor(physical);
+}
+static pthread_once_t shl_once=PTHREAD_ONCE_INIT;
+static int shl_mode;
+static void configure_shl(void)
+{
+    if(getauxval(AT_SECURE))return;
+    const char *value=getenv("HYBRIS_MALI_SHL_BARRIER");
+    shl_mode=value && !strcmp(value,"0")?0:value && !strcmp(value,"force")?2:1;
+}
+int hybris_mali_shl_enabled(void)
+{ pthread_once(&shl_once,configure_shl);return shl_mode!=0; }
+int hybris_mali_shl_active(VkPhysicalDevice physical)
+{
+    if(!hybris_mali_shl_enabled())return 0;
+    return shl_mode==2 || mali_vendor(physical);
 }
 
 VkResult hybris_spirv_mali_spec_constants(uint32_t *code,size_t bytes,
