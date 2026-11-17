@@ -25,7 +25,7 @@ struct hybris_bc_alias {
     struct hybris_bc_alias *next, *memory_next;
 };
 static pthread_mutex_t guard=PTHREAD_MUTEX_INITIALIZER;
-static struct hybris_bc_alias *index[BUCKETS];
+static struct hybris_bc_alias *alias_index[BUCKETS];
 static struct hybris_bc_alias *memory_index[BUCKETS];
 static size_t bucket(VkDevice device,VkDeviceMemory memory,VkDeviceSize offset)
 {
@@ -85,7 +85,7 @@ oom:
 static void unpublish(struct hybris_bc_alias *r)
 {
     if(!r->backing)return;
-    struct hybris_bc_alias **slot=&index[bucket(r->device,r->backing,r->offset)];
+    struct hybris_bc_alias **slot=&alias_index[bucket(r->device,r->backing,r->offset)];
     while(*slot && *slot!=r)slot=&(*slot)->next;
     if(*slot)*slot=r->next;
     slot=&memory_index[bucket(r->device,r->backing,0)];
@@ -127,7 +127,7 @@ VkResult hybris_bc_alias_bind(struct hybris_bc_image *image,VkDeviceMemory memor
     PFN_vkBindImageMemory bind=(void*)r->resolver(r->device,"vkBindImageMemory");
     pthread_mutex_lock(&guard);
     size_t slot=bucket(r->device,memory,offset);
-    for(struct hybris_bc_alias *other=index[slot];other;other=other->next)
+    for(struct hybris_bc_alias *other=alias_index[slot];other;other=other->next)
         if(other->device==r->device && other->backing==memory && other->offset==offset && identical(r,other)) {
             if(r->dedicated || other->dedicated) {
                 pthread_mutex_unlock(&guard);
@@ -148,7 +148,7 @@ VkResult hybris_bc_alias_bind(struct hybris_bc_image *image,VkDeviceMemory memor
         r->device,&allocation,NULL,&r->decoded);
     if(result==VK_SUCCESS)result=bind(r->device,image->image,r->decoded,0);
     if(result==VK_SUCCESS) {
-        r->backing=memory;r->offset=offset;r->next=index[slot];index[slot]=r;image->decoded_memory=r->decoded;
+        r->backing=memory;r->offset=offset;r->next=alias_index[slot];alias_index[slot]=r;image->decoded_memory=r->decoded;
         size_t memory_slot=bucket(r->device,memory,0);
         r->memory_next=memory_index[memory_slot];memory_index[memory_slot]=r;
     } else if(r->decoded) {
