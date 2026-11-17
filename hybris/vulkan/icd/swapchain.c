@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
+#include <sys/auxv.h>
 #ifdef WANT_WAYLAND
 #include <hybris/gralloc/gralloc.h>
 #include <hybris/grallocusage/GrallocUsageConversion.h>
@@ -48,6 +50,11 @@ struct swapchain_state {
     int retired;
     VkAllocationCallbacks allocator;
     int custom_allocator;
+    int statistics_enabled;
+    unsigned statistics_reports;
+    uint64_t presented_frames;
+    uint64_t first_present_ns;
+    uint64_t last_report_ns;
     struct swapchain_state *next;
 };
 
@@ -267,6 +274,8 @@ static VkResult VKAPI_CALL create_swapchain(VkDevice device,
     state->window = window;
     state->extent = info->imageExtent;
     state->custom_allocator = allocator != NULL;
+    const char *statistics = getauxval(AT_SECURE) ? NULL : getenv("HYBRIS_VULKAN_WSI_STATS");
+    state->statistics_enabled = statistics && !strcmp(statistics, "1");
     if (allocator) state->allocator = *allocator;
     state->images = object_alloc(allocator, count * sizeof(*state->images),
         VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
@@ -532,6 +541,25 @@ static VkResult VKAPI_CALL bind_images_khr(VkDevice device, uint32_t count,
     return bind_images(device, count, infos, "vkBindImageMemory2KHR");
 }
 
+/* Count accepted presents, not compositor refreshes or GPU completion. Use
+ * cumulative values to select only the playable interval, excluding menus.
+ * Vulkan externally synchronizes host access to a presented swapchain. */
+static void record_present(struct swapchain_state *state)
+{
+    if (!state->statistics_enabled || state->statistics_reports >= 600) return;
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now)) return;
+    uint64_t ns = (uint64_t)now.tv_sec * 1000000000 + now.tv_nsec;
+    ++state->presented_frames;
+    if (!state->first_present_ns) state->first_present_ns = ns;
+    if (state->last_report_ns && ns - state->last_report_ns < 1000000000) return;
+    state->last_report_ns = ns;
+    ++state->statistics_reports;
+    fprintf(stderr, "HYBRIS_WSI_STATS pid=%ld swapchain=%p extent=%ux%u frames=%" PRIu64
+        " first_ns=%" PRIu64 " last_ns=%" PRIu64 "\n", (long)getpid(), (void *)state,
+        state->extent.width, state->extent.height, state->presented_frames, state->first_present_ns, ns);
+}
+
 static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
     const VkPresentInfoKHR *info, uint32_t entry)
 {
@@ -571,6 +599,7 @@ static VkResult present_one(struct hybris_icd_device *context, VkQueue queue,
         return state->presentation_status;
     }
     state->images[index].state = IMAGE_PRESENTED;
+    record_present(state);
     return result;
 }
 

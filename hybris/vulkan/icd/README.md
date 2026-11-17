@@ -54,6 +54,13 @@ exit so generations do not restart when the loader drops its last instance.
 Adapter generations remain private WSI ownership checks. The old separate
 ICD instance/device trace switches have been removed.
 
+`HYBRIS_VULKAN_WSI_STATS=1` reports cumulative accepted presentations with
+monotonic timestamps and the swapchain extent, at most once per second and
+600 times per swapchain. Subtract two counters from the playable interval;
+menu/loading totals are not game FPS. These are submitted frames, not GPU
+completion or panel scanout. The switch is off by default and performs no
+clock reads or logging on presentation when disabled.
+
 Interface version 5 is required. Instance version discovery uses the HAL query
 when available and otherwise Vulkan's 1.0 fallback. The physical-device resolver
 uses an exact registry-derived scope table, including aliases. That table is
