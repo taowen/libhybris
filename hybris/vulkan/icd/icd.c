@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * glibc Vulkan loader -> Android Vulkan HAL through the hybris ABI bridge.
- * Android owns instance initialization; the desktop loader owns device dispatch.
+ * Prefer Android instance initialization; keep one HAL owner for all dispatch.
  * This adapter never fabricates or rewrites either loader's private headers.
  */
 #define _GNU_SOURCE
@@ -43,7 +43,8 @@ static int load_namespace_hal(void *ns, const char *name, const hw_module_t **mo
         snprintf(library, sizeof(library), "vulkan.%s.so", value);
         android_dlextinfo ext = {.flags = ANDROID_DLEXT_USE_NAMESPACE,
             .library_namespace = ns};
-        void *handle = hybris_dlopen_ext(library, RTLD_NOW | RTLD_LOCAL, &ext);
+        void *handle = ns ? hybris_dlopen_ext(library, RTLD_NOW | RTLD_LOCAL, &ext)
+                          : hybris_dlopen(library, RTLD_NOW | RTLD_LOCAL);
         if (!handle) {
             fprintf(stderr, "hybris ICD: cannot load %s from %s namespace: %s\n",
                 library, name, hybris_dlerror());
@@ -74,8 +75,11 @@ static int load_system_hal(const hw_module_t **module)
     }
     void *ns = hybris_get_exported_namespace("sphal");
     if (ns) return load_namespace_hal(ns, "sphal", module);
-    /* Pre-Treble/no-namespace linkers retain the platform's legacy discovery. */
-    return hw_get_module(HWVULKAN_HARDWARE_MODULE_ID, module);
+    /* Retain legacy variants, then use Vulkan's property-selected library in
+     * our default namespace. libhardware rejects symlinked HALs whose target
+     * leaves the hw directory, even when the vendor linker can load them. */
+    int result = hw_get_module(HWVULKAN_HARDWARE_MODULE_ID, module);
+    return result == -ENOENT ? load_namespace_hal(NULL, "default", module) : result;
 }
 
 /* HAL and common remain resident together. This is intentionally not a driver
