@@ -36,10 +36,19 @@ static PFN_vkGetInstanceProcAddr platform_instance_proc;
  * choose a second driver by scanning vendor filenames or GPU model names. */
 static int load_namespace_hal(void *ns, const char *name, const hw_module_t **module)
 {
-    const char *keys[] = {"ro.hardware.vulkan", "ro.board.platform"};
-    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+    /* Exported Vulkan namespaces use the platform loader's two properties.
+     * A no-namespace linker also needs libhardware's legacy variants/default;
+     * loading by name permits HAL symlinks into the vendor EGL directory. */
+    const char *keys[] = {"ro.hardware.vulkan", "ro.board.platform",
+        "ro.hardware", "ro.product.board", "ro.arch", NULL};
+    const size_t count = ns ? 2 : sizeof(keys) / sizeof(keys[0]);
+    for (size_t i = 0; i < count; ++i) {
         char value[PROP_VALUE_MAX], library[PROP_VALUE_MAX + 16];
-        if (property_get(keys[i], value, "") <= 0) continue;
+        if (keys[i]) {
+            if (property_get(keys[i], value, "") <= 0) continue;
+        } else {
+            strcpy(value, "default");
+        }
         snprintf(library, sizeof(library), "vulkan.%s.so", value);
         android_dlextinfo ext = {.flags = ANDROID_DLEXT_USE_NAMESPACE,
             .library_namespace = ns};

@@ -24,6 +24,18 @@ they do not implement another build graph. Keep the rootfs and Wine submodule
 pins synchronized when integrating a graphics change. Update both pins and
 validate each product before promoting its public release.
 
+## Linux Vulkan HAL loading
+
+The glibc adapter follows Android's Vulkan APEX and exported SP-HAL namespaces.
+Without an exported namespace it keeps libhardware discovery, then loads the
+standard property-selected Vulkan library names and `vulkan.default.so` through
+the default linker. This accepts vendor HAL symlinks outside the `hw` directory;
+it does not enumerate GPU models or arbitrary libraries. Diagnostics identify
+selected libraries and failed loads. Instance creation retains the platform
+loader when it returns direct driver queries; loaders returning dispatch
+trampolines are destroyed before a fresh HAL-owned instance is created. The
+instance, physical devices and devices must share that HAL dispatch owner.
+
 ## Linux Bionic TLS storage
 
 The glibc bridge reserves a stable, demand-paged 16 MiB virtual TLS arena per
