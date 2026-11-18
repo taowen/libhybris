@@ -35,6 +35,8 @@ selected libraries and failed loads. Instance creation retains the platform
 loader when it returns direct driver queries; loaders returning dispatch
 trampolines are destroyed before a fresh HAL-owned instance is created. The
 instance, physical devices and devices must share that HAL dispatch owner.
+If Android rejects an instance extension advertised by the selected HAL, the
+ICD retries with that HAL and forwards the original extension request.
 
 ## Linux Bionic TLS storage
 

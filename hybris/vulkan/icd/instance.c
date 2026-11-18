@@ -103,43 +103,41 @@ VkResult hybris_icd_create_instance(hwvulkan_device_t *hal,
     }
     PFN_vkCreateInstance create = (PFN_vkCreateInstance)platform(VK_NULL_HANDLE, "vkCreateInstance");
     VkResult result = create(&filtered, allocator, instance);
-    if (result != VK_SUCCESS) {
-        hybris_icd_wsi_finish_instance(wsi_names);
-        fprintf(stderr, "hybris ICD: Android loader vkCreateInstance failed: VkResult %d\n", result);
-        free_state(state);
-        return result;
-    }
     state->api_version = info->pApplicationInfo && info->pApplicationInfo->apiVersion ?
         info->pApplicationInfo->apiVersion : VK_API_VERSION_1_0;
     state->resolver = hal->GetInstanceProcAddr;
-    state->destroy = (PFN_vkDestroyInstance)platform(*instance, "vkDestroyInstance");
-    /* Modern Android returns driver instance queries directly. Older loaders
-     * return their own dispatch trampolines. The desktop loader will replace
-     * dispatch headers, so never forward those trampolines or mix their objects
-     * with an independently opened HAL. Recreate through the HAL in that case;
-     * instance, physical-device and device dispatch then have one owner. */
-    PFN_vkVoidFunction platform_query = platform(*instance, "vkGetPhysicalDeviceProperties");
-    PFN_vkVoidFunction hal_query = state->resolver(*instance, "vkGetPhysicalDeviceProperties");
-    Dl_info platform_owner = {0}, hal_owner = {0};
-    if (!platform_query || !hal_query ||
-        !hybris_dladdr((const void *)platform_query, &platform_owner) ||
-        !hybris_dladdr((const void *)hal_query, &hal_owner) ||
-        !platform_owner.dli_fbase || platform_owner.dli_fbase != hal_owner.dli_fbase) {
-        fprintf(stderr, "hybris ICD: Android loader uses trampolines (%s); recreating instance through HAL %s\n",
-            platform_owner.dli_fname ? platform_owner.dli_fname : "unknown",
-            hal_owner.dli_fname ? hal_owner.dli_fname : "unknown");
-        state->destroy(*instance, allocator);
+    /* Some old Android loaders reject promoted KHR extensions that their
+     * HAL advertises and accepts. Retry that error with the same request. */
+    int use_hal = result == VK_ERROR_EXTENSION_NOT_PRESENT;
+    if (result == VK_SUCCESS) {
+        state->destroy = (PFN_vkDestroyInstance)platform(*instance, "vkDestroyInstance");
+        /* Never mix Android loader dispatch trampolines with independently
+         * opened HAL objects when the desktop loader installs its dispatch. */
+        PFN_vkVoidFunction platform_query = platform(*instance, "vkGetPhysicalDeviceProperties");
+        PFN_vkVoidFunction hal_query = state->resolver(*instance, "vkGetPhysicalDeviceProperties");
+        Dl_info platform_owner = {0}, hal_owner = {0};
+        use_hal = !platform_query || !hal_query ||
+            !hybris_dladdr((const void *)platform_query, &platform_owner) ||
+            !hybris_dladdr((const void *)hal_query, &hal_owner) ||
+            !platform_owner.dli_fbase || platform_owner.dli_fbase != hal_owner.dli_fbase;
+        if (use_hal) state->destroy(*instance, allocator);
+    }
+    if (use_hal) {
+        fprintf(stderr, "hybris ICD: creating instance through HAL (%s)\n",
+            result == VK_SUCCESS ? "Android loader uses trampolines" :
+                                   "Android loader rejected an instance extension");
         *instance = VK_NULL_HANDLE;
         result = hal->CreateInstance(&filtered, allocator, instance);
-        if (result != VK_SUCCESS) {
-            fprintf(stderr, "hybris ICD: HAL vkCreateInstance failed: VkResult %d\n", result);
-            hybris_icd_wsi_finish_instance(wsi_names);
-            free_state(state);
-            return result;
-        }
-        state->destroy = (PFN_vkDestroyInstance)state->resolver(*instance, "vkDestroyInstance");
+        if (result == VK_SUCCESS)
+            state->destroy = (PFN_vkDestroyInstance)state->resolver(*instance, "vkDestroyInstance");
     }
     hybris_icd_wsi_finish_instance(wsi_names);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "hybris ICD: %s vkCreateInstance failed: VkResult %d\n",
+            use_hal ? "HAL" : "Android loader", result);
+        free_state(state);
+        return result;
+    }
     state->handle = *instance;
     pthread_mutex_lock(&instance_guard);
     state->next = instances;
