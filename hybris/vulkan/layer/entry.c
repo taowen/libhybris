@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/malibridge/timeline.h"
 #include "../compat/maintenance5.h"
 #include "../compat/dynamic_rendering.h"
 #include "layer.h"
@@ -155,7 +156,7 @@ static PFN_vkVoidFunction VKAPI_CALL get_instance_proc(VkInstance instance, cons
     struct instance_state state;
     if (!instance || !instance_snapshot(instance, &state)) return NULL;
     PFN_vkVoidFunction next = state.resolver(instance, name);
-    if (!next && !hybris_layer_vertex_buffers2_proc(name) && !hybris_maintenance5_added_proc(name) && strcmp(name,"vkCmdBeginRendering") && strcmp(name,"vkCmdBeginRenderingKHR") &&
+    if (!next && !(hybris_timeline_enabled() && hybris_timeline_host_command(name)) && !hybris_layer_vertex_buffers2_proc(name) && !hybris_maintenance5_added_proc(name) && strcmp(name,"vkCmdBeginRendering") && strcmp(name,"vkCmdBeginRenderingKHR") &&
         strcmp(name,"vkCmdEndRendering") && strcmp(name,"vkCmdEndRenderingKHR")) return NULL;
     if (!strcmp(name, "vkDestroyInstance")) return (PFN_vkVoidFunction)destroy_instance;
     if (!strcmp(name, "vkDestroyDevice")) return (PFN_vkVoidFunction)hybris_layer_destroy_device;
@@ -163,6 +164,7 @@ static PFN_vkVoidFunction VKAPI_CALL get_instance_proc(VkInstance instance, cons
      * Every command wrapper checks the actual device again before changing it. */
     PFN_vkVoidFunction intercepted = hybris_layer_physical_proc(name);
     if (!intercepted) intercepted = hybris_layer_device_dispatch(name, 1);
+    if (!intercepted && hybris_timeline_enabled()) intercepted = hybris_timeline_dispatch(name);
     return intercepted ? intercepted : next;
 }
 static PFN_vkVoidFunction VKAPI_CALL get_physical_proc(VkInstance instance, const char *name)

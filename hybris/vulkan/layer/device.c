@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/malibridge/timeline.h"
 #include "../compat/dynamic_rendering.h"
 #include "../compat/maintenance5.h"
 #include "../compat/multidraw.h"
@@ -70,7 +71,8 @@ static PFN_vkVoidFunction resolve_base(const struct hybris_layer_device *device,
     if (!hybris_shader_device_proc_allowed(device->handle, name)) return NULL;
     PFN_vkVoidFunction next = device->resolver(device->handle, name);
     if (!next) return NULL;
-    PFN_vkVoidFunction compat=device->multi_draw?hybris_multidraw_proc(name):NULL;
+    PFN_vkVoidFunction compat = hybris_timeline_submit_proc(device, name);
+    if (!compat && device->multi_draw) compat = hybris_multidraw_proc(name);
     if(!compat)compat=hybris_bc_proc(name);
     if (!compat) compat = hybris_shader_cleanup_proc(name);
     if (!compat) compat = hybris_shader_proc(name);
@@ -147,6 +149,7 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
     struct hybris_device_features filtered;
     result = hybris_device_features_prepare(physical, info, allocator, &filtered);
     if (result == VK_SUCCESS) result = create(physical, &filtered.info, allocator, out);
+    int emulate_timeline = filtered.timeline;
     hybris_device_features_release(&filtered, allocator);
     if (result != VK_SUCCESS) { hybris_scaled_free(allocator, state); return result; }
     state->device.handle = *out;
@@ -155,10 +158,13 @@ VkResult VKAPI_CALL hybris_layer_create_device(VkPhysicalDevice physical,
         instance.resolver(instance.instance, "vkGetPhysicalDeviceFormatProperties");
     result = hybris_shader_device_create(*out, physical, resolver, query, allocator, info);
     if (result == VK_SUCCESS) result = hybris_bc_attach_device(*out, physical, resolver, allocator);
+    if (result == VK_SUCCESS && emulate_timeline) result = hybris_timeline_attach(&state->device);
     if(result==VK_SUCCESS)result=hybris_null_attach(&state->device,resolve_base,info);
     if(result==VK_SUCCESS)result=hybris_dynamic_attach(&state->device,resolve_legacy,info);
     if (result != VK_SUCCESS) {
+        hybris_dynamic_release(state->device.dynamic_rendering);
         hybris_null_release(*out);
+        hybris_timeline_release(state->device.timeline);
         hybris_bc_device_remove(*out);
         hybris_shader_device_destroy(*out);
         ((PFN_vkDestroyDevice)resolver(*out, "vkDestroyDevice"))(*out, allocator);
@@ -218,6 +224,7 @@ void VKAPI_CALL hybris_layer_destroy_device(VkDevice handle, const VkAllocationC
     pthread_mutex_unlock(&guard);
     if (!retired) return;
     hybris_layer_trace_lifetime("destroy", retired->device.generation, handle, retired->device.instance_generation);
+    hybris_timeline_release(retired->device.timeline);
     ((PFN_vkDestroyDevice)retired->device.resolver(handle, "vkDestroyDevice"))(handle, allocator);
     hybris_scaled_free(retired->custom_allocator ? &retired->allocator : NULL, retired);
 }
@@ -255,10 +262,11 @@ PFN_vkVoidFunction VKAPI_CALL hybris_layer_get_device_proc(VkDevice handle, cons
     PFN_vkVoidFunction next = device.resolver(handle, name);
     int static_vertices = hybris_layer_vertex_buffers2_proc(name) && device.track_commands &&
                           device.recording->CmdBindVertexBuffers;
-    if (!next && !static_vertices && !hybris_dynamic_proc(&device,name) &&
+    if (!next && !(device.timeline && hybris_timeline_host_command(name)) && !static_vertices && !hybris_dynamic_proc(&device,name) &&
         !(device.maintenance5 && hybris_maintenance5_added_proc(name))) return NULL;
     if (!strcmp(name, "vkGetDeviceProcAddr")) return (PFN_vkVoidFunction)hybris_layer_get_device_proc;
     if (!strcmp(name, "vkDestroyDevice")) return (PFN_vkVoidFunction)hybris_layer_destroy_device;
     PFN_vkVoidFunction compat = hybris_layer_device_dispatch(name, device.track_commands);
+    if (!compat && device.timeline) compat = hybris_timeline_dispatch(name);
     return compat ? compat : next;
 }

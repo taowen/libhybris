@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/malibridge/timeline.h"
 #include "../compat/dynamic_rendering.h"
 #include "../compat/maintenance5.h"
 #include "../compat/dual_source.h"
@@ -45,6 +46,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     struct hybris_device_features *out)
 {
     *out = (struct hybris_device_features){.info = *info};
+    int timeline = hybris_timeline_emulated(physical);
+    out->timeline = timeline && hybris_timeline_requested(info);
     struct hybris_robustness2_policy robust;
     VkResult policy_result=hybris_robustness2_policy(physical,&robust);
     if(policy_result!=VK_SUCCESS)return policy_result;
@@ -106,13 +109,14 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     }
     int maintenance5=hybris_maintenance5_emulated(physical);
     int dynamic=hybris_dynamic_emulated(physical);
-    if(dynamic || maintenance5) {
+    if(dynamic || maintenance5 || timeline) {
         uint32_t capacity=out->info.enabledExtensionCount+2;
         const char **names=hybris_scaled_alloc(allocator,capacity*sizeof(*names),VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
         if(!names){hybris_device_features_release(out,allocator);return VK_ERROR_OUT_OF_HOST_MEMORY;}
         uint32_t n=0;
         for(uint32_t i=0;i<out->info.enabledExtensionCount;++i) {
             const char *name=out->info.ppEnabledExtensionNames[i];
+            if (timeline && !strcmp(name, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)) continue;
             if(dynamic && !strcmp(name,VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME))continue;
             if(maintenance5 && !strcmp(name,VK_KHR_MAINTENANCE_5_EXTENSION_NAME))continue;
             if(dynamic && (!strcmp(name,"VK_KHR_dynamic_rendering_local_read") || !strcmp(name,"VK_EXT_dynamic_rendering_unused_attachments"))) {
@@ -141,7 +145,7 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     int cull = hybris_cull_active(physical);
     int stage_point = hybris_stage_point_active(physical);
     int polygon=hybris_shader_polygon_emulated(physical);
-    if (!dual_src && !multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !stage_point && !polygon && !transcode && !hdr && !(robust_node && robust.emulated) && !dynamic && !maintenance5 && !divisor.zero) return VK_SUCCESS;
+    if (!dual_src && !multi_draw && !multi_viewport && !clip && !stores && !bc && !cull && !stage_point && !polygon && !transcode && !hdr && !(robust_node && robust.emulated) && !dynamic && !maintenance5 && !divisor.zero && !timeline) return VK_SUCCESS;
     if (info->pEnabledFeatures) {
         out->features = *info->pEnabledFeatures;
         if(dual_src)out->features.dualSrcBlend=VK_FALSE;
@@ -160,7 +164,13 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
         out->info.pEnabledFeatures = &out->features;
     }
     const VkBaseInStructure *features2 = NULL, *hdr_node = NULL, *target = NULL, *dynamic_node = NULL, *maintenance_node=NULL;
+    const VkBaseInStructure *timeline_node = NULL;
     for (const VkBaseInStructure *node = info->pNext; node; node = node->pNext) {
+        if (timeline && (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES ||
+                         node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES)) {
+            timeline_node = node;
+            target = node;
+        }
         if (node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2) {
             features2 = node;
             target = node;
@@ -219,7 +229,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
     out->suffix = target->pNext;
     VkBaseOutStructure **slot = &out->copies;
     for (const VkBaseInStructure *node = info->pNext; ; node = node->pNext) {
-        if((node==maintenance_node && node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES) ||
+        if ((node == timeline_node && node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES) ||
+            (node==maintenance_node && node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES) ||
             (node==dynamic_node && node->sType==VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES) ||
             (node==robust_node && robust.emulated && !robust.native_extensions)) {
             if(node==target){*slot=(void*)out->suffix;break;}
@@ -240,6 +251,8 @@ VkResult hybris_device_features_prepare(VkPhysicalDevice physical,
         copy->pNext = NULL;
         *slot = copy;
         slot = &copy->pNext;
+        if (node == timeline_node && node->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES)
+            ((VkPhysicalDeviceVulkan12Features *)copy)->timelineSemaphore = VK_FALSE;
         if (node == features2) {
             if(dual_src)((VkPhysicalDeviceFeatures2*)copy)->features.dualSrcBlend=VK_FALSE;
             if(multi_draw)((VkPhysicalDeviceFeatures2*)copy)->features.multiDrawIndirect=VK_FALSE;

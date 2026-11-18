@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "../compat/malibridge/timeline.h"
 #include "../compat/dynamic_rendering.h"
 #include "../compat/maintenance5.h"
 #include "../compat/dual_source.h"
@@ -75,12 +76,13 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     int vertex_stores = !layer && hybris_vertex_stores_active(physical);
     int dynamic = !layer && hybris_dynamic_emulated(physical);
     int maintenance5 = !layer && hybris_maintenance5_emulated(physical);
+    int timeline = !layer && hybris_timeline_emulated(physical);
     struct hybris_robustness2_policy robust={0};
     if(!layer) {
         VkResult policy_result=hybris_robustness2_policy(physical,&robust);
         if(policy_result!=VK_SUCCESS)return policy_result;
     }
-    if (layer || (!bc_mask && !shader_mask && !pipeline_compat && !vertex_stores && !robust.emulated && !dynamic && !maintenance5 && !divisor.alias))
+    if (layer || (!bc_mask && !shader_mask && !pipeline_compat && !vertex_stores && !robust.emulated && !dynamic && !maintenance5 && !divisor.alias && !timeline))
         return enumerate(physical, layer, count, properties);
     uint32_t available = 0;
     VkResult result = enumerate(physical, NULL, &available, NULL);
@@ -122,6 +124,18 @@ static VkResult VKAPI_CALL enumerate_device_extensions(VkPhysicalDevice physical
     if(divisor.alias) {
         if(properties && written<capacity)properties[written++]=(VkExtensionProperties){.extensionName=VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,.specVersion=3};
         ++kept;
+    }
+    if (timeline) {
+        int present = 0;
+        for (uint32_t i = 0; i < available; i++)
+            present |= !strcmp(all[i].extensionName, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+        if (!present) {
+            if (properties && written < capacity)
+                properties[written++] = (VkExtensionProperties){
+                    .extensionName = VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+                    .specVersion = VK_KHR_TIMELINE_SEMAPHORE_SPEC_VERSION};
+            ++kept;
+        }
     }
     free(all);
     *count = properties ? written : kept;

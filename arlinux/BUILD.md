@@ -91,6 +91,7 @@ process cancellation, identity verification and report display are shared.
 
 | Probe | Activity | Native executable | Result directory |
 | --- | --- | --- | --- |
+| Timeline semaphore | `.TimelineProbeActivity` | `libhybris_timeline_probe.so` | `files/timeline/` |
 | Maintenance5 | `.Maintenance5ProbeActivity` | `libhybris_maintenance5_probe.so` | `files/maintenance5/` |
 | Dynamic rendering | `.DynamicRenderingProbeActivity` | `libhybris_dynamic_rendering_probe.so` | `files/dynamic_rendering/` |
 | BC textures | `.BcProbeActivity` | `libhybris_bc_probe.so` | `files/bc/` |
@@ -385,6 +386,19 @@ The independent distance probe accepts `distance-normal` and `distance-native`.
 It checks GPU pixels for Clip, Cull, combined and fragment ClipDistance-input
 paths, and logs the Cull approximation separately. Native dynamic rendering is
 exercised when available; unsupported native features are reported as skipped.
+
+## Timeline semaphore compatibility
+
+The layer enables `VK_KHR_timeline_semaphore` on Vulkan 1.1 drivers that lack
+native timeline semaphore support. It uses binary semaphores, fences and host
+waits via the MaliBridge implementation. Native implementations are preferred.
+Set `HYBRIS_TIMELINE_SEMAPHORE=0` for an unpatched capability comparison.
+
+Emulated waits may block submission on the CPU. This path is intended for
+ordered queue submissions and does not provide general cross-queue
+wait-before-signal ordering, sparse binding, or timeline semaphore FD
+import/export. The standalone probe compares `timeline-native` and
+`timeline-compat` using host and GPU signals and a readback.
 
 ## Dynamic rendering compatibility
 

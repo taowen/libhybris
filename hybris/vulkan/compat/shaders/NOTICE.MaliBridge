@@ -95,3 +95,8 @@ commit 3cd7a2baaaf07f7d7a72c73675899a5ea202ebd9, GPL-3.0-or-later.
 Copyright (C) 2026 ASEbrahim and MaliBridge contributors. They retain the
 Apache-2.0 notice for Lee Gao's MaliOptimizationBarrierPass. Shader ownership,
 Arm device selection and diagnostic integration are modified here.
+
+The Timeline Semaphore implementation in ../malibridge/timeline.c is adapted
+from server/server_timeline.c at MaliBridge commit 800b5f5. Copyright (C) 2026
+ASEbrahim and MaliBridge contributors, GPL-3.0-or-later. Device dispatch,
+feature negotiation and diagnostics are integrated with the libhybris layer.

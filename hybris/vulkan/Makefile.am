@@ -31,6 +31,7 @@ libVkLayer_hybris_compat_la_SOURCES = layer/entry.c layer/device.c layer/physica
     compat/point_size.c compat/point_size.h \
     compat/spirv_inout.c compat/spirv_inout.h \
     compat/clip_distance.c compat/clip_distance.h compat/distance_lowering.c compat/distance_lowering.h \
+    compat/timeline_policy.c compat/malibridge/timeline.c compat/malibridge/timeline.h \
     compat/malibridge/spirv_edit.c compat/malibridge/spirv_edit.h \
     compat/malibridge/spirv_clip.c compat/malibridge/spirv_clip.h \
     compat/malibridge/spirv_pervertex.c compat/malibridge/spirv_pervertex.h \

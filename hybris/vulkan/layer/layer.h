@@ -37,6 +37,7 @@ struct hybris_layer_command_dispatch {
 };
 struct hybris_layer_device {
     struct hybris_dynamic_state *dynamic_rendering;
+    struct hybris_timeline *timeline;
     int maintenance5;
     VkDevice handle;
     PFN_vkGetDeviceProcAddr resolver;

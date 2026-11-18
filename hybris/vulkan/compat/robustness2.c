@@ -4,6 +4,7 @@
  * Core robustness is a weaker substitute, not robustness2 conformance.
  */
 #define VK_NO_PROTOTYPES
+#include "malibridge/timeline.h"
 #include "robustness2.h"
 #include "clip_distance.h"
 #include "../layer/layer.h"
@@ -102,6 +103,7 @@ static void properties2(VkPhysicalDevice physical,VkPhysicalDeviceProperties2 *o
     if(!query)query=(void*)owner.resolver(owner.instance,name);
     if(!query)return;
     query(physical,out);
+    hybris_timeline_properties(physical, out);
     struct hybris_robustness2_policy policy;
     if(hybris_robustness2_policy(physical,&policy)!=VK_SUCCESS || !policy.emulated)return;
     for(VkBaseOutStructure *node=out->pNext;node;node=node->pNext)

@@ -10,6 +10,7 @@ struct hybris_device_features {
     const char **extensions;
     VkBaseOutStructure *copies;
     const void *suffix;
+    int timeline;
 };
 
 VkResult hybris_device_features_prepare(VkPhysicalDevice physical,

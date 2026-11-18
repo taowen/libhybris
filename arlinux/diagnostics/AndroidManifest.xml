@@ -16,6 +16,7 @@
         <activity android:name=".MultiViewportProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".MultiDrawProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".DualSourceProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
+        <activity android:name=".TimelineProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".DistanceProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".InOutProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />
         <activity android:name=".PolygonProbeActivity" android:exported="true" android:configChanges="orientation|screenSize" />

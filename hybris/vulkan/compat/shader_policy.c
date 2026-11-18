@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #define VK_NO_PROTOTYPES
+#include "malibridge/timeline.h"
 #include "dynamic_rendering.h"
 #include "maintenance5.h"
 #include "dual_source.h"
@@ -95,6 +96,7 @@ static void features2(VkPhysicalDevice physical, VkPhysicalDeviceFeatures2 *out,
     if(hybris_multiviewport_active(physical))out->features.multiViewport=VK_TRUE;
     hybris_robustness2_features(physical,out);
     hybris_dynamic_features(physical,out);
+    hybris_timeline_features(physical, out);
     hybris_maintenance5_features(physical,out);
     int zero_divisor=hybris_divisor_policy(physical).zero;
     if(zero_divisor)for(VkBaseOutStructure *node=out->pNext;node;node=node->pNext) {
